@@ -15,14 +15,38 @@
 #include "Constants.h"
 
 
+dWorldID wid;
+dBodyID bid;
+dJointGroupID contactJointGroupID;
+dSpaceID space;
+
+void collisionCallback(void *data, dGeomID o1, dGeomID o2) {
+
+	// collect collision info
+	const int maxC = 10;
+	dContactGeom contact [maxC];
+	const int c = dCollide(o1,o2,maxC,contact,0);
+
+	// create collision joints
+	for(int i = 0; i < c; i++) {
+		dContact dc;
+		dc.surface.mode = dContactBounce;
+		dc.surface.mu = 1;
+		dc.surface.bounce = 0.5;
+		dJointID c = dJointCreateContact(wid, contactJointGroupID, &dc);
+		dJointAttach(c, dGeomGetBody(o1), dGeomGetBody(o2));
+	}
+}
+
 void stepWorld() {
 
-	//	Loop:
 	//		Apply forces to the bodies as necessary.
 	//		Adjust the joint parameters as necessary.
 	//		Call collision detection.
+	dSpaceCollide(space, NULL, collisionCallback);
 	//		Create a contact joint for every collision point, and put it in the contact joint group.
 	//		Take a simulation step.
+	dWorldStep(wid,STEP_SIZE);
 	//		Remove all joints in the contact joint group.
 
 }
@@ -43,28 +67,36 @@ void keyHandler(unsigned char c, int a, int b) {
 		break;
 	}
 }
-
-void destroyWorld(dWorldID wid) {
+void destroyWorld() {
 
 	//	Destroy the dynamics and collision worlds.
 	dWorldDestroy (wid);
 
 }
 
-dWorldID initWorld() {
+
+void initWorld() {
 
 	//	Create a dynamics world.
-	dWorldID id = dWorldCreate();
+	wid = dWorldCreate();
 	/// gravity
-	dWorldSetGravity(id, 0, GRAVITY_ACC, 0);
+	dWorldSetGravity(wid, 0, GRAVITY_ACC, 0);
 	/// space
-	const dSpaceID space = dHashSpaceCreate(0);
+	space = dHashSpaceCreate(0);
 	/// floor
 	dCreatePlane(space,0,1,0,0);
 
 	//	Create bodies in the dynamics world.
+	/// simple sphere
+	bid = dBodyCreate(wid);
+	dGeomID gid = dCreateSphere(space, 1);
+	static dMass mass;
+	dMassSetBox(&mass,1,1,1,1);
+	dBodySetMass(bid, &mass);
+	dGeomSetBody(gid, bid);
 
 	//	Set the state (position etc) of all bodies.
+	dBodySetPosition(bid,0,10,0);
 
 	//	Create joints in the dynamics world.
 
@@ -73,10 +105,10 @@ dWorldID initWorld() {
 	//	Set the parameters of all joints.
 
 	//	Create a collision world and collision geometry objects, as necessary.
+	// ??? already done ???
 
 	//	Create a joint group to hold the contact joints.
-
-	return id;
+	contactJointGroupID = dJointGroupCreate(1000);
 }
 
 int main(int pargc, char** argv) {
@@ -94,8 +126,6 @@ int main(int pargc, char** argv) {
 	glutDisplayFunc(renderScene);
 	glutKeyboardFunc(keyHandler);
 
-	// setup world
-
 	// lighting
 	glClearColor(1,1,1,1);
 	glEnable(GL_LIGHT0);
@@ -108,13 +138,13 @@ int main(int pargc, char** argv) {
 
 	// world contents
 	dInitODE();
-	dWorldID wid = initWorld();
+	initWorld();
 
 	// enter GLUT event processing cycle
 	glutMainLoop();
 
 	// destroy world
-	destroyWorld(wid);
+	destroyWorld();
 
 	return 1;
 
