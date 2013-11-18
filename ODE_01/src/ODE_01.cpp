@@ -14,6 +14,7 @@
 
 #include "Constants.h"
 
+
 dWorldID wid;
 dBodyID bid;
 dJointGroupID contactJointGroupID;
@@ -31,7 +32,7 @@ void collisionCallback(void *data, dGeomID o1, dGeomID o2) {
 	// collect collision info
 	const int maxC = 10;
 	dContactGeom contact[maxC];
-	const int c = dCollide(o1, o2, maxC, contact, 0);
+	const int c = dCollide(o1, o2, maxC, contact, (int)sizeof(dContact));
 
 	// create collision joints
 	for (int i = 0; i < c; i++) {
@@ -49,7 +50,7 @@ void stepWorld() {
 	//		Apply forces to the bodies as necessary.
 	//		Adjust the joint parameters as necessary.
 	//		Call collision detection.
-	dSpaceCollide(space, NULL, collisionCallback);
+//	dSpaceCollide(space, NULL, collisionCallback);
 	//		Create a contact joint for every collision point, and put it in the contact joint group.
 	//		Take a simulation step.
 	dWorldStep(wid, STEP_SIZE);
@@ -104,56 +105,69 @@ int main(int pargc, char** argv) {
 
 	// init ogre
 	/// Create root
-	mRoot = new Ogre::Root("", "", "");
+	mRoot = new Ogre::Root("", "ogre.cfg", "ogre.log");
 
 	// Load the OpenGL RenderSystem and the Octree SceneManager plugins
-	std::string pluginPath = "/usr/lib/i386-linux-gnu/OGRE-1.7.4/";
+	std::string pluginPath = "/usr/lib/i386-linux-gnu/OGRE-1.8.0/";
 	mRoot->loadPlugin(pluginPath + "RenderSystem_GL");
+	mRoot->loadPlugin(pluginPath + "Plugin_BSPSceneManager");
+	mRoot->loadPlugin(pluginPath + "Plugin_PCZSceneManager");
+	mRoot->loadPlugin(pluginPath + "Plugin_OctreeZone");
 	mRoot->loadPlugin(pluginPath + "Plugin_OctreeSceneManager");
+	// mRoot->loadPlugin(pluginPath + "Plugin_ParticleFX0");
 
-	// configure the openGL / video settings
-	Ogre::RenderSystem* rs = mRoot->getRenderSystemByName("OpenGL Rendering Subsystem");
-	if(!(rs->getName() == "OpenGL Rendering Subsystem"))
-	{
-	    return false; //No RenderSystem found
-	}
-	// configure our RenderSystem
+	mRoot->restoreConfig() || mRoot->showConfigDialog();
+//	// configure the openGL / video settings
+//	Ogre::RenderSystem* rs = mRoot->getRenderSystemByName("OpenGL Rendering Subsystem");
+//	if(!(rs->getName() == "OpenGL Rendering Subsystem"))
+//	{
+//	    return false; //No RenderSystem found
+//	}
+//
+//
+//	rs->setConfigOption("Full Screen", "No");
+//	rs->setConfigOption("VSync", "No");
+//	rs->setConfigOption("Video Mode", "640 x  480");
+//	rs->setConfigOption("sRGB Gamma Conversion", "No");
+//	rs->setConfigOption("RTT Preferred Mode", "FBO");
+//	rs->setConfigOption("FSAA", "No");
+//	rs->setConfigOption("Display Frequency", "58 MHz");
+//	mRoot->setRenderSystem(rs);
 
-	//////////////// AAAAAAAAAAAAAAAAAa
-
-	rs->setConfigOption("Full Screen", "No");
-	rs->setConfigOption("VSync", "No");
-	std::string x = rs->getConfigOptions()["Video Mode"].currentValue;
-	rs->setConfigOption("Video Mode", rs->getConfigOptions()["Video Mode"].currentValue);
-	mRoot->setRenderSystem(rs);
+	// initialize ogre
+	mWindow = mRoot->initialise(true, "My amazing simulation");
 
 	/// create generic scene manager
 	mSceneMgr = mRoot->createSceneManager(Ogre::ST_GENERIC);
+
 	/// create camera
-	mCamera = mSceneMgr->createCamera("Cam");
-	mCamera->setPosition(Ogre::Vector3(0, 0, 80));
-	mCamera->lookAt(Ogre::Vector3(0, 5, 0));
-	mCamera->setNearClipDistance(5);
+	mCamera = mSceneMgr->createCamera("My Cam");
+	mCamera->setPosition(Ogre::Vector3(0, 0, -10));
+	mCamera->lookAt(Ogre::Vector3(0, 0, 0));
+	mCamera->setNearClipDistance(1);
+	mCamera->setFarClipDistance(1000);
+
+	/// create window/viewport
+	Ogre::Viewport* vp = mWindow->addViewport(mCamera);
+	vp->setBackgroundColour(Ogre::ColourValue(0.5, 0.5, 1));
+	// Alter the camera aspect ratio to match the viewport
+	mCamera->setAspectRatio(
+			Ogre::Real(vp->getActualWidth())
+			/ Ogre::Real(vp->getActualHeight()));
+
+
+	Ogre::ResourceGroupManager::getSingleton().initialiseAllResourceGroups();
 
 	/// light
 	mSceneMgr->setAmbientLight(Ogre::ColourValue(0.5, 0.5, 0.5));
 	Ogre::Light* l = mSceneMgr->createLight("MainLight");
 	l->setPosition(20,80,50);
 
-	/// create window/viewport
-	mWindow = mRoot->initialise(true, "My amazing simulation");
-	Ogre::Viewport* vp = mWindow->addViewport(mCamera);
-	vp->setBackgroundColour(Ogre::ColourValue(1, 1, 1));
-
-	/// Alter the camera aspect ratio to match the viewport
-	mCamera->setAspectRatio(
-			Ogre::Real(vp->getActualWidth())
-			/ Ogre::Real(vp->getActualHeight()));
-
 	/// Create sphere
 	Ogre::Entity* se = mSceneMgr->createEntity("My Sphere", Ogre::SceneManager::PT_SPHERE);
 	sphereNode = mSceneMgr->getRootSceneNode()->createChildSceneNode("My Sphere Node");
 	sphereNode->attachObject(se);
+
 
 	// world contents
 	dInitODE();
@@ -161,10 +175,12 @@ int main(int pargc, char** argv) {
 
 	// enter GLUT event processing cycle
 	while( ! mWindow->isClosed()) {
-		stepWorld();
-		const float* pos = dBodyGetPosition(bid);
-		sphereNode->setPosition(pos[0], pos[1], pos[2]);
-		mRoot->renderOneFrame();
+//		stepWorld();
+//		const float* pos = dBodyGetPosition(bid);
+//		sphereNode->setPosition(pos[0], pos[1], pos[2]);
+		sphereNode->setPosition(0, 0, 0);
+		Ogre::WindowEventUtilities::messagePump();
+		mRoot->renderOneFrame(10);
 	}
 
 	// destroy world
