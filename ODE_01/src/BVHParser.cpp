@@ -20,6 +20,9 @@ string BVHParser::nextWord(ifstream & in) {
 }
 
 void BVHParser::fillChannelsArray() {
+	// count channels
+	calculateNumChan();
+	// fill array
 	channels = new double*[numChan];
 	double * * nextCPos = channels;
 	if(skeletons.empty()) {
@@ -33,13 +36,16 @@ void BVHParser::fillChannelsArray() {
 }
 
 // traverse in the order of Root then Left-to-Right children
-void BVHParser::fillChannelsArray(Skeleton * s, double * * nextCPos) {
+void BVHParser::fillChannelsArray(Skeleton * s, double * * & nextCPos) {
 	// either XYZZXY (pos + rot) or just ZXY (rot)
 	int nC = s->calculateContributingNumChan();
 	int i = nC;
 	while(i > 0) {
 		i--;
-		nextCPos[i] = s->pos + i;
+		// rot
+		if(i > 3) { nextCPos[i] = s->rot + i; }
+		// pos
+		else { nextCPos[i] = s->pos + i; }
 	}
 	nextCPos += nC;
 
@@ -62,7 +68,8 @@ void BVHParser::calculateNumChan() {
 
 void BVHParser::loadKeyframe(int index) {
 	for(int c = 0; c < numChan; c++) {
-		*(channels[c]) = keyframes[index][c];
+		double d = keyframes[index][c];
+		*(channels[c]) = d;
 	}
 }
 
@@ -70,9 +77,6 @@ void BVHParser::parse(ifstream & in) {
 	// heirarchy
 	nextWord(in); // HEIRARCHY
 	parseHierarchy(in);
-
-	// count channels
-	calculateNumChan();
 
 	// fill the chanels array
 	fillChannelsArray();
@@ -82,7 +86,6 @@ void BVHParser::parse(ifstream & in) {
 }
 
 void BVHParser::parseKeyfames(ifstream & in) {
-	double dt;	// frame duration
 
 	// MOTION
 	nextWord(in);
@@ -94,7 +97,7 @@ void BVHParser::parseKeyfames(ifstream & in) {
 
 	// Frame Time:	0.0333333
 	nextWord(in); nextWord(in);
-	in >> dt;
+	in >> frameTime;
 
 	// keep reading values adding them circularly to channels
 	// something like:  loop(i)  { in >> (*channels[i%numChan]) }
@@ -108,13 +111,8 @@ void BVHParser::parseKeyfames(ifstream & in) {
 
 void BVHParser::parseHierarchy(ifstream & in) {
 	string word;
-	while( ! in.eof()) {
-		word = nextWord(in);
-		// parse accordingly
-		if(word == "ROOT") {
-			parseRoot(in);
-		}
-	}
+	nextWord(in); // ROOT
+	parseRoot(in);
 }
 
 // Same as skeleton, but this is the top level

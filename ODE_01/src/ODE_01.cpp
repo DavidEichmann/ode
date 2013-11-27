@@ -16,17 +16,12 @@
 
 #include "Constants.h"
 #include "BVHParser.h"
+#include "Procedural.h"
+#include "ODE_01.h"
 
 dWorldID wid;
-static dBodyID bid;
 dJointGroupID contactJointGroupID;
-dSpaceID space;
 
-Ogre::Root *mRoot;
-Ogre::Camera* mCamera;
-Ogre::SceneManager* mSceneMgr;
-Ogre::RenderWindow* mWindow;
-Ogre::SceneNode* sphereNode;
 
 void collisionCallback(void *data, dGeomID o1, dGeomID o2) {
 
@@ -59,187 +54,288 @@ void collisionCallback(void *data, dGeomID o1, dGeomID o2) {
 	}
 }
 
-/**
- * dt: target simulation time
- * returns the time actually simulated
- */
-double stepWorld(double dt) {
 
-	//		Take simulation step (consists of potentially many ode world steps).
-	double timeSim = 0;
-	while (timeSim < dt) {
-		//		Apply forces to the bodies as necessary.
-		//		Adjust the joint parameters as necessary.
-		//		Call collision detection.
-		dSpaceCollide(space, NULL, collisionCallback);
-		//		Create a contact joint for every collision point, and put it in the contact joint group.
-		dWorldStep(wid, STEP_SIZE);
-		timeSim += STEP_SIZE;
+class Main {
 
-		//		Remove all joints in the contact joint group.
-		dJointGroupEmpty(contactJointGroupID);
+public:
+
+	static dBodyID bid;
+	dSpaceID space;
+
+	Ogre::Root *mRoot;
+	Ogre::Camera* mCamera;
+	Ogre::SceneManager* mSceneMgr;
+	Ogre::RenderWindow* mWindow;
+	Ogre::SceneNode* sphereNode;
+
+	BVHParser * bvh;
+
+
+	/**
+	 * dt: target simulation time
+	 * returns the time actually simulated
+	 */
+	double stepWorld(double dt) {
+
+		//		Take simulation step (consists of potentially many ode world steps).
+		double timeSim = 0;
+		while (timeSim < dt) {
+			//		Apply forces to the bodies as necessary.
+			//		Adjust the joint parameters as necessary.
+			//		Call collision detection.
+			dSpaceCollide(space, NULL, &collisionCallback);
+			//		Create a contact joint for every collision point, and put it in the contact joint group.
+			dWorldStep(wid, STEP_SIZE);
+			timeSim += STEP_SIZE;
+
+			//		Remove all joints in the contact joint group.
+			dJointGroupEmpty(contactJointGroupID);
+		}
+
+		return timeSim;
+
 	}
 
-	return timeSim;
+	void destroyWorld() {
 
-}
+		//	Destroy the dynamics and collision worlds.
+		dWorldDestroy(wid);
 
-void destroyWorld() {
+	}
 
-	//	Destroy the dynamics and collision worlds.
-	dWorldDestroy(wid);
+	void initWorld() {
 
-}
+		//	Create a dynamics world.
+		wid = dWorldCreate();
+		/// gravity
+		dWorldSetGravity(wid, 0, GRAVITY_ACC, 0);
+		/// space
+		space = dHashSpaceCreate(0);
+		/// floor
+		dCreatePlane(space, 0, 1, 0, 0);
 
-void initWorld() {
+		//	Create bodies in the dynamics world.
+		/// simple sphere
+		bid = dBodyCreate(wid);
+		static dGeomID gid = dCreateSphere(space, 1);
+		static dMass mass;
+		dMassSetSphere(&mass, 1, 1);
+		dBodySetMass(bid, &mass);
+		dGeomSetBody(gid, bid);
 
-	//	Create a dynamics world.
-	wid = dWorldCreate();
-	/// gravity
-	dWorldSetGravity(wid, 0, GRAVITY_ACC, 0);
-	/// space
-	space = dHashSpaceCreate(0);
-	/// floor
-	dCreatePlane(space, 0, 1, 0, 0);
+		//	Set the state (position etc) of all bodies.
+		dBodySetPosition(bid, 0, 50, 0);
 
-	//	Create bodies in the dynamics world.
-	/// simple sphere
-	bid = dBodyCreate(wid);
-	static dGeomID gid = dCreateSphere(space, 1);
-	static dMass mass;
-	dMassSetSphere(&mass, 1, 1);
-	dBodySetMass(bid, &mass);
-	dGeomSetBody(gid, bid);
+		//	Create joints in the dynamics world.
 
-	//	Set the state (position etc) of all bodies.
-	dBodySetPosition(bid, 0, 50, 0);
+		//	Attach the joints to the bodies.
 
-	//	Create joints in the dynamics world.
+		//	Set the parameters of all joints.
 
-	//	Attach the joints to the bodies.
+		//	Create a collision world and collision geometry objects, as necessary.
+		// ??? already done ???
 
-	//	Set the parameters of all joints.
+		//	Create a joint group to hold the contact joints.
+		contactJointGroupID = dJointGroupCreate(1000);
+	}
 
-	//	Create a collision world and collision geometry objects, as necessary.
-	// ??? already done ???
+	void realizeSkeleton(Skeleton * s) {
 
-	//	Create a joint group to hold the contact joints.
-	contactJointGroupID = dJointGroupCreate(1000);
-}
+		// generate node and mesh and attach to parent node else root
+		/// Create sphere
+		Ogre::MeshPtr seM = Procedural::SphereGenerator().setRadius(3).realizeMesh();
+		Ogre::Entity* se = mSceneMgr->createEntity(seM);
+	//	se->setMaterialName("Examples/OgreLogo");
+		Ogre::SceneNode* node;
+		if(s->hasParent() && s->parent->hasOgreNode()) {
+			node = s->parent->ogreNode->createChildSceneNode();
+		}
+		else {
+			node = mSceneMgr->getRootSceneNode()->createChildSceneNode();
+		}
+		node->attachObject(se);
+		s->ogreNode = node;
+
+		// recurse to children
+		realizeSkeletons(& s->children);
+
+	}
+
+	void realizeSkeletons(vector<Skeleton*> * ss = NULL) {
+		if(ss == NULL) { ss = & bvh->skeletons; }
+		for(vector<Skeleton*>::iterator it = (*ss).begin(); it != (*ss).end(); it++) {
+			realizeSkeleton(*it);
+		}
+		if(ss == & bvh->skeletons) {
+			updateSkeletons();
+		}
+	}
+
+	void updateSkeleton(Skeleton * s) {
+		// update pos and rot
+		const double * xyz;
+		xyz = s->getPosXYZ();
+		s->ogreNode->setPosition(xyz[0], xyz[1], xyz[2]);
+		xyz = s->getRotXYZ();
+		Ogre::Quaternion qX = Ogre::Quaternion(Ogre::Math::DegreesToRadians(xyz[0]),1,0,0);
+		Ogre::Quaternion qY = Ogre::Quaternion(Ogre::Math::DegreesToRadians(xyz[1]),0,1,0);
+		Ogre::Quaternion qZ = Ogre::Quaternion(Ogre::Math::DegreesToRadians(xyz[2]),0,0,1);
+		// apply rotations in BVH order: ZXY
+		Ogre::Quaternion q = qZ * qX * qY;
+		s->ogreNode->setOrientation(q);
+
+		// recurse to children
+		for (vector<Skeleton*>::iterator it = s->children.begin(); it != s->children.end(); it++) {
+			updateSkeleton(*it);
+		}
+	}
+
+	void updateSkeletons() {
+		for (vector<Skeleton*>::iterator it = bvh->skeletons.begin(); it != bvh->skeletons.end(); it++) {
+			updateSkeleton(*it);
+		}
+	}
+
+	int run() {
+		bvh = new BVHParser("/home/david/Desktop/yoga_gym_yoga3_1_c3d.bvh");
+		// init ogre
+		/// Create root
+		mRoot = new Ogre::Root("", "ogre.cfg", "ogre.log");
+
+		// Load the OpenGL RenderSystem and the Octree SceneManager plugins
+		std::string pluginPath = "/usr/lib/x86_64-linux-gnu/OGRE-1.8.0/";
+		mRoot->loadPlugin(pluginPath + "RenderSystem_GL");
+		mRoot->loadPlugin(pluginPath + "Plugin_BSPSceneManager");
+		mRoot->loadPlugin(pluginPath + "Plugin_PCZSceneManager");
+		mRoot->loadPlugin(pluginPath + "Plugin_OctreeZone");
+		mRoot->loadPlugin(pluginPath + "Plugin_OctreeSceneManager");
+		// mRoot->loadPlugin(pluginPath + "Plugin_ParticleFX0");
+
+		mRoot->addResourceLocation("../Media", "FileSystem", "Group", true);
+
+		mRoot->restoreConfig() || mRoot->showConfigDialog();
+
+		// initialize ogre
+		mWindow = mRoot->initialise(true, "My amazing simulation");
+
+		/// create generic scene manager
+		mSceneMgr = mRoot->createSceneManager(Ogre::ST_GENERIC);
+
+		/// create camera
+		mCamera = mSceneMgr->createCamera("My Cam");
+		mCamera->setPosition(Ogre::Vector3(500, 500, 0));
+		mCamera->lookAt(Ogre::Vector3(0, 100, 0));
+		mCamera->setNearClipDistance(5);
+		mCamera->setFarClipDistance(10000);
+
+		/// create window/viewport
+		Ogre::Viewport* vp = mWindow->addViewport(mCamera);
+		vp->setBackgroundColour(Ogre::ColourValue(0.5, 0.5, 1));
+		// Alter the camera aspect ratio to match the viewport
+		mCamera->setAspectRatio(
+				Ogre::Real(vp->getActualWidth())
+						/ Ogre::Real(vp->getActualHeight()));
+
+		Ogre::ResourceGroupManager::getSingleton().initialiseAllResourceGroups();
+
+		/// light
+		mSceneMgr->setAmbientLight(Ogre::ColourValue(0.5, 0.5, 0.5));
+		Ogre::Light* l = mSceneMgr->createLight("MainLight");
+		l->setPosition(20, 80, 50);
+
+
+
+
+
+		// FOR NOW JUST RENDER ANNIMATION
+		realizeSkeletons(); // realize the parsed skeletons
+
+		// setup timing variables
+		boost::chrono::system_clock::time_point it = boost::chrono::system_clock::now(); 	// initial time
+		double dt;
+		int f;
+		// main loop
+		while(!mWindow->isClosed()) {
+			// get the current frame
+			dt = ((boost::chrono::nanoseconds) (boost::chrono::system_clock::now() - it)).count() / ((double) 1000000000);
+
+			// step the world
+			f = (int) (dt / bvh->frameTime);
+			cout << f << endl;
+			if(f >= bvh->numFrames) { break; }
+			bvh->loadKeyframe(f);
+
+			// update the position of all bones
+			updateSkeletons();
+
+			// Render the world
+			Ogre::WindowEventUtilities::messagePump();
+			mRoot->renderOneFrame(10);
+		}
+
+		// destroy world
+		destroyWorld();
+
+		return 0;
+
+	/*
+
+
+
+
+
+		/// Create sphere
+		string name = "sphere";
+		Ogre::MeshPtr seM = Procedural::SphereGenerator().setRadius(10).realizeMesh(name);
+		Ogre::Entity* se = mSceneMgr->createEntity(seM);
+		se->setMaterialName("Examples/OgreLogo");
+		sphereNode = mSceneMgr->getRootSceneNode()->createChildSceneNode(
+				"My Sphere Node");
+		sphereNode->attachObject(se);
+
+		// world contents
+		dInitODE();
+		initWorld();
+
+		// setup timing variables
+		boost::chrono::system_clock::time_point it,ft; 	// initial time, final time (between frames)
+		ft = boost::chrono::system_clock::now();
+		double dt;		// time delta of the frame
+		double simTOffset = 0;	// real time (seconds) - time in the simulation
+		// mian loop
+		while (!mWindow->isClosed()) {
+			// get the time and time delta
+			it = ft;
+			ft = boost::chrono::system_clock::now();
+			dt = ((boost::chrono::nanoseconds) (ft - it)).count() / ((double) 1000000000);
+			simTOffset += dt;
+
+
+			// step the world
+			simTOffset -= stepWorld(simTOffset);
+
+			// update the position of the sphere (from ODE world to OGRE world)
+			const dReal* pos = dBodyGetPosition(bid);
+			dReal scale = 7;
+			sphereNode->setPosition(scale * pos[0], scale * pos[1], scale * pos[2]);
+
+			// Render the world
+			Ogre::WindowEventUtilities::messagePump();
+			mRoot->renderOneFrame(10);
+		}
+
+		// destroy world
+		destroyWorld();
+
+		return 0;
+	//*/
+
+	}
+};
+
+
 
 int main(int pargc, char** argv) {
-
-	BVHParser p = BVHParser("/home/david/Desktop/yoga_gym_yoga3_1_c3d.bvh");
-	Skeleton * s = p.skeletons[0];
-	do {
-		std::cout << s->name << std::endl;
-		//s = s->children[0];
-		s = s->children[min(1,(int) s->children.size()-1)];
-	} while(s->children.size() > 0);
-	return 0;
-
-	// init ogre
-	/// Create root
-	mRoot = new Ogre::Root("", "ogre.cfg", "ogre.log");
-
-	// Load the OpenGL RenderSystem and the Octree SceneManager plugins
-	std::string pluginPath = "/usr/lib/x86_64-linux-gnu/OGRE-1.8.0/";
-	mRoot->loadPlugin(pluginPath + "RenderSystem_GL");
-	mRoot->loadPlugin(pluginPath + "Plugin_BSPSceneManager");
-	mRoot->loadPlugin(pluginPath + "Plugin_PCZSceneManager");
-	mRoot->loadPlugin(pluginPath + "Plugin_OctreeZone");
-	mRoot->loadPlugin(pluginPath + "Plugin_OctreeSceneManager");
-	// mRoot->loadPlugin(pluginPath + "Plugin_ParticleFX0");
-
-	mRoot->addResourceLocation("../Media", "FileSystem", "Group", true);
-
-	mRoot->restoreConfig() || mRoot->showConfigDialog();
-//	// configure the openGL / video settings
-//	Ogre::RenderSystem* rs = mRoot->getRenderSystemByName("OpenGL Rendering Subsystem");
-//	if(!(rs->getName() == "OpenGL Rendering Subsystem"))
-//	{
-//	    return false; //No RenderSystem found
-//	}
-//
-//
-//	rs->setConfigOption("Full Screen", "No");
-//	rs->setConfigOption("VSync", "No");
-//	rs->setConfigOption("Video Mode", "640 x  480");
-//	rs->setConfigOption("sRGB Gamma Conversion", "No");
-//	rs->setConfigOption("RTT Preferred Mode", "FBO");
-//	rs->setConfigOption("FSAA", "No");
-//	rs->setConfigOption("Display Frequency", "58 MHz");
-//	mRoot->setRenderSystem(rs);
-
-	// initialize ogre
-	mWindow = mRoot->initialise(true, "My amazing simulation");
-
-	/// create generic scene manager
-	mSceneMgr = mRoot->createSceneManager(Ogre::ST_GENERIC);
-
-	/// create camera
-	mCamera = mSceneMgr->createCamera("My Cam");
-	mCamera->setPosition(Ogre::Vector3(0, 300, 1000));
-	mCamera->lookAt(Ogre::Vector3(0, 300, 0));
-	mCamera->setNearClipDistance(5);
-	mCamera->setFarClipDistance(10000);
-
-	/// create window/viewport
-	Ogre::Viewport* vp = mWindow->addViewport(mCamera);
-	vp->setBackgroundColour(Ogre::ColourValue(0.5, 0.5, 1));
-	// Alter the camera aspect ratio to match the viewport
-	mCamera->setAspectRatio(
-			Ogre::Real(vp->getActualWidth())
-					/ Ogre::Real(vp->getActualHeight()));
-
-	Ogre::ResourceGroupManager::getSingleton().initialiseAllResourceGroups();
-
-	/// light
-	mSceneMgr->setAmbientLight(Ogre::ColourValue(0.5, 0.5, 0.5));
-	Ogre::Light* l = mSceneMgr->createLight("MainLight");
-	l->setPosition(20, 80, 50);
-
-	/// Create sphere
-	Ogre::Entity* se = mSceneMgr->createEntity("My Sphere",
-			Ogre::SceneManager::PT_SPHERE);
-	sphereNode = mSceneMgr->getRootSceneNode()->createChildSceneNode(
-			"My Sphere Node");
-	sphereNode->attachObject(se);
-
-	// world contents
-	dInitODE();
-	initWorld();
-
-	// setup timing variables
-	boost::chrono::system_clock::time_point it,ft; 	// initial time, final time (between frames)
-	ft = boost::chrono::system_clock::now();
-	double dt;		// time delta of the frame
-	double simTOffset = 0;	// real time (seconds) - time in the simulation
-	// mian loop
-	while (!mWindow->isClosed()) {
-		// get the time and time delta
-		it = ft;
-		ft = boost::chrono::system_clock::now();
-		dt = ((boost::chrono::nanoseconds) (ft - it)).count() / ((double) 1000000000);
-		simTOffset += dt;
-
-
-		// step the world
-		simTOffset -= stepWorld(simTOffset);
-
-		// update the position of the sphere (from ODE world to OGRE world)
-		const dReal* pos = dBodyGetPosition(bid);
-		dReal scale = 7;
-		sphereNode->setPosition(scale * pos[0], scale * pos[1], scale * pos[2]);
-
-		// Render the world
-		Ogre::WindowEventUtilities::messagePump();
-		mRoot->renderOneFrame(10);
-	}
-
-	// destroy world
-	destroyWorld();
-
-	return 1;
-
+	Main m = Main();
+	return m.run();
 }

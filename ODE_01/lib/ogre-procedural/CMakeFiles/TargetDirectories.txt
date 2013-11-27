@@ -1,4 +1,0 @@
-/home/david/git/ODE_01/ODE_01/lib/ogre-procedural/library/CMakeFiles/OgreProcedural.dir
-/home/david/git/ODE_01/ODE_01/lib/ogre-procedural/samples/extrusion/CMakeFiles/Sample_Extrusion.dir
-/home/david/git/ODE_01/ODE_01/lib/ogre-procedural/samples/primitives/CMakeFiles/Sample_Primitives.dir
-/home/david/git/ODE_01/ODE_01/lib/ogre-procedural/docs/CMakeFiles/doc.dir

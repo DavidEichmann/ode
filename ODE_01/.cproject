@@ -27,7 +27,10 @@
 							<tool id="cdt.managedbuild.tool.gnu.cross.cpp.compiler.1157136588" name="Cross G++ Compiler" superClass="cdt.managedbuild.tool.gnu.cross.cpp.compiler">
 								<option id="gnu.cpp.compiler.option.optimization.level.611119010" name="Optimization Level" superClass="gnu.cpp.compiler.option.optimization.level" value="gnu.cpp.compiler.optimization.level.none" valueType="enumerated"/>
 								<option id="gnu.cpp.compiler.option.debugging.level.1599597093" name="Debug Level" superClass="gnu.cpp.compiler.option.debugging.level" value="gnu.cpp.compiler.debugging.level.max" valueType="enumerated"/>
-								<option id="gnu.cpp.compiler.option.include.paths.1986282091" name="Include paths (-I)" superClass="gnu.cpp.compiler.option.include.paths"/>
+								<option id="gnu.cpp.compiler.option.include.paths.1986282091" name="Include paths (-I)" superClass="gnu.cpp.compiler.option.include.paths" valueType="includePath">
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/ODE_01/src/OgreProcedural/include}&quot;"/>
+									<listOptionValue builtIn="false" value="/usr/include/OGRE"/>
+								</option>
 								<option id="gnu.cpp.compiler.option.preprocessor.def.1488384195" name="Defined symbols (-D)" superClass="gnu.cpp.compiler.option.preprocessor.def" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="dDOUBLE"/>
 								</option>
@@ -48,6 +51,7 @@
 								<option id="gnu.cpp.link.option.paths.63416567" name="Library search path (-L)" superClass="gnu.cpp.link.option.paths" valueType="libPaths">
 									<listOptionValue builtIn="false" value="/usr/lib"/>
 									<listOptionValue builtIn="false" value="/usr/lib/i386-linux-gnu"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/ODE_01/lib/ogre-procedural/lib}&quot;"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.cpp.linker.input.1341880073" superClass="cdt.managedbuild.tool.gnu.cpp.linker.input">
 									<additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>
