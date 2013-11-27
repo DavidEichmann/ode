@@ -15,6 +15,7 @@
 #include <OIS/OIS.h>
 
 #include "Constants.h"
+#include "BVHParser.h"
 
 dWorldID wid;
 static dBodyID bid;
@@ -127,6 +128,15 @@ void initWorld() {
 }
 
 int main(int pargc, char** argv) {
+
+	BVHParser p = BVHParser("/home/david/Desktop/yoga_gym_yoga3_1_c3d.bvh");
+	Skeleton * s = p.skeletons[0];
+	do {
+		std::cout << s->name << std::endl;
+		//s = s->children[0];
+		s = s->children[min(1,(int) s->children.size()-1)];
+	} while(s->children.size() > 0);
+	return 0;
 
 	// init ogre
 	/// Create root
