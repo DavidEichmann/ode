@@ -53,7 +53,6 @@ int Skeleton::calculateNumChan() {
 }
 
 int Skeleton::calculateContributingNumChan() {
-	//cout << Skeleton::END_SITE << endl;
 	if(name == Skeleton::END_SITE) { return 0; }
 	return hasPosChan?6:3;
 }

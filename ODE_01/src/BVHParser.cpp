@@ -39,13 +39,19 @@ void BVHParser::fillChannelsArray() {
 void BVHParser::fillChannelsArray(Skeleton * s, double * * & nextCPos) {
 	// either XYZZXY (pos + rot) or just ZXY (rot)
 	int nC = s->calculateContributingNumChan();
-	int i = nC;
-	while(i > 0) {
-		i--;
-		// rot
-		if(i > 3) { nextCPos[i] = s->rot + i; }
-		// pos
-		else { nextCPos[i] = s->pos + i; }
+	bool hasPos = s->hasPosChan;
+	if(hasPos) {
+		for(int i = 0; i < 3; i++) {
+			nextCPos[i] = s->pos + i;
+		}
+		for(int i = 0; i < 3; i++) {
+			nextCPos[i+3] =  s->rot + i;
+		}
+	}
+	else {
+		for(int i = 0; i < 3; i++) {
+			nextCPos[i] =  s->rot + i;
+		}
 	}
 	nextCPos += nC;
 
@@ -78,14 +84,14 @@ void BVHParser::parse(ifstream & in) {
 	nextWord(in); // HEIRARCHY
 	parseHierarchy(in);
 
-	// fill the chanels array
-	fillChannelsArray();
-
 	// parse the keyframes
 	parseKeyfames(in);
 }
 
 void BVHParser::parseKeyfames(ifstream & in) {
+
+	// fill the chanels array
+	fillChannelsArray();
 
 	// MOTION
 	nextWord(in);
@@ -100,9 +106,13 @@ void BVHParser::parseKeyfames(ifstream & in) {
 	in >> frameTime;
 
 	// keep reading values adding them circularly to channels
-	// something like:  loop(i)  { in >> (*channels[i%numChan]) }
 	for(int f = 0; f < numFrames; f++) {
 		keyframes[f] = new double[numChan];
+
+
+		f++;
+		f--;
+
 		for(int c = 0; c < numChan; c++) {
 			in >> keyframes[f][c];
 		}

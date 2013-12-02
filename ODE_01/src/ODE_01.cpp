@@ -142,10 +142,7 @@ public:
 	void realizeSkeleton(Skeleton * s) {
 
 		// generate node and mesh and attach to parent node else root
-		/// Create sphere
-		Ogre::MeshPtr seM = Procedural::SphereGenerator().setRadius(3).realizeMesh();
-		Ogre::Entity* se = mSceneMgr->createEntity(seM);
-	//	se->setMaterialName("Examples/OgreLogo");
+		Ogre::MeshPtr seM;
 		Ogre::SceneNode* node;
 		if(s->hasParent() && s->parent->hasOgreNode()) {
 			node = s->parent->ogreNode->createChildSceneNode();
@@ -153,7 +150,45 @@ public:
 		else {
 			node = mSceneMgr->getRootSceneNode()->createChildSceneNode();
 		}
-		node->attachObject(se);
+		const double * xyz = s->getPosXYZ();
+		node->setPosition(xyz[0],xyz[1],xyz[2]);	// this is the OFFSET from the bvh file
+		/// Create sphere if root joint or height 0 bone
+		Ogre::Vector3 pos = Ogre::Vector3(xyz[0],xyz[1],xyz[2]);
+		double height = pos.length();
+		if(! s->hasParent() || height == 0) {
+			seM = Procedural::SphereGenerator().setRadius(2).realizeMesh();
+			Ogre::Entity* se = mSceneMgr->createEntity(seM);
+			node->attachObject(se);
+		}
+		// else create a capsle bone attached to parent's Scene node
+		else {
+			Procedural::CapsuleGenerator gen = Procedural::CapsuleGenerator();
+			gen.setRadius(1);
+			gen.setHeight(height);
+			//Ogre::Quaternion rotZ = Ogre::Quaternion(Ogre::Vector3::UNIT_Y.angleBetween(pos), Ogre::Vector3::UNIT_Z);
+			//Ogre::Quaternion rotY = Ogre::Quaternion(Ogre::Math::ATan2(xyz[0],xyz[2]), Ogre::Vector3::UNIT_Y);
+			//gen.setOrientation(rotZ * rotY);
+			Ogre::Radian a = Ogre::Vector3::UNIT_Y.angleBetween(pos);
+			Ogre::Vector3 axis = Ogre::Vector3::UNIT_Y.crossProduct(pos).normalisedCopy();
+			Ogre::Quaternion rot = Ogre::Quaternion(a, axis);
+			if(axis.isZeroLength()) {
+				if(a == Ogre::Radian(0)) {
+					rot = Ogre::Quaternion(Ogre::Radian(0), Ogre::Vector3::UNIT_X);
+				}
+				else {
+					rot = Ogre::Quaternion(a, Ogre::Vector3::UNIT_X);
+				}
+			}
+
+			gen.setPosition(rot * Ogre::Vector3(0,height/2,0));
+			gen.setOrientation(rot);
+//			// orientate down -Z so that the SceneNode lookAt function will take care
+//			// of updating orientation
+//			gen.setOrientation(Ogre::Quaternion(Ogre::Radian(Ogre::Math::PI/2), Ogre::Vector3::UNIT_X));
+			seM = gen.realizeMesh();
+			Ogre::Entity* se = mSceneMgr->createEntity(seM);
+			s->parent->ogreNode->attachObject(se);
+		}
 		s->ogreNode = node;
 
 		// recurse to children
@@ -173,15 +208,16 @@ public:
 
 	void updateSkeleton(Skeleton * s) {
 		// update pos and rot
-		const double * xyz;
-		xyz = s->getPosXYZ();
-		s->ogreNode->setPosition(xyz[0], xyz[1], xyz[2]);
-		xyz = s->getRotXYZ();
-		Ogre::Quaternion qX = Ogre::Quaternion(Ogre::Math::DegreesToRadians(xyz[0]),1,0,0);
-		Ogre::Quaternion qY = Ogre::Quaternion(Ogre::Math::DegreesToRadians(xyz[1]),0,1,0);
-		Ogre::Quaternion qZ = Ogre::Quaternion(Ogre::Math::DegreesToRadians(xyz[2]),0,0,1);
+		const double * posXYZ;
+		posXYZ = s->getPosXYZ();
+		s->ogreNode->setPosition(posXYZ[0], posXYZ[1], posXYZ[2]);
+		const double * xyz = s->getRotXYZ();
+		Ogre::Quaternion qX = Ogre::Quaternion(Ogre::Radian(Ogre::Math::DegreesToRadians(xyz[0])),Ogre::Vector3::UNIT_X);
+		Ogre::Quaternion qY = Ogre::Quaternion(Ogre::Radian(Ogre::Math::DegreesToRadians(xyz[1])),Ogre::Vector3::UNIT_Y);
+		Ogre::Quaternion qZ = Ogre::Quaternion(Ogre::Radian(Ogre::Math::DegreesToRadians(xyz[2])),Ogre::Vector3::UNIT_Z);
 		// apply rotations in BVH order: ZXY
-		Ogre::Quaternion q = qZ * qX * qY;
+		//Ogre::Quaternion q = qZ * qX * qY;
+		Ogre::Quaternion q = qY * qX * qZ;
 		s->ogreNode->setOrientation(q);
 
 		// recurse to children
@@ -198,6 +234,7 @@ public:
 
 	int run() {
 		bvh = new BVHParser("/home/david/Desktop/yoga_gym_yoga3_1_c3d.bvh");
+		//bvh = new BVHParser("/home/david/Desktop/b_Boxer.shadow17_1_s.bvh");
 		// init ogre
 		/// Create root
 		mRoot = new Ogre::Root("", "ogre.cfg", "ogre.log");
@@ -223,7 +260,7 @@ public:
 
 		/// create camera
 		mCamera = mSceneMgr->createCamera("My Cam");
-		mCamera->setPosition(Ogre::Vector3(500, 500, 0));
+		mCamera->setPosition(Ogre::Vector3(300, 500, 300));
 		mCamera->lookAt(Ogre::Vector3(0, 100, 0));
 		mCamera->setNearClipDistance(5);
 		mCamera->setFarClipDistance(10000);
@@ -264,6 +301,13 @@ public:
 			cout << f << endl;
 			if(f >= bvh->numFrames) { break; }
 			bvh->loadKeyframe(f);
+			//bvh->loadKeyframe(0);
+			double h = 100;
+			double d = 300;
+			double s = 2;
+			mCamera->setPosition(Ogre::Vector3(d*Ogre::Math::Sin(dt/s), h, d*Ogre::Math::Cos(dt/s)));
+			mCamera->lookAt(Ogre::Vector3(0, h, 0));
+
 
 			// update the position of all bones
 			updateSkeletons();
