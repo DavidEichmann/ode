@@ -39,8 +39,10 @@ void BVHParser::fillChannelsArray() {
 void BVHParser::fillChannelsArray(Skeleton * s, double * * & nextCPos) {
 	// either XYZZXY (pos + rot) or just ZXY (rot)
 	int nC = s->calculateContributingNumChan();
-	bool hasPos = s->hasPosChan;
-	if(hasPos) {
+	static int cBal = numChan;
+	cBal -= nC;
+	if(nC == 6) {
+		cout << "Joint with pos: " << s->name << endl;
 		for(int i = 0; i < 3; i++) {
 			nextCPos[i] = s->pos + i;
 		}
@@ -48,11 +50,17 @@ void BVHParser::fillChannelsArray(Skeleton * s, double * * & nextCPos) {
 			nextCPos[i+3] =  s->rot + i;
 		}
 	}
-	else {
+	else if (nC == 3) {
 		for(int i = 0; i < 3; i++) {
 			nextCPos[i] =  s->rot + i;
 		}
 	}
+	else {
+		cout << "Unrecognised (" << nC << " != 6 or 3) number of channels for joint: " << s->name << endl;
+	}
+
+
+
 	nextCPos += nC;
 
 	// recurse to children
@@ -108,11 +116,6 @@ void BVHParser::parseKeyfames(ifstream & in) {
 	// keep reading values adding them circularly to channels
 	for(int f = 0; f < numFrames; f++) {
 		keyframes[f] = new double[numChan];
-
-
-		f++;
-		f--;
-
 		for(int c = 0; c < numChan; c++) {
 			in >> keyframes[f][c];
 		}

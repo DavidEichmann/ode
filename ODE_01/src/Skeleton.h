@@ -24,7 +24,7 @@ public:
 	//double offset[3];
 
 	double pos[3];	// of the start of the bone (bone extends to it's childrens' pos-es)
-	double rot[3];	// relative to parent
+	double rot[3];	// rotation relative to parent
 
 	Skeleton();
 	bool hasParent();

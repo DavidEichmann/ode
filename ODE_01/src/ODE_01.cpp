@@ -215,9 +215,9 @@ public:
 		Ogre::Quaternion qX = Ogre::Quaternion(Ogre::Radian(Ogre::Math::DegreesToRadians(xyz[0])),Ogre::Vector3::UNIT_X);
 		Ogre::Quaternion qY = Ogre::Quaternion(Ogre::Radian(Ogre::Math::DegreesToRadians(xyz[1])),Ogre::Vector3::UNIT_Y);
 		Ogre::Quaternion qZ = Ogre::Quaternion(Ogre::Radian(Ogre::Math::DegreesToRadians(xyz[2])),Ogre::Vector3::UNIT_Z);
-		// apply rotations in BVH order: ZXY
-		//Ogre::Quaternion q = qZ * qX * qY;
-		Ogre::Quaternion q = qY * qX * qZ;
+		// apply rotations in BVH order: Y then X then Z
+		Ogre::Quaternion q = qZ * qX * qY;
+		//Ogre::Quaternion q = qZ;
 		s->ogreNode->setOrientation(q);
 
 		// recurse to children
@@ -233,8 +233,11 @@ public:
 	}
 
 	int run() {
-		bvh = new BVHParser("/home/david/Desktop/yoga_gym_yoga3_1_c3d.bvh");
-		//bvh = new BVHParser("/home/david/Desktop/b_Boxer.shadow17_1_s.bvh");
+
+		//bvh = new BVHParser("Data/yoga_gym_yoga3_1_c3d.bvh");
+		bvh = new BVHParser("Data/b_Boxer.shadow17_1_s.bvh");
+		//bvh = new BVHParser("Data/mgman__3cut4_2_x2d.bvh");
+
 		// init ogre
 		/// Create root
 		mRoot = new Ogre::Root("", "ogre.cfg", "ogre.log");
@@ -297,14 +300,14 @@ public:
 			dt = ((boost::chrono::nanoseconds) (boost::chrono::system_clock::now() - it)).count() / ((double) 1000000000);
 
 			// step the world
-			f = (int) (dt / bvh->frameTime);
-			cout << f << endl;
+			double speed = 1;
+			f = (int) ((dt / bvh->frameTime) * speed);
 			if(f >= bvh->numFrames) { break; }
 			bvh->loadKeyframe(f);
 			//bvh->loadKeyframe(0);
 			double h = 100;
 			double d = 300;
-			double s = 2;
+			double s = 1000;
 			mCamera->setPosition(Ogre::Vector3(d*Ogre::Math::Sin(dt/s), h, d*Ogre::Math::Cos(dt/s)));
 			mCamera->lookAt(Ogre::Vector3(0, h, 0));
 
