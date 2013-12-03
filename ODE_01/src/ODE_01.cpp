@@ -163,11 +163,8 @@ public:
 		// else create a capsle bone attached to parent's Scene node
 		else {
 			Procedural::CapsuleGenerator gen = Procedural::CapsuleGenerator();
-			gen.setRadius(1);
+			gen.setRadius(3);
 			gen.setHeight(height);
-			//Ogre::Quaternion rotZ = Ogre::Quaternion(Ogre::Vector3::UNIT_Y.angleBetween(pos), Ogre::Vector3::UNIT_Z);
-			//Ogre::Quaternion rotY = Ogre::Quaternion(Ogre::Math::ATan2(xyz[0],xyz[2]), Ogre::Vector3::UNIT_Y);
-			//gen.setOrientation(rotZ * rotY);
 			Ogre::Radian a = Ogre::Vector3::UNIT_Y.angleBetween(pos);
 			Ogre::Vector3 axis = Ogre::Vector3::UNIT_Y.crossProduct(pos).normalisedCopy();
 			Ogre::Quaternion rot = Ogre::Quaternion(a, axis);
@@ -182,11 +179,10 @@ public:
 
 			gen.setPosition(rot * Ogre::Vector3(0,height/2,0));
 			gen.setOrientation(rot);
-//			// orientate down -Z so that the SceneNode lookAt function will take care
-//			// of updating orientation
-//			gen.setOrientation(Ogre::Quaternion(Ogre::Radian(Ogre::Math::PI/2), Ogre::Vector3::UNIT_X));
 			seM = gen.realizeMesh();
+
 			Ogre::Entity* se = mSceneMgr->createEntity(seM);
+			se->setMaterialName("Examples/BeachStones");
 			s->parent->ogreNode->attachObject(se);
 		}
 		s->ogreNode = node;
@@ -281,7 +277,7 @@ public:
 		/// light
 		mSceneMgr->setAmbientLight(Ogre::ColourValue(0.5, 0.5, 0.5));
 		Ogre::Light* l = mSceneMgr->createLight("MainLight");
-		l->setPosition(20, 80, 50);
+		l->setPosition(200, 200, 50);
 
 
 
