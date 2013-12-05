@@ -17,7 +17,9 @@ public:
 	int numFrames;		// total number of key frames
 	double frameTime;
 
+	BVHParser();
 	BVHParser(const char * filePath);
+	void parse(const char * filePath);
 	void loadKeyframe(int index); // load the keyframe data into the skeleton object(s)
 
 private:
@@ -32,6 +34,8 @@ private:
 	void parseHierarchy(ifstream & in);
 	void parseRoot(ifstream & in);
 	Skeleton * parseSkeleton(ifstream & in);
+
+	void updateSkeletons();
 	void calculateNumChan();
 	void fillChannelsArray();
 	void fillChannelsArray(Skeleton * s, double * * & nextCPos);

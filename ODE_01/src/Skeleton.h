@@ -4,8 +4,14 @@
 
 #include <OgreSceneNode.h>
 #include <vector>
+#include <Eigen/Core>
+#include <Eigen/Geometry>
 
 using namespace std;
+using namespace Eigen;
+
+typedef Quaterniond Quat;
+typedef Vector3d Vec3;
 
 class Skeleton {
 
@@ -16,27 +22,38 @@ public:
 	vector<Skeleton *> children;
 	Skeleton * parent;
 	string name;	// name of the (root) joint
-	Ogre::SceneNode * ogreNode;
 
 	// we assume that if there is no position chanel, then pos is just the offset
 	bool hasPosChan;
-	//bool hasRot = false;
-	//double offset[3];
 
-	double pos[3];	// of the start of the bone (bone extends to it's childrens' pos-es)
-	double rot[3];	// rotation relative to parent
+	double pos[3];	// Local position of the start of the bone (bone extends to it's childrens' pos-es)
+	double rot[3];	// rotation relative to parent (Z X Y: raw 3 axis rotation as found in BVH files)
 
 	Skeleton();
 	bool hasParent();
-	bool hasOgreNode();
-	const double * getPosXYZ();
-	const double * getRotXYZ();
+	Vec3 getPos();
+	Vec3 getPosG();
+	Quat getRot();
+	Quat getRotG();
 	int calculateNumChan();
 	int calculateContributingNumChan();
+	// update values after rot and or pos have been changed
+	// this is recursive
+	void update() {
+		updateRotQ();
+		updateGlobals();
+		for(vector<Skeleton*>::iterator it = children.begin(); it!= children.end(); it++) {
+			(*it)->update();
+		}
+	};
 
 private:
-	double posXYZ[3];
-	double rotXYZ[3];
+
+	void updateRotQ();	// update local rotQ
+	void updateGlobals();	// update local rotation quaternion
+	Vec3 posG;
+	Quat rotQG;
+	Quat rotQ;
 
 };
 

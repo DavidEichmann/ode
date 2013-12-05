@@ -30,6 +30,7 @@
 								<option id="gnu.cpp.compiler.option.include.paths.1986282091" name="Include paths (-I)" superClass="gnu.cpp.compiler.option.include.paths" valueType="includePath">
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/ODE_01/src/OgreProcedural/include}&quot;"/>
 									<listOptionValue builtIn="false" value="/usr/include/OGRE"/>
+									<listOptionValue builtIn="false" value="/usr/include/eigen3"/>
 								</option>
 								<option id="gnu.cpp.compiler.option.preprocessor.def.1488384195" name="Defined symbols (-D)" superClass="gnu.cpp.compiler.option.preprocessor.def" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="dDOUBLE"/>

@@ -8,9 +8,10 @@
 using namespace std;
 
 BVHParser::BVHParser(const char * filePath) {
-	ifstream in;
-	in.open(filePath, ios::in);
-	parse(in);
+	parse(filePath);
+}
+
+BVHParser::BVHParser() {
 }
 
 string BVHParser::nextWord(ifstream & in) {
@@ -85,6 +86,20 @@ void BVHParser::loadKeyframe(int index) {
 		double d = keyframes[index][c];
 		*(channels[c]) = d;
 	}
+	updateSkeletons();
+}
+
+void BVHParser::updateSkeletons() {
+	for(vector<Skeleton*>::iterator it = skeletons.begin(); it != skeletons.end(); it++) {
+		(*it)->update();
+	}
+}
+
+void BVHParser::parse(const char * filePath) {
+	ifstream in;
+	in.open(filePath, ios::in);
+	parse(in);
+	updateSkeletons();
 }
 
 void BVHParser::parse(ifstream & in) {
