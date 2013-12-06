@@ -19,6 +19,7 @@ public:
 
 	BVHParser();
 	BVHParser(const char * filePath);
+	~BVHParser();
 	void parse(const char * filePath);
 	void loadKeyframe(int index); // load the keyframe data into the skeleton object(s)
 

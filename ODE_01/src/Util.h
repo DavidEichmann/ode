@@ -2,6 +2,7 @@
 #define	_Util_H	1
 
 #include <Ogre.h>
+#include <ode/ode.h>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
@@ -18,6 +19,13 @@ inline Ogre::Vector3 toVec3(Vector3d v) {
 
 inline Ogre::Quaternion toQuat(Quaterniond q) {
 	return Ogre::Quaternion((Ogre::Real) q.w(),(Ogre::Real) q.x(),(Ogre::Real) q.y(),(Ogre::Real) q.z());
+}
+
+inline void toDQuat(Quaterniond q, dQuaternion out) {
+	out[0] = q.w();
+	out[1] = q.x();
+	out[2] = q.y();
+	out[3] = q.z();
 }
 
 #endif

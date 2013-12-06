@@ -172,10 +172,14 @@ void OgreSimulation::updateFromSim() {
 		Ogre::SceneNode * sn = it->first;
 		Skeleton * sk = it->second;
 
-		// ensure that there is a parent joint
-		if(sk->hasParent()) {
-			sn->setPosition(toVec3(sk->parent->getPosG()));
-			sn->setOrientation(toQuat(sk->parent->getRotG()));
+		// ensure that there is a valid dBodyID
+		if(skelBodyMap.count(sk) != 0) {
+			dBodyID bodyID = skelBodyMap[sk];
+			const double * pos = dBodyGetPosition(bodyID);
+			const double * q = dBodyGetQuaternion(bodyID);
+
+			sn->setPosition(Ogre::Vector3(pos[0],pos[1],pos[2]));
+			sn->setOrientation(Ogre::Quaternion(q[0],q[1],q[2],q[3]));
 		}
 	}
 }

@@ -14,6 +14,14 @@ BVHParser::BVHParser(const char * filePath) {
 BVHParser::BVHParser() {
 }
 
+BVHParser::~BVHParser() {
+	delete[] channels;
+	for(int i = 0; i < numFrames; i++) {
+		delete[] keyframes[i];
+	}
+	delete[] keyframes;
+}
+
 string BVHParser::nextWord(ifstream & in) {
 	// read next word
 	in >> wordBuf;

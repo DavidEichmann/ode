@@ -3,7 +3,7 @@
 
 #include <ode/ode.h>
 
-const dReal GRAVITY_ACC = -9.8;
+const dReal GRAVITY_ACC = -98;
 const dReal STEP_SIZE = 0.1; // in seconds
 
 #endif

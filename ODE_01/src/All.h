@@ -7,5 +7,6 @@
 #include "Simulation.h"
 #include "OgreSimulation.h"
 #include "Skeleton.h"
+#include "Util.h"
 
 #endif

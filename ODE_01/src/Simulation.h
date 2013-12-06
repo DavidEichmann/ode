@@ -3,6 +3,7 @@
 #define	_SIMULATION_H	1
 
 #include <ode/ode.h>
+#include <map>
 
 #include "Simulation.h"
 #include "BVHParser.h"
@@ -13,17 +14,19 @@ class Simulation {
 
 public:
 
-	const static double STEP_SIZE;
-
 	Simulation(const char * bvhFile);
 	~Simulation();
 
 	void step(double dt); // step the simulation by t seconds
 	vector<Skeleton*> getSkeletons();
 
+	// is there a way to make collisionCallback private?
+	void collisionCallback(dGeomID o1, dGeomID o2);
+
 protected:
 
 	BVHParser bvh;
+	map<Skeleton*,dBodyID> skelBodyMap;
 
 private:
 
@@ -31,11 +34,13 @@ private:
 	dWorldID wid;
 	dSpaceID sid;
 	dJointGroupID contactGroupid;
+	dJointGroupID jointGroupid;
 
-	void loadSkeletons(vector<Skeleton*> ss);
+	void initODESkeleton(Skeleton* s, dBodyID parentBodyID);
 	void initODE();
 
 	double simT;
+	double odeSimT;
 };
 
 #endif
