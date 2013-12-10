@@ -131,12 +131,7 @@ void OgreSimulation::realizeSkeleton(Skeleton * s) {
 		//  ...by positioning the bone on the positive y axis, then rotating to correct orientation
 		//  handle the special case of pos being on the y axis (cross product will fail)
 		if(pos[0] == 0 && pos[2] == 0) {
-			if(pos[1] > 0) {
-				gen.setPosition(toVec3(pos * 0.5));
-			}
-			else {
-				gen.setPosition(toVec3(pos * -0.5));
-			}
+			gen.setPosition(toVec3(pos * 0.5));
 		}
 		else {
 			Vec3 iDir = Vec3::UnitY();

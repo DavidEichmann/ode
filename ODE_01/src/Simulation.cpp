@@ -124,10 +124,10 @@ void Simulation::step(double dt) {
 	int odeSteps = (int) ((simT - odeSimT)/STEP_SIZE);
 	odeSimT += odeSteps*STEP_SIZE;
 	for(int i = 0; i < odeSteps; i++) {
-//		dSpaceCollide(sid, this, &collisionCallbackNonmemberFn);
-//		dWorldStep(wid,STEP_SIZE);
-//		// Remove all joints in the contact joint group.
-//		dJointGroupEmpty(contactGroupid);
+		dSpaceCollide(sid, this, &collisionCallbackNonmemberFn);
+		dWorldStep(wid,STEP_SIZE);
+		// Remove all joints in the contact joint group.
+		dJointGroupEmpty(contactGroupid);
 	}
 	// update SceneGraph from ODE ???? or just leave ??? depends on how keyframes are refelected in ODE world
 	// TODO
@@ -152,16 +152,16 @@ void Simulation::initODE() {
 	/// floor
 	dCreatePlane(sid, 0, 1, 0, -10);
 
+	///////
+	// read the first keyframe and realize the bones
+	///////
+	bvh.loadKeyframe(0);
+
 	//	Set the state (position etc) of all bodies.
 	for (vector<Skeleton*>::iterator ss = bvh.skeletons.begin();
 			ss != bvh.skeletons.end(); ss++) {
 		initODESkeleton(*ss, dBodyID());
 	}
-
-	///////
-	// read the first keyframe and realize the bones
-	///////
-	bvh.loadKeyframe(0);
 
 	// identify overlapping body segments
 	dSpaceCollide(sid, this, &initialOverlapCollisionCallbackNonmemberFn);
@@ -217,8 +217,7 @@ void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
 		dGeomSetBody(bGeom, parentBodyID);
 
 		if (pos[0] == 0 && pos[1] == 0) {
-			dGeomSetOffsetPosition(bGeom, 0, 0,
-					((pos[2] > 0) ? 1 : -1) * height / 2);
+			dGeomSetOffsetPosition(bGeom, 0, 0, (dReal) (pos[2] * 0.5));
 		}
 		else {
 			dQuaternion q;
