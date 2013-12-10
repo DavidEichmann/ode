@@ -6,6 +6,7 @@
 #include <ode/ode.h>
 #include <OGRE/Ogre.h>
 #include <OIS/OIS.h>
+#include <Eigen/Geometry>
 
 #include "Constants.h"
 #include "Util.h"
@@ -131,30 +132,26 @@ void OgreSimulation::realizeSkeleton(Skeleton * s) {
 		//  handle the special case of pos being on the y axis (cross product will fail)
 		if(pos[0] == 0 && pos[2] == 0) {
 			if(pos[1] > 0) {
-				gen.setPosition(toVec3(pos * -0.5));
+				gen.setPosition(toVec3(pos * 0.5));
 			}
 			else {
-				gen.setPosition(toVec3(pos * 0.5));
+				gen.setPosition(toVec3(pos * -0.5));
 			}
 		}
 		else {
-			Vec3 dirU = (pos * (-1)).normalized();
-			Vec3 initU = Vec3::UnitY();
-			Vec3 rotAxis = initU.cross(dirU).normalized();
-			double rotAngle = acos(initU.dot(dirU));
-			Quaterniond meshRot = (Quaterniond) AngleAxisd(rotAngle, rotAxis);
+			Vec3 iDir = Vec3::UnitY();
+			Vec3 tDir = (pos * (-1)).normalized();
+			Vec3 axis = iDir.cross(tDir).normalized();
+			double angle = acos(iDir.dot(tDir));
+			Quaterniond meshRot = (Quaterniond) AngleAxisd(angle, axis);
 
-			const Ogre::Vector3 finalPos = toVec3( (Vec3) (
-					// rotate around rotX to get from initU to posU
-					meshRot *
-					// rotate the position at the half length in the irection of initU
-					(initU * (height/2))) );
-			gen.setPosition(finalPos*-1);
+			const Ogre::Vector3 finalPos = toVec3( (Vec3) tDir * (height/-2) );
+			gen.setPosition(finalPos);
 			gen.setOrientation(toQuat(meshRot));
 		}
 
 		Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
-		se->setMaterialName("Examples/BeachStones");
+		se->setMaterialName("Ogre/Earring");
 		node->attachObject(se);
 
 		// save node/skeleton pair
@@ -177,6 +174,8 @@ void OgreSimulation::updateFromSim() {
 			dBodyID bodyID = skelBodyMap[sk];
 			const double * pos = dBodyGetPosition(bodyID);
 			const double * q = dBodyGetQuaternion(bodyID);
+//			const double * pos = dGeomGetPosition(dBodyGetFirstGeom(bodyID));
+//			dReal * q; dGeomGetQuaternion(dBodyGetFirstGeom(bodyID),q);
 
 			sn->setPosition(Ogre::Vector3(pos[0],pos[1],pos[2]));
 			sn->setOrientation(Ogre::Quaternion(q[0],q[1],q[2],q[3]));

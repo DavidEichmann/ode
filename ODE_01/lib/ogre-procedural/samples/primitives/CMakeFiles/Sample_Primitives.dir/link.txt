@@ -1,0 +1,1 @@
+/usr/bin/c++   -O2 -g -DNDEBUG    CMakeFiles/Sample_Primitives.dir/__/common/src/BaseApplication.cpp.o CMakeFiles/Sample_Primitives.dir/src/Primitives.cpp.o  -o ../../bin/Sample_Primitives -rdynamic ../../lib/libOgreProcedural.so -lOgreMain -lOIS -Wl,-rpath,/home/david/git/ODE_01/ODE_01/lib/ogre-procedural/lib 

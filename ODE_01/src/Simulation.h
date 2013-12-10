@@ -22,11 +22,13 @@ public:
 
 	// is there a way to make collisionCallback private?
 	void collisionCallback(dGeomID o1, dGeomID o2);
+	void initialOverlapCallback(dGeomID o1, dGeomID o2);
 
 protected:
 
 	BVHParser bvh;
 	map<Skeleton*,dBodyID> skelBodyMap;
+	map<dBodyID, Skeleton*> bodySkelMap;
 
 private:
 
@@ -36,11 +38,15 @@ private:
 	dJointGroupID contactGroupid;
 	dJointGroupID jointGroupid;
 
-	void initODESkeleton(Skeleton* s, dBodyID parentBodyID);
-	void initODE();
-
 	double simT;
 	double odeSimT;
+
+	map<dBodyID, vector<dBodyID> > overlapMap;
+
+	void initODESkeleton(Skeleton* s, dBodyID parentBodyID);
+	void initODE();
+	bool overlap(dBodyID,dBodyID);
+	void setOverlap(dBodyID,dBodyID);
 };
 
 #endif
