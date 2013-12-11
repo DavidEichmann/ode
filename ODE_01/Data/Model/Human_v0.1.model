@@ -1,0 +1,32 @@
+/*
+
+This file describes a model of the human body
+some information is taken from this page: http://www.exrx.net/Kinesiology/Segments.html
+(mainly addapted from Plagenhoef et al., 1983) other numbers are guesstimations
+
+format:
+
+	SEGMENTS {
+		seg_name height% width% depth% mass%
+	}
+
+*/
+
+SEGMENTS {
+	
+	head		8.25	6		7.5
+	neck		2.5		2.3		2.3
+	
+	thorax		12.7	12.7	7
+	abdomen		8.1		10		5.5
+	pelvis		9.3		11		7
+	
+	upperarm	17.2	4		4
+	forarm		15.7	3		3
+	palm		5.75	1.75	5.75
+	fingers		6		1.5		5.75
+	
+	thigh		23.2	5		6
+	lowerleg	24.5	4		4
+	foot		4.25	4		18
+}
