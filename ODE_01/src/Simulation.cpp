@@ -251,6 +251,15 @@ void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
 		dJointAttach(jid,parentBodyID,bid);
 		dJointSetBallAnchor(jid,(dReal)gPos[0],(dReal)gPos[1],(dReal)gPos[2]);
 
+		// constrain join
+		dJointID amid = dJointCreateAMotor(wid,jointGroupid);
+		dJointAttach(amid,parentBodyID,bid);
+		dJointSetAMotorMode(amid,dAMotorEuler);
+		dJointSetAMotorAxis(amid,0,1, 0,0,1);
+		dJointSetAMotorAxis(amid,2,2, 0,-1,0);
+		dJointSetAMotorParam(amid,dParamLoStop,-PI/8);
+		dJointSetAMotorParam(amid,dParamHiStop,PI/8);
+
 		// append to skelBodyMap
 		skelBodyMap[s] = parentBodyID;
 		bodySkelMap[parentBodyID] = s;
