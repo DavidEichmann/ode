@@ -7,11 +7,10 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
+#include "Util.h"
+
 using namespace std;
 using namespace Eigen;
-
-typedef Quaterniond Quat;
-typedef Vector3d Vec3;
 
 class Skeleton {
 

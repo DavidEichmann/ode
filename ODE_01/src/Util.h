@@ -1,12 +1,16 @@
 #ifndef	_Util_H
 #define	_Util_H	1
 
+#include <vector>
 #include <Ogre.h>
 #include <ode/ode.h>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
 using namespace Eigen;
+
+typedef Quaterniond Quat;
+typedef Vector3d Vec3;
 
 // degree to radian
 inline double D2R(const double & x) {
@@ -26,6 +30,32 @@ inline void toDQuat(Quaterniond q, dQuaternion out) {
 	out[1] = q.x();
 	out[2] = q.y();
 	out[3] = q.z();
+}
+
+template<typename E>
+inline bool contains(std::vector<E> v, E el) {
+	return std::find(v.begin(),v.end(),el) != v.end();
+}
+
+template<typename E>
+inline int indexOf(std::vector<E> v, E el) {
+	int i = 0;
+	for(typename std::vector<E>::iterator it = v.begin(); it != v.end(); it++, i++) {
+		if(*it == el) {
+			return i;
+		}
+	}
+	return -1;
+}
+
+template<typename E>
+inline int indexOf(const E * a, int size, E el) {
+	for(int i = 0; i < size; i++) {
+		if(a[i] == el) {
+			return i;
+		}
+	}
+	return -1;
 }
 
 #endif

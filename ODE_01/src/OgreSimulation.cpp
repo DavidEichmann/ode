@@ -169,8 +169,6 @@ void OgreSimulation::updateFromSim() {
 			dBodyID bodyID = skelBodyMap[sk];
 			const double * pos = dBodyGetPosition(bodyID);
 			const double * q = dBodyGetQuaternion(bodyID);
-//			const double * pos = dGeomGetPosition(dBodyGetFirstGeom(bodyID));
-//			dReal * q; dGeomGetQuaternion(dBodyGetFirstGeom(bodyID),q);
 
 			sn->setPosition(Ogre::Vector3(pos[0],pos[1],pos[2]));
 			sn->setOrientation(Ogre::Quaternion(q[0],q[1],q[2],q[3]));
