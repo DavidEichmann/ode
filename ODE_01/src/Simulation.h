@@ -13,7 +13,7 @@ using namespace std;
 class Simulation {
 
 public:
-
+	Simulation();
 	Simulation(const char * bvhFile);
 	~Simulation();
 
@@ -30,16 +30,18 @@ protected:
 	map<Skeleton*,dBodyID> skelBodyMap;
 	map<dBodyID, Skeleton*> bodySkelMap;
 
+	dWorldID wid;
+	dSpaceID sid;
+
 private:
 
 	// ODE variabels
-	dWorldID wid;
-	dSpaceID sid;
 	dJointGroupID contactGroupid;
 	dJointGroupID jointGroupid;
 
 	double simT;
 	double odeSimT;
+	bool useBVH;
 
 	map<dBodyID, vector<dBodyID> > overlapMap;
 

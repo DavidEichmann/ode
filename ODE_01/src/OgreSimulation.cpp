@@ -14,11 +14,13 @@
 #include "Procedural.h"
 #include "OgreSimulation.h"
 
+OgreSimulation::OgreSimulation() : Simulation() {};
 OgreSimulation::OgreSimulation(const char * bvhFile) : Simulation(bvhFile) {};
 
 void OgreSimulation::run() {
 	initOgre();
-	realizeSkeletons();
+	// realizeSkeletons();
+	realizeHuman();
 	mainLoop();
 }
 
@@ -49,8 +51,8 @@ void OgreSimulation::initOgre() {
 	mCamera = mSceneMgr->createCamera("My Cam");
 	mCamera->setPosition(Ogre::Vector3(300, 500, 300));
 	mCamera->lookAt(Ogre::Vector3(0, 100, 0));
-	mCamera->setNearClipDistance(5);
-	mCamera->setFarClipDistance(10000);
+	mCamera->setNearClipDistance(0.05);
+	mCamera->setFarClipDistance(100);
 
 	/// create window/viewport
 	Ogre::Viewport* vp = mWindow->addViewport(mCamera);
@@ -72,10 +74,14 @@ void OgreSimulation::mainLoop() {
 	// setup timing variables
 	boost::chrono::system_clock::time_point it =
 			boost::chrono::system_clock::now(); 	// initial time
-	double dt;
+	boost::chrono::system_clock::time_point startT =
+			boost::chrono::system_clock::now(); 	// initial time
+	double dt, t;
 	// main loop
 	while (!mWindow->isClosed()) {
 		// get the current frame
+		t = ((boost::chrono::nanoseconds) (boost::chrono::system_clock::now()
+				- startT)).count() / ((double) 1000000000);
 		dt = ((boost::chrono::nanoseconds) (boost::chrono::system_clock::now()
 				- it)).count() / ((double) 1000000000);
 		it = boost::chrono::system_clock::now();
@@ -84,12 +90,12 @@ void OgreSimulation::mainLoop() {
 		step(dt);
 
 		// rotate the camera
-		double h = 100;
-		double d = 400;
-		double s = 10;
+		double h = 1;
+		double d = 3;
+		double s = 30;
 		mCamera->setPosition(
-				Ogre::Vector3(d * Ogre::Math::Sin(dt / s), h,
-						d * Ogre::Math::Cos(dt / s)));
+				Ogre::Vector3(d * Ogre::Math::Sin(t / s), h,
+						d * Ogre::Math::Cos(t / s)));
 		mCamera->lookAt(Ogre::Vector3(0, h, 0));
 
 		// update the position of all bones
@@ -98,6 +104,37 @@ void OgreSimulation::mainLoop() {
 		// Render the world
 		Ogre::WindowEventUtilities::messagePump();
 		mRoot->renderOneFrame(10);
+	}
+}
+
+void OgreSimulation::realizeHuman() {
+	human = new Human("Data/Model/Human_v0.2.model");
+	human->realize(wid,sid);
+	int size = human->getSize();
+	humanNodes = new Ogre::SceneNode*[size];
+	const Human::Props * props = human->getProps();
+	for(int i = 0; i < size; i++) {
+
+		// create a global scene node
+		Ogre::SceneNode * node = mSceneMgr->getRootSceneNode()->createChildSceneNode();
+		humanNodes[i] = node;
+
+		//position
+		Vec3 pos = props->pos;
+		node->setPosition((float) pos[0], (float) pos[1], (float) pos[2]);
+
+		// generate a mesh
+		Procedural::BoxGenerator gen = Procedural::BoxGenerator();
+		gen.setSizeX(props->width);
+		gen.setSizeY(props->height);
+		gen.setSizeZ(props->depth);
+
+		// attach to node
+		Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
+		se->setMaterialName("Ogre/Earring");
+		node->attachObject(se);
+
+		props++;
 	}
 }
 
@@ -160,18 +197,34 @@ void OgreSimulation::realizeSkeleton(Skeleton * s) {
 }
 
 void OgreSimulation::updateFromSim() {
-	for(vector< pair<Ogre::SceneNode*,Skeleton*> >::iterator it = nodeSkelPairs.begin(); it != nodeSkelPairs.end(); it++) {
-		Ogre::SceneNode * sn = it->first;
-		Skeleton * sk = it->second;
 
-		// ensure that there is a valid dBodyID
-		if(skelBodyMap.count(sk) != 0) {
-			dBodyID bodyID = skelBodyMap[sk];
-			const double * pos = dBodyGetPosition(bodyID);
-			const double * q = dBodyGetQuaternion(bodyID);
+	if(human != NULL) {
+		int size = human->getSize();
+		const dBodyID * bID = human->getBodyIDs();
+		Ogre::SceneNode * * sn = humanNodes;
+		for(int i = 0; i < size; i++) {
+			const dReal * pos = dBodyGetPosition(*bID);
+			const dReal * q = dBodyGetQuaternion(*bID);
+			(*sn)->setPosition(Ogre::Vector3(pos[0],pos[1],pos[2]));
+			(*sn)->setOrientation(Ogre::Quaternion(q[0],q[1],q[2],q[3]));
+			bID++;
+			sn++;
+		}
+	}
+	else {
+		for(vector< pair<Ogre::SceneNode*,Skeleton*> >::iterator it = nodeSkelPairs.begin(); it != nodeSkelPairs.end(); it++) {
+			Ogre::SceneNode * sn = it->first;
+			Skeleton * sk = it->second;
 
-			sn->setPosition(Ogre::Vector3(pos[0],pos[1],pos[2]));
-			sn->setOrientation(Ogre::Quaternion(q[0],q[1],q[2],q[3]));
+			// ensure that there is a valid dBodyID
+			if(skelBodyMap.count(sk) != 0) {
+				dBodyID bodyID = skelBodyMap[sk];
+				const dReal * pos = dBodyGetPosition(bodyID);
+				const dReal * q = dBodyGetQuaternion(bodyID);
+
+				sn->setPosition(Ogre::Vector3(pos[0],pos[1],pos[2]));
+				sn->setOrientation(Ogre::Quaternion(q[0],q[1],q[2],q[3]));
+			}
 		}
 	}
 }

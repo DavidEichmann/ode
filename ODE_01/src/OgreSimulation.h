@@ -4,6 +4,7 @@
 #include <OGRE/Ogre.h>
 
 #include "Simulation.h"
+#include "Human.h"
 
 using namespace std;
 
@@ -11,6 +12,7 @@ class OgreSimulation: public Simulation {
 
 public:
 
+	OgreSimulation();
 	OgreSimulation(const char * bvhFile);
 
 	void run();
@@ -25,7 +27,11 @@ private:
 	Ogre::RenderWindow * mWindow;
 	Ogre::SceneNode * sphereNode;
 
+	Human * human = NULL;
+	Ogre::SceneNode * * humanNodes;
+
 	void initOgre();
+	void realizeHuman();
 	void realizeSkeletons();
 	void realizeSkeleton(Skeleton * s);
 	void updateFromSim();

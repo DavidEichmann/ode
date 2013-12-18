@@ -12,12 +12,12 @@ format:
 
 */
 
-HEIGHT 175
+HEIGHT 1.75
 MASS	70
 
 SEGMENTS {
 	head		8.25	6		7.5		6.28
-	neck		2.5		2.3		2.3		2
+	neck		2.75		4.5		4		2
 	
 	thorax		12.7	12.7	7		20.1
 	abdomen		8.1		10		5.5		13.06
@@ -30,5 +30,5 @@ SEGMENTS {
 	
 	thigh		23.2	5		6		10.5
 	lowerleg	24.5	4		4		4.75
-	foot		4.25	4		18		1.43
+	foot		4		4		14		1.43
 }

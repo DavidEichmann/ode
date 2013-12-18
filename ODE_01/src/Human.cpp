@@ -3,6 +3,7 @@
 #include <fstream>
 #include <queue>
 
+#include "Constants.h"
 #include "Human.h"
 
 using namespace std;
@@ -31,7 +32,6 @@ Human::Human(char* model) {
 	parentNameMap["thighr"] 	= "pelvis";
 	parentNameMap["lowerlegr"] 	= "thighr";
 	parentNameMap["footr"] 		= "lowerlegr";
-
 
 
 	parentConnectMap["head"] 		= "tccbcc";
@@ -72,6 +72,7 @@ string Human::nextWord(ifstream & in) {
 	if(w == "/*") {
 		while (w != "*/") {
 			in >> wordBuf;
+			w = string(wordBuf);
 		}
 		in >> wordBuf;
 		w = string(wordBuf);
@@ -130,10 +131,11 @@ void Human::parseSegments(ifstream & in) {
 		Props p;
 		p.name = name;
 		in >> p.height >> p.width >> p.depth >> p.mass;
-		p.height *= height;
-		p.width *= height;
-		p.depth *= height;
-		p.mass 	*= mass;
+		double hp = height*0.01; // convert percentage points to actual height
+		p.height *= hp;
+		p.width *= hp;
+		p.depth *= hp;
+		p.mass 	*= mass * 0.01;
 		if(contains(nonlimbs, name)) {
 			props[i++] = p;
 		}
@@ -174,11 +176,64 @@ void Human::realize(dWorldID wid, dSpaceID sid) {
 	}
 
 	// create joints for each body segment
+	dJointGroupID jgid = dJointGroupCreate(40);
 	for(int i = 0; i < size; i++) {
-		// get parent
+		int parentIndex = props[i].parentIndex;
+		if(parentIndex != -1) {
+			Props parentProps = props[parentIndex];
+			Vec3 cPos = getConnectPoint(parentProps,parentConnectMap[props[i].name]);
+			dJointID jid;
+			// setup a ball joint
+			jid = dJointCreateBall(wid, jgid);
+			dJointAttach(jid,bodyIDs[parentIndex],bodyIDs[i]);
+			dJointSetBallAnchor(jid, (double) cPos[0], (double) cPos[1], (double) cPos[2]);
+
+			// setup constraints with an AMotor
+			dJointID amid = dJointCreateAMotor(wid,jgid);
+			dJointAttach(amid,bodyIDs[i],bodyIDs[parentIndex]);
+			dJointSetAMotorMode(amid,dAMotorEuler);
+			dJointSetAMotorAxis(amid,0,1, 0,0,1);
+			dJointSetAMotorAxis(amid,2,2, 0,1,0);
+
+			//dJointSetAMotorParam(amid,dParamStopERP,0);
+
+			dJointSetAMotorParam(amid,dParamLoStop1,-PI/20);
+			dJointSetAMotorParam(amid,dParamHiStop1,PI/20);
+
+			dJointSetAMotorParam(amid,dParamLoStop2,-PI/20);
+			dJointSetAMotorParam(amid,dParamHiStop2,PI/20);
+
+			dJointSetAMotorParam(amid,dParamLoStop3,-PI/20);
+			dJointSetAMotorParam(amid,dParamHiStop3,PI/20);
+
+			dJointSetAMotorParam(amid,dParamFMax1,0.1);
+			dJointSetAMotorParam(amid,dParamVel1,0);
+			dJointSetAMotorParam(amid,dParamFMax2,0.1);
+			dJointSetAMotorParam(amid,dParamVel2,0);
+			dJointSetAMotorParam(amid,dParamFMax3,0.1);
+			dJointSetAMotorParam(amid,dParamVel3,0);
+		}
 	}
 }
 
+
+Vec3 Human::getConnectPoint(Props parent, string connectString) {
+
+	Vec3 pos = parent.pos;
+
+	if(connectString[0] == 'b') 		{ pos[1] -= parent.height / 2; }
+	else if(connectString[0] == 't') 	{ pos[1] += parent.height / 2; }
+	if(connectString[1] == 'l') 		{ pos[0] -= parent.width  / 2; }
+	else if(connectString[1] == 'L') 	{ pos[0] -= parent.width  / 4; }
+	else if(connectString[1] == 'r') 	{ pos[0] += parent.width  / 2; }
+	else if(connectString[1] == 'R') 	{ pos[0] += parent.width  / 4; }
+	if(connectString[2] == 'b') 		{ pos[2] -= parent.depth  / 2; }
+	else if(connectString[2] == 'B') 	{ pos[2] -= parent.depth  / 4; }
+	else if(connectString[2] == 'f') 	{ pos[2] += parent.depth  / 2; }
+	else if(connectString[2] == 'F') 	{ pos[2] += parent.depth  / 4; }
+
+	return pos;
+}
 
 void Human::realizePositions() {
 	int rootI;
@@ -189,38 +244,27 @@ void Human::realizePositions() {
 double Human::realizePositionsRecMinY(int i) {
 	Props& p = props[i];
 	// set my pos
-	string parent = parentConnectMap[p.name];
-	if(parent == "ROOT") {
+	string parentName = parentNameMap[p.name];
+	if(parentName == "ROOT") {
 		p.pos = Vec3(0,0,0);
 	}
 	else {
 		// logic is Pos = ParentPos + (ParentPos->ParentConnectPoint) - (Pos->ConnectPoint)
 		//  where A->B is a vector from point A to B. above both vectors can be calculated locally
-		Props pp = props[getIndexByName(parent)];
+		Props pp = props[getIndexByName(parentName)];
 		string r = parentConnectMap[p.name];
-		p.pos = pp.pos;
+		p.pos = getConnectPoint(pp, r);
 
-		if(r[0] == 'b') 		{ p.pos[1] -= pp.height / 2; }
-		else if(r[0] == 't') 	{ p.pos[1] += pp.height / 2; }
-		if(r[1] == 'l') 		{ p.pos[0] -= pp.width  / 2; }
-		else if(r[1] == 'L') 	{ p.pos[0] -= pp.width  / 4; }
-		else if(r[1] == 'r') 	{ p.pos[0] += pp.width  / 2; }
-		else if(r[1] == 'R') 	{ p.pos[0] += pp.width  / 4; }
-		if(r[2] == 'b') 		{ p.pos[2] -= pp.depth  / 2; }
-		else if(r[2] == 'B') 	{ p.pos[2] -= pp.depth  / 4; }
-		else if(r[2] == 'f') 	{ p.pos[2] += pp.depth  / 2; }
-		else if(r[2] == 'F') 	{ p.pos[2] += pp.depth  / 4; }
-
-		if(r[3] == 'b') 		{ p.pos[1] += pp.height / 2; }
-		else if(r[3] == 't') 	{ p.pos[1] -= pp.height / 2; }
-		if(r[4] == 'l') 		{ p.pos[0] += pp.width  / 2; }
-		else if(r[4] == 'L') 	{ p.pos[0] += pp.width  / 4; }
-		else if(r[4] == 'r') 	{ p.pos[0] -= pp.width  / 2; }
-		else if(r[4] == 'R') 	{ p.pos[0] -= pp.width  / 4; }
-		if(r[5] == 'b') 		{ p.pos[2] += pp.depth  / 2; }
-		else if(r[5] == 'B') 	{ p.pos[2] += pp.depth  / 4; }
-		else if(r[5] == 'f') 	{ p.pos[2] -= pp.depth  / 2; }
-		else if(r[5] == 'F') 	{ p.pos[2] -= pp.depth  / 4; }
+		if(r[3] == 'b') 		{ p.pos[1] += p.height / 2; }
+		else if(r[3] == 't') 	{ p.pos[1] -= p.height / 2; }
+		if(r[4] == 'l') 		{ p.pos[0] += p.width  / 2; }
+		else if(r[4] == 'L') 	{ p.pos[0] += p.width  / 4; }
+		else if(r[4] == 'r') 	{ p.pos[0] -= p.width  / 2; }
+		else if(r[4] == 'R') 	{ p.pos[0] -= p.width  / 4; }
+		if(r[5] == 'b') 		{ p.pos[2] += p.depth  / 2; }
+		else if(r[5] == 'B') 	{ p.pos[2] += p.depth  / 4; }
+		else if(r[5] == 'f') 	{ p.pos[2] -= p.depth  / 2; }
+		else if(r[5] == 'F') 	{ p.pos[2] -= p.depth  / 4; }
 	}
 
 	// recurs to all children

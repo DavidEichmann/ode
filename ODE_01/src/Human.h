@@ -73,6 +73,7 @@ private:
 	string nextWord(ifstream & in);
 	void parse(ifstream & in);
 	void parseSegments(ifstream & in);
+	Vec3 getConnectPoint(Props parent, string connectString);
 	void realizePositions();
 	double realizePositionsRecMinY(int i);
 	void translateYPos(double dy);

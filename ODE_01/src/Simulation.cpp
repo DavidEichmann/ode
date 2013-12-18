@@ -52,6 +52,7 @@ void Simulation::setOverlap(dBodyID a, dBodyID b) {
 }
 
 void Simulation::collisionCallback(dGeomID o1, dGeomID o2) {
+
 	// ignore collisions with spaces
 	if (dGeomIsSpace(o1) || dGeomIsSpace(o2)) {
 		return;
@@ -60,8 +61,8 @@ void Simulation::collisionCallback(dGeomID o1, dGeomID o2) {
 	dBodyID b1 = dGeomGetBody(o1);
 	dBodyID b2 = dGeomGetBody(o2);
 
-	// don't collide overlapping bones
-	if(b1 != 0 && b2 != 0 && overlap(b1,b2)) {
+	// don't collide overlapping/connected bones
+	if(b1 != 0 && b2 != 0 && (dAreConnectedExcluding(b1,b2,dJointTypeContact) || overlap(b1,b2))) {
 		return;
 	}
 
@@ -75,29 +76,37 @@ void Simulation::collisionCallback(dGeomID o1, dGeomID o2) {
 	dContactGeom contact[maxC];
 	const int c = dCollide(o1, o2, maxC, contact, (int) sizeof(dContactGeom));
 
-	if(c > 0 && dGeomGetClass(o1) != dPlaneClass && dGeomGetClass(o2) != dPlaneClass) {
-		cout << "collision between: " << bodySkelMap[b1]->name << " and " << bodySkelMap[b2]->name << endl;
-		cout << contact[0].pos[0] << ", " << contact[0].pos[1] << ", " << contact[0].pos[2] << endl;
-	}
+//	if(c > 0 && dGeomGetClass(o1) != dPlaneClass && dGeomGetClass(o2) != dPlaneClass) {
+//		cout << "collision between: " << bodySkelMap[b1]->name << " and " << bodySkelMap[b2]->name << endl;
+//		cout << contact[0].pos[0] << ", " << contact[0].pos[1] << ", " << contact[0].pos[2] << endl;
+//	}
 
 	// create collision joints
 	for (int i = 0; i < c; i++) {
+		if(contact[i].depth != 0) {
+			dContact dc;
 
-		dContact dc;
+			dc.surface.mode = dContactSoftERP;
+			dc.surface.soft_erp = 0.1;
+			dc.surface.mu = 1;
+//			dc.surface.bounce = 0;
+//			dc.surface.bounce_vel = 0.1;
+			dc.geom = contact[i];
 
-		dc.surface.mode = dContactBounce | dContactSoftERP;
-		dc.surface.soft_erp = 0.8;
-		dc.surface.mu = 1;
-		dc.surface.bounce = 0;
-		dc.surface.bounce_vel = 0.1;
-		dc.geom = contact[i];
-
-		dJointID cj = dJointCreateContact(wid, contactGroupid, &dc);
-		dJointAttach(cj, b1, b2);
+			dJointID cj = dJointCreateContact(wid, contactGroupid, &dc);
+			dJointAttach(cj, b1, b2);
+		}
 	}
 }
 
+Simulation::Simulation() {
+	useBVH = false;
+	// setup ODE
+	initODE();
+}
+
 Simulation::Simulation(const char * bvhFile) {
+	useBVH = true;
 	simT = 0;
 
 	// parse input file
@@ -129,9 +138,6 @@ void Simulation::step(double dt) {
 		// Remove all joints in the contact joint group.
 		dJointGroupEmpty(contactGroupid);
 	}
-	// update SceneGraph from ODE ???? or just leave ??? depends on how keyframes are refelected in ODE world
-	// TODO
-
 }
 
 vector<Skeleton*> Simulation::getSkeletons() {
@@ -142,6 +148,9 @@ void Simulation::initODE() {
 	dInitODE();
 	//	Create a dynamics world.
 	wid = dWorldCreate();
+	// set CFM
+	dWorldSetCFM(wid,0.00007);
+	dWorldSetERP(wid,0.1);
 	//	Create a joint group to hold the contact joints.
 	contactGroupid = dJointGroupCreate(1000);
 	jointGroupid = dJointGroupCreate(100);
@@ -150,23 +159,24 @@ void Simulation::initODE() {
 	/// space
 	sid = dHashSpaceCreate(0);
 	/// floor
-	dCreatePlane(sid, 0, 1, 0, -10);
+	dCreatePlane(sid, 0, 1, 0, 0);
 
-	///////
-	// read the first keyframe and realize the bones
-	///////
-	bvh.loadKeyframe(0);
+	if(useBVH) {
+		///////
+		// read the first keyframe and realize the bones
+		///////
+		bvh.loadKeyframe(0);
 
-	//	Set the state (position etc) of all bodies.
-	for (vector<Skeleton*>::iterator ss = bvh.skeletons.begin();
-			ss != bvh.skeletons.end(); ss++) {
-		initODESkeleton(*ss, dBodyID());
+		//	Set the state (position etc) of all bodies.
+		for (vector<Skeleton*>::iterator ss = bvh.skeletons.begin();
+				ss != bvh.skeletons.end(); ss++) {
+			initODESkeleton(*ss, dBodyID());
+		}
+
+		// identify overlapping body segments
+		dSpaceCollide(sid, this, &initialOverlapCollisionCallbackNonmemberFn);
+
 	}
-
-	// identify overlapping body segments
-	dSpaceCollide(sid, this, &initialOverlapCollisionCallbackNonmemberFn);
-
-
 
 //	double height = 10;
 //	dBodyID bid = dBodyCreate(wid);
