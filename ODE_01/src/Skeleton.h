@@ -2,7 +2,6 @@
 #ifndef	_SKELETON_H
 #define	_SKELETON_H	1
 
-#include <OgreSceneNode.h>
 #include <vector>
 #include <Eigen/Core>
 #include <Eigen/Geometry>

@@ -11,6 +11,8 @@ using namespace std;
 
 Human::Human(char* model) {
 	// init class variables
+
+	// parent map
 	parentNameMap["head"] 		= "neck";
 	parentNameMap["neck"] 		= "thorax";
 	parentNameMap["thorax"] 	= "abdomen";
@@ -33,28 +35,29 @@ Human::Human(char* model) {
 	parentNameMap["lowerlegr"] 	= "thighr";
 	parentNameMap["footr"] 		= "lowerlegr";
 
-
+	// connection point map
 	parentConnectMap["head"] 		= "tccbcc";
 	parentConnectMap["neck"] 		= "tccbcc";
 	parentConnectMap["thorax"] 		= "tccbcc";
 	parentConnectMap["abdomen"] 	= "tccbcc";
 	parentConnectMap["pelvis"] 		= "ROOT";
 
-	parentConnectMap["upperarml"] 	= "tlctrc";
-	parentConnectMap["forarml"] 	= "bcctcc";
-	parentConnectMap["palml"] 		= "bcctcc";
-	parentConnectMap["fingersl"] 	= "bcctcc";
-	parentConnectMap["thighl"] 		= "bLctcc";
+	parentConnectMap["upperarmr"] 	= "tlccrc";
+	parentConnectMap["forarmr"] 	= "clccrc";
+	parentConnectMap["palmr"] 		= "clccrc";
+	parentConnectMap["fingersr"] 	= "clccrc";
+	parentConnectMap["thighr"] 		= "bLctcc";
+	parentConnectMap["lowerlegr"] 	= "bcctcc";
+	parentConnectMap["footr"] 		= "bcctcB";
+
+	parentConnectMap["upperarml"] 	= "trcclc";
+	parentConnectMap["forarml"] 	= "crcclc";
+	parentConnectMap["palml"] 		= "crcclc";
+	parentConnectMap["fingersl"] 	= "crcclc";
+	parentConnectMap["thighl"] 		= "bRctcc";
 	parentConnectMap["lowerlegl"] 	= "bcctcc";
 	parentConnectMap["footl"] 		= "bcctcB";
 
-	parentConnectMap["upperarmr"] 	= "trctlc";
-	parentConnectMap["forarmr"] 	= "bcctcc";
-	parentConnectMap["palmr"] 		= "bcctcc";
-	parentConnectMap["fingersr"] 	= "bcctcc";
-	parentConnectMap["thighr"] 		= "bRctcc";
-	parentConnectMap["lowerlegr"] 	= "bcctcc";
-	parentConnectMap["footr"] 		= "bcctcB";
 
 	// start parsing
 	ifstream in;
@@ -176,42 +179,139 @@ void Human::realize(dWorldID wid, dSpaceID sid) {
 	}
 
 	// create joints for each body segment
-	dJointGroupID jgid = dJointGroupCreate(40);
+	dJointGroupID jgid = dJointGroupCreate(400);
 	for(int i = 0; i < size; i++) {
 		int parentIndex = props[i].parentIndex;
+		string name = props[i].name;
 		if(parentIndex != -1) {
 			Props parentProps = props[parentIndex];
-			Vec3 cPos = getConnectPoint(parentProps,parentConnectMap[props[i].name]);
+			Vec3 cPos = getConnectPoint(parentProps,parentConnectMap[name]);
 			dJointID jid;
-			// setup a ball joint
-			jid = dJointCreateBall(wid, jgid);
-			dJointAttach(jid,bodyIDs[parentIndex],bodyIDs[i]);
-			dJointSetBallAnchor(jid, (double) cPos[0], (double) cPos[1], (double) cPos[2]);
+			dJointID amid;
 
-			// setup constraints with an AMotor
-			dJointID amid = dJointCreateAMotor(wid,jgid);
-			dJointAttach(amid,bodyIDs[i],bodyIDs[parentIndex]);
-			dJointSetAMotorMode(amid,dAMotorEuler);
-			dJointSetAMotorAxis(amid,0,1, 0,0,1);
-			dJointSetAMotorAxis(amid,2,2, 0,1,0);
+			// head hinge
+			if(name == "head") {
+				jid = dJointCreateHinge(wid, jgid);
+				dJointAttach(jid,bodyIDs[parentIndex],bodyIDs[i]);
+				dJointSetHingeAnchor(jid,(double)cPos[0],(double)cPos[1],(double)cPos[2]);
+				dJointSetHingeAxis(jid,1,0,0);
+			}
+			// Neck hinge
+			else if(name == "neck") {
+				jid = dJointCreateHinge(wid, jgid);
+				dJointAttach(jid,bodyIDs[parentIndex],bodyIDs[i]);
+				dJointSetHingeAnchor(jid,(double)cPos[0],(double)cPos[1],(double)cPos[2]);
+				dJointSetHingeAxis(jid,0,1,0);
+			}
+			// knee hinge
+			else if(name == "lowerlegl" || name == "lowerlegr") {
+				jid = dJointCreateHinge(wid, jgid);
+				dJointAttach(jid,bodyIDs[parentIndex],bodyIDs[i]);
+				dJointSetHingeAnchor(jid,(double)cPos[0],(double)cPos[1],(double)cPos[2]);
+				dJointSetHingeAxis(jid,1,0,0);
+			}
+			// Fingers hinge
+			else if(name == "fingersl" || name == "fingersr") {
+				int sf = name == "fingersl" ? 1 : -1;
+				jid = dJointCreateHinge(wid, jgid);
+				dJointAttach(jid,bodyIDs[parentIndex],bodyIDs[i]);
+				dJointSetHingeAnchor(jid,(double)cPos[0],(double)cPos[1],(double)cPos[2]);
+				dJointSetHingeAxis(jid,0,0,sf*1);
+			}
 
-			//dJointSetAMotorParam(amid,dParamStopERP,0);
+			// hip Ball and socket joints
+			else if(name == "thighl" || name == "thighr") {
+				int sf = name == "thighl" ? 1 : -1;
 
-			dJointSetAMotorParam(amid,dParamLoStop1,-PI/20);
-			dJointSetAMotorParam(amid,dParamHiStop1,PI/20);
+				jid = dJointCreateBall(wid, jgid);
+				amid = dJointCreateAMotor(wid,jgid);
+				dJointAttach(jid,bodyIDs[parentIndex],bodyIDs[i]);
+				dJointAttach(amid,bodyIDs[parentIndex],bodyIDs[i]);
+				dJointSetBallAnchor(jid, (double) cPos[0], (double) cPos[1], (double) cPos[2]);
 
-			dJointSetAMotorParam(amid,dParamLoStop2,-PI/20);
-			dJointSetAMotorParam(amid,dParamHiStop2,PI/20);
+				// setup constraints with an AMotor
+				dJointSetAMotorMode(amid,dAMotorEuler);
+				dJointSetAMotorAxis(amid,0,1, 1,0,0); // pointing to +X
+				dJointSetAMotorAxis(amid,2,2, 0,sf*1,0);
 
-			dJointSetAMotorParam(amid,dParamLoStop3,-PI/20);
-			dJointSetAMotorParam(amid,dParamHiStop3,PI/20);
+				dJointSetAMotorParam(amid,dParamLoStop1,-PI/4);
+				dJointSetAMotorParam(amid,dParamHiStop1,PI/2);
 
-			dJointSetAMotorParam(amid,dParamFMax1,0.1);
-			dJointSetAMotorParam(amid,dParamVel1,0);
-			dJointSetAMotorParam(amid,dParamFMax2,0.1);
-			dJointSetAMotorParam(amid,dParamVel2,0);
-			dJointSetAMotorParam(amid,dParamFMax3,0.1);
-			dJointSetAMotorParam(amid,dParamVel3,0);
+				dJointSetAMotorParam(amid,dParamLoStop3,-PI);
+				dJointSetAMotorParam(amid,dParamHiStop3,PI/2);
+
+				dJointSetAMotorParam(amid,dParamFMax1,10);
+				dJointSetAMotorParam(amid,dParamVel1,0);
+				dJointSetAMotorParam(amid,dParamFMax2,100);
+				dJointSetAMotorParam(amid,dParamVel2,0);
+				dJointSetAMotorParam(amid,dParamFMax3,100);
+				dJointSetAMotorParam(amid,dParamVel3,0);
+
+			}
+			//*
+			// Shoulder Ball and socket joints
+			else if(name == "upperarml" || name == "upperarmr") {
+				int sf = name == "upperarml" ? 1 : -1;
+
+				jid = dJointCreateBall(wid, jgid);
+				amid = dJointCreateAMotor(wid,jgid);
+				dJointAttach(jid,bodyIDs[parentIndex],bodyIDs[i]);
+				dJointAttach(amid,bodyIDs[parentIndex],bodyIDs[i]);
+				dJointSetBallAnchor(jid, (double) cPos[0], (double) cPos[1], (double) cPos[2]);
+
+				// setup constraints with an AMotor
+				dJointSetAMotorMode(amid,dAMotorEuler);
+				dJointSetAMotorAxis(amid,0,1, 1,0,0); // pointing to +X
+				dJointSetAMotorAxis(amid,2,2, 0,sf*1,0);
+
+				dJointSetAMotorParam(amid,dParamLoStop1,-PI/4);
+				dJointSetAMotorParam(amid,dParamHiStop1,PI/2);
+
+				dJointSetAMotorParam(amid,dParamLoStop3,-PI);
+				dJointSetAMotorParam(amid,dParamHiStop3,PI/2);
+
+				dJointSetAMotorParam(amid,dParamStopERP,0);
+				dJointSetAMotorParam(amid,dParamStopCFM,0.001);
+				dJointSetAMotorParam(amid,dParamFMax1,100);
+				dJointSetAMotorParam(amid,dParamVel1,0);
+				dJointSetAMotorParam(amid,dParamFMax2,100);
+				dJointSetAMotorParam(amid,dParamVel2,name == "upperarml" ? 0.5:0);
+				dJointSetAMotorParam(amid,dParamFMax3,100);
+				dJointSetAMotorParam(amid,dParamVel3,0);
+
+			}//*/
+
+			else {
+				// setup a ball joint
+				jid = dJointCreateBall(wid, jgid);
+				amid = dJointCreateAMotor(wid,jgid);
+				dJointAttach(jid,bodyIDs[parentIndex],bodyIDs[i]);
+				dJointAttach(amid,bodyIDs[i],bodyIDs[parentIndex]);
+				dJointSetBallAnchor(jid, (double) cPos[0], (double) cPos[1], (double) cPos[2]);
+
+				// setup constraints with an AMotor
+				dJointSetAMotorMode(amid,dAMotorEuler);
+				dJointSetAMotorAxis(amid,0,1, 0,0,1);
+				dJointSetAMotorAxis(amid,2,2, 0,1,0);
+
+				//dJointSetAMotorParam(amid,dParamStopERP,0);
+
+				dJointSetAMotorParam(amid,dParamLoStop1,-PI/20);
+				dJointSetAMotorParam(amid,dParamHiStop1,PI/20);
+
+				dJointSetAMotorParam(amid,dParamLoStop2,-PI/20);
+				dJointSetAMotorParam(amid,dParamHiStop2,PI/20);
+
+				dJointSetAMotorParam(amid,dParamLoStop3,-PI/20);
+				dJointSetAMotorParam(amid,dParamHiStop3,PI/20);
+
+				dJointSetAMotorParam(amid,dParamFMax1,10);
+				dJointSetAMotorParam(amid,dParamVel1,0);
+				dJointSetAMotorParam(amid,dParamFMax2,10);
+				dJointSetAMotorParam(amid,dParamVel2,0);
+				dJointSetAMotorParam(amid,dParamFMax3,10);
+				dJointSetAMotorParam(amid,dParamVel3,0);
+			}
 		}
 	}
 }
