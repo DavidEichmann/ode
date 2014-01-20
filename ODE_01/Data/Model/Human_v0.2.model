@@ -23,10 +23,10 @@ SEGMENTS {
 	abdomen		8.1		10		5.5		13.06
 	pelvis		9.3		11		7		13.66
 	
-	upperarm	17.2	4		4		3.25
-	forarm		15.7	3		3		1.87
-	palm		5.75	1.75	5.75	0.35
-	fingers		6		1.5		5.75	0.3
+	upperarm	4		17.2	4		3.25
+	forarm		3		15.7	3		1.87
+	palm		1.75	5.75	5.75	0.35
+	fingers		1.5		6		5.75	0.3
 	
 	thigh		23.2	5		6		10.5
 	lowerleg	24.5	4		4		4.75
