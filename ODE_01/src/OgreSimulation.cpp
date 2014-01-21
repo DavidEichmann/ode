@@ -140,6 +140,7 @@ void OgreSimulation::realizeHuman() {
 
 void OgreSimulation::realizeSkeletons() {
 	nodeSkelPairs.clear();
+
 	for(vector<Skeleton*>::iterator i = bvh.skeletons.begin(); i != bvh.skeletons.end(); i++) {
 		realizeSkeleton(*i);
 	}

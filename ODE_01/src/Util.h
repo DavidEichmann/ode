@@ -1,12 +1,14 @@
 #ifndef	_Util_H
 #define	_Util_H	1
 
+#include <functional>
 #include <vector>
 #include <Ogre.h>
 #include <ode/ode.h>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
+using namespace std;
 using namespace Eigen;
 
 typedef Quaterniond Quat;
@@ -57,5 +59,29 @@ inline int indexOf(const E * a, int size, E el) {
 	}
 	return -1;
 }
+
+template<typename E, typename F>
+inline void forall(vector<E> & v, F f) {
+	for_each(v.begin(), v.end(), f);
+}
+
+template<typename E, typename T, typename F>
+inline vector<T> mapf(vector<E> & v, F f) {
+	vector<T> n;
+	forall(v, [&](E & e){
+		n.push_back(f(e));
+	});
+	return n;
+}
+
+template<typename E, typename F>
+inline void mapI(vector<E> & v, F f) {
+	forall(v, [&](E & e){
+		e = f(e);
+	});
+}
+
+
+
 
 #endif
