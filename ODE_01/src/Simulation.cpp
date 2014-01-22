@@ -1,7 +1,7 @@
 #include "Simulation.h"
 
 #include <string.h>
-#include <ode/ode.h>
+#include <btBulletDynamicsCommon.h>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
@@ -148,39 +148,19 @@ vector<Skeleton*> Simulation::getSkeletons() {
 	return bvh.skeletons;
 }
 
-dBodyID Simulation::createBall(const Vec3 & pos, const dReal & mass, const dReal & radius) {
-	if(ballID != 0) {
-		dBodyDestroy(ballID);
-	}
-
-	// ode sphere
-	dBodyID bid = ballID = dBodyCreate(wid);
-	dGeomID gid = dCreateSphere(sid,radius);
-	dGeomSetBody(gid,bid);
-	dBodySetPosition(bid,(dReal)pos[0],(dReal)pos[1],(dReal)pos[2]);
-	dMass dmass;
-	dBodyGetMass(bid, &dmass);
-	dmass.mass = mass;
-
-	return bid;
-}
-
 void Simulation::initODE() {
-	dInitODE();
-	//	Create a dynamics world.
-	wid = dWorldCreate();
-	// set CFM
-	dWorldSetCFM(wid,0.00007);
-	dWorldSetERP(wid,0.1);
-	//	Create a joint group to hold the contact joints.
-	contactGroupid = dJointGroupCreate(1000);
-	jointGroupid = dJointGroupCreate(100);
-	/// gravity
-	dWorldSetGravity(wid, 0, -GRAVITY_ACC, 0);
-	/// space
-	sid = dHashSpaceCreate(0);
-	/// floor
-	dCreatePlane(sid, 0, 1, 0, -1.5);
+
+	btBroadphaseInterface* broadphase = new btDbvtBroadphase();
+	btDefaultCollisionConfiguration* collisionConfiguration = new btDefaultCollisionConfiguration();
+	btCollisionDispatcher* dispatcher = new btCollisionDispatcher(collisionConfiguration);
+	btSequentialImpulseConstraintSolver* solver = new btSequentialImpulseConstraintSolver;
+	btDiscreteDynamicsWorld* dynamicsWorld = new btDiscreteDynamicsWorld(dispatcher,broadphase,solver,collisionConfiguration);
+	dynamicsWorld->setGravity(btVector3(0,-GRAVITY_ACC,0));
+
+	// floor
+	btCollisionShape* groundShape = new btStaticPlaneShape(btVector3(0,1,0),0);
+	btRigidBody* groundRigidBody = new btRigidBody(0, NULL, groundShape, btVector3(0,0,0));
+	dynamicsWorld->addRigidBody(groundRigidBody);
 
 	if(useBVH) {
 		///////
@@ -194,49 +174,15 @@ void Simulation::initODE() {
 			initODESkeleton(*ss, dBodyID());
 		}
 
-		// identify overlapping body segments
-		dSpaceCollide(sid, this, &initialOverlapCollisionCallbackNonmemberFn);
+		// TODO identify overlapping body segments
 
 	}
-
-//	double height = 10;
-//	dBodyID bid = dBodyCreate(wid);
-//	dBodySetPosition(bid,0,13,0);
-//	dGeomID bGeom = dCreateCapsule(sid, 2, height);
-//	dGeomSetBody(bGeom, bid);
-//	dQuaternion q;
-//	Vec3 pos = Vec3(0,-height,0);
-//	Vec3 iDir = Vec3::UnitZ();
-//	Vec3 tDir = pos.normalized();
-//	Vec3 axis = iDir.cross(tDir).normalized();
-//	double angle = acos(iDir.dot(tDir));
-//	//dQFromAxisAndAngle(q,(dReal)axis[0],(dReal)axis[1],(dReal)axis[2],(dReal)angle);
-//	Quat qEigen = (Quaterniond) AngleAxisd(angle, axis);
-//	toDQuat(qEigen, q);
-//	Vec3 fPos = tDir * (height/2);
-//	dGeomSetOffsetPosition(bGeom, (dReal)fPos[0], (dReal)fPos[1], (dReal)fPos[2]);
-//	dGeomSetOffsetQuaternion(bGeom, q);
-
-
-
-	//	Create joints in the dynamics world.
-
-	//	Attach the joints to the bodies.
-
-	//	Set the parameters of all joints.
-
-	//	Create a collision world and collision geometry objects, as necessary.
-	// ??? already done ???
 
 }
 
 void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
-
-	// create a body for this bone
-	dBodyID bid = dBodyCreate(wid);
-//	dMass mass;
-//	dMassSetSphere(&mass, 0.1, 0.1);
-//	dBodySetMass(bid, &mass);
+	btRigidBody* groundRigidBody = new btRigidBody(0, NULL, groundShape, btVector3(0,0,0));
+	dynamicsWorld->addRigidBody(groundRigidBody);
 
 	// create a geometry for bone and attach to parent body
 	if (s->hasParent()) {
@@ -244,6 +190,7 @@ void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
 		double height = pos.norm();
 
 		// NOTE that capsules are aligned along the Z axis
+		btCollisionShape* boneShape = new btCapsuleShape(0.1, height);
 		dGeomID bGeom = dCreateCapsule(sid, 3, height);
 		dGeomSetBody(bGeom, parentBodyID);
 

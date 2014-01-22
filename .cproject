@@ -32,6 +32,7 @@
 									<listOptionValue builtIn="false" value="/usr/include/OGRE"/>
 									<listOptionValue builtIn="false" value="/usr/include/eigen3"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/ode/ODE_01/src/OgreProcedural/include}&quot;"/>
+									<listOptionValue builtIn="false" value="/usr/include/bullet/"/>
 								</option>
 								<option id="gnu.cpp.compiler.option.preprocessor.def.379655181" name="Defined symbols (-D)" superClass="gnu.cpp.compiler.option.preprocessor.def" valueType="definedSymbols">
 									<listOptionValue builtIn="false" value="dDOUBLE"/>
