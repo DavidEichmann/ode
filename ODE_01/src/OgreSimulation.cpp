@@ -7,7 +7,9 @@
 #include <OGRE/Ogre.h>
 #include <OIS/OIS.h>
 #include <Eigen/Geometry>
+#include <tuple>
 
+#include "Simulation.h"
 #include "Constants.h"
 #include "Util.h"
 #include "BVHParser.h"
@@ -19,8 +21,9 @@ OgreSimulation::OgreSimulation(const char * bvhFile) : Simulation(bvhFile) {};
 
 void OgreSimulation::run() {
 	initOgre();
-	// realizeSkeletons();
-	realizeHuman();
+	realizeSkeletons();
+	// realizeHuman();
+	// realizeBall();
 	mainLoop();
 }
 
@@ -91,8 +94,8 @@ void OgreSimulation::mainLoop() {
 
 		// rotate the camera
 		double h = 1;
-		double d = 3;
-		double s = 30;
+		double d = 30;
+		double s = 1;
 		mCamera->setPosition(
 				Ogre::Vector3(d * Ogre::Math::Sin(t / s), h,
 						d * Ogre::Math::Cos(t / s)));
@@ -105,6 +108,26 @@ void OgreSimulation::mainLoop() {
 		Ogre::WindowEventUtilities::messagePump();
 		mRoot->renderOneFrame(10);
 	}
+}
+
+void OgreSimulation::realizeBall() {
+	// ball properties
+	Vec3 pos(0,1,0);
+	dReal mass = 70;
+	dReal radius = 0.25;
+
+	// ode sphere
+	createBall(pos, mass, radius);
+
+	// ogre sphere
+	Ogre::SceneNode * node = mSceneMgr->getRootSceneNode()->createChildSceneNode();
+	node->setPosition((float) pos[0], (float) pos[1], (float) pos[2]);
+	Procedural::SphereGenerator gen = Procedural::SphereGenerator(radius,10,10);
+	Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
+	se->setMaterialName("Ogre/Earring");
+	node->attachObject(se);
+
+	ballNode = node;
 }
 
 void OgreSimulation::realizeHuman() {
@@ -157,7 +180,7 @@ void OgreSimulation::realizeSkeleton(Skeleton * s) {
 
 		// generate a mesh
 		Procedural::CapsuleGenerator gen = Procedural::CapsuleGenerator();
-		gen.setRadius(3);
+		gen.setRadius(0.1);
 
 		/// height
 		gen.setHeight(height);
@@ -198,6 +221,13 @@ void OgreSimulation::realizeSkeleton(Skeleton * s) {
 }
 
 void OgreSimulation::updateFromSim() {
+
+	if(ballNode != nullptr) {
+		const dReal * pos = dBodyGetPosition(ballID);
+		const dReal * q = dBodyGetQuaternion(ballID);
+		ballNode->setPosition(Ogre::Vector3(pos[0],pos[1],pos[2]));
+		ballNode->setOrientation(Ogre::Quaternion(q[0],q[1],q[2],q[3]));
+	}
 
 	if(human != NULL) {
 		int size = human->getSize();

@@ -1,6 +1,7 @@
 #include <string.h>
 #include <iostream>
 #include <fstream>
+#include <math.h>
 
 #include "Constants.h"
 #include "Util.h"
@@ -23,6 +24,9 @@ bool Skeleton::hasParent() {
 }
 
 Vec3 Skeleton::getPos() {
+	if(hasPosChan) {
+		return Vec3(pos[0],pos[1],pos[2])*scaleFactor;
+	}
 	return Vec3(pos[0],pos[1],pos[2]);
 }
 
@@ -65,7 +69,6 @@ void Skeleton::updateRotQ() {
 			AngleAxisd(D2R(rot[1]), Vec3::UnitX()) *
 			AngleAxisd(D2R(rot[2]), Vec3::UnitY());
 }
-
 void Skeleton::updateGlobals() {
 	// get parent Global pos and rot
 	Quat pQ;
@@ -84,22 +87,25 @@ void Skeleton::updateGlobals() {
 	rotQG = pQ * getRot();
 }
 
+void Skeleton::calculateMinMaxY(float & mi, float & ma) {
+	Vec3 pos = getPosG();
+	mi = min(mi, (float) pos[1]);
+	ma = max(ma, (float) pos[1]);
+	forall(children, [&](Skeleton * sk) {
+		sk->calculateMinMaxY(mi,ma);
+	});
+}
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+float Skeleton::calculateScaleAndTranslate() {
+	float mi,ma;
+	Vec3 pos = getPosG();
+	mi = ma = pos[1];
+	calculateMinMaxY(mi,ma);
+	float targetHeight = 1.75;
+	float rawHeight = ma - mi;
+	scaleFactor = targetHeight/rawHeight;
+	translateY = 0.2 - mi;
+}
 
 
 

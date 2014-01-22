@@ -123,6 +123,7 @@ Simulation::~Simulation() {
 void Simulation::step(double dt) {
 
 	// load next keyframe according to time delta
+	double simTcurrent = simT;
 	simT += dt;
 	int f = (int) (simT / bvh.frameTime);
 	f = min(f, bvh.numFrames - 1);
@@ -134,14 +135,34 @@ void Simulation::step(double dt) {
 	odeSimT += odeSteps*STEP_SIZE;
 	for(int i = 0; i < odeSteps; i++) {
 		dSpaceCollide(sid, this, &collisionCallbackNonmemberFn);
+		if(ballID != 0) { controlBall(ballID,simTcurrent,STEP_SIZE); }
+		simTcurrent += STEP_SIZE;
 		dWorldStep(wid,STEP_SIZE);
 		// Remove all joints in the contact joint group.
 		dJointGroupEmpty(contactGroupid);
+//		cout << bvh.skeletons[0]->getPosG()[1] << endl;
 	}
 }
 
 vector<Skeleton*> Simulation::getSkeletons() {
 	return bvh.skeletons;
+}
+
+dBodyID Simulation::createBall(const Vec3 & pos, const dReal & mass, const dReal & radius) {
+	if(ballID != 0) {
+		dBodyDestroy(ballID);
+	}
+
+	// ode sphere
+	dBodyID bid = ballID = dBodyCreate(wid);
+	dGeomID gid = dCreateSphere(sid,radius);
+	dGeomSetBody(gid,bid);
+	dBodySetPosition(bid,(dReal)pos[0],(dReal)pos[1],(dReal)pos[2]);
+	dMass dmass;
+	dBodyGetMass(bid, &dmass);
+	dmass.mass = mass;
+
+	return bid;
 }
 
 void Simulation::initODE() {
@@ -155,11 +176,11 @@ void Simulation::initODE() {
 	contactGroupid = dJointGroupCreate(1000);
 	jointGroupid = dJointGroupCreate(100);
 	/// gravity
-	dWorldSetGravity(wid, 0, GRAVITY_ACC, 0);
+	dWorldSetGravity(wid, 0, -GRAVITY_ACC, 0);
 	/// space
 	sid = dHashSpaceCreate(0);
 	/// floor
-	dCreatePlane(sid, 0, 1, 0, 0);
+	dCreatePlane(sid, 0, 1, 0, -1.5);
 
 	if(useBVH) {
 		///////
@@ -244,9 +265,10 @@ void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
 			dGeomSetOffsetQuaternion(bGeom, q);
 		}
 		// add mass to the parent
-		dMass pMass;
-		dBodyGetMass(parentBodyID, &pMass);
-		pMass.mass += height;	// TODO have some better way of deciding mass
+		dMass * pMass = new dMass;
+		dBodyGetMass(parentBodyID, pMass);
+		pMass->mass += height * 20;	// TODO have some better way of deciding mass
+		dBodySetMass(parentBodyID, pMass);
 	}
 
 	// set the position and orientation of the body
@@ -281,3 +303,37 @@ void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
 		initODESkeleton(*c, bid);
 	}
 }
+
+void Simulation::controlBall(dBodyID bid, dReal t, dReal dt) {
+	dMass mass;
+	dBodyGetMass(bid, &mass);
+
+	// if starting next impulse
+	if(stepsLeft == 0) {
+		stepsLeft = impulsSteps + restSteps;
+		// aim to maintain position at end of full period
+		dReal aR = -GRAVITY_ACC;
+		dReal TR = restSteps * STEP_SIZE;
+		dReal TR2 = TR*TR;
+		dReal TA = impulsSteps * STEP_SIZE;
+		dReal TA2 = TA*TA;
+		dReal V0 = dBodyGetLinearVel(bid)[1];
+
+		dReal aA = (((aR*TR2)/2) + (V0*TA) + (TR*V0))   /   (-1 * ((TA*TR) + (TA2/2)));
+		impulseF = (aA + GRAVITY_ACC) * mass.mass;
+
+		cout << dBodyGetPosition(bid)[1] << endl;
+	}
+
+	// if in Active state
+	if(stepsLeft > restSteps) {
+		dBodyAddForce(bid,0,impulseF,0);
+	}
+	// if in Rest state
+	else {
+		// apply no force
+	}
+	stepsLeft--;
+
+}
+

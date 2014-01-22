@@ -7,6 +7,7 @@
 
 #include "Simulation.h"
 #include "BVHParser.h"
+#include "Constants.h"
 
 using namespace std;
 
@@ -29,9 +30,12 @@ protected:
 	BVHParser bvh;
 	map<Skeleton*,dBodyID> skelBodyMap;
 	map<dBodyID, Skeleton*> bodySkelMap;
+	dBodyID ballID = 0;
 
 	dWorldID wid;
 	dSpaceID sid;
+
+	dBodyID createBall(const Vec3 & pos, const dReal & mass, const dReal & radius);
 
 private:
 
@@ -49,6 +53,13 @@ private:
 	void initODE();
 	bool overlap(dBodyID,dBodyID);
 	void setOverlap(dBodyID,dBodyID);
+
+
+	dReal impulseF = 0;
+	int stepsLeft = 0;
+	int impulsSteps = max(1,(int) (3 / STEP_SIZE));
+	int restSteps = max(1,(int) (0.5 / STEP_SIZE));
+	void controlBall(dBodyID ballID, dReal t, dReal dt);
 };
 
 #endif

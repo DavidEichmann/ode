@@ -107,13 +107,13 @@ void BVHParser::parse(const char * filePath) {
 	ifstream in;
 	in.open(filePath, ios::in);
 	parse(in);
-	updateSkeletons();
 }
 
 void BVHParser::parse(ifstream & in) {
 	// heirarchy
 	nextWord(in); // HEIRARCHY
 	parseHierarchy(in);
+	updateSkeletons();
 
 	// parse the keyframes
 	parseKeyfames(in);
