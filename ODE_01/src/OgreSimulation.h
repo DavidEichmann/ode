@@ -32,7 +32,6 @@ private:
 	Ogre::SceneNode * * humanNodes;
 
 	void initOgre();
-	void realizeBall();
 	void realizeHuman();
 	void realizeSkeletons();
 	void realizeSkeleton(Skeleton * s);

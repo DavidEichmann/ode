@@ -52,6 +52,9 @@
 									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="GL"/>
 									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="GLU"/>
 									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="ode"/>
+									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="BulletDynamics"/>
+									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="LinearMath"/>
+									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="BulletCollision"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.cpp.linker.input.1465535254" superClass="cdt.managedbuild.tool.gnu.cpp.linker.input">
 									<additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>

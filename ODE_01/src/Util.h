@@ -5,6 +5,7 @@
 #include <vector>
 #include <Ogre.h>
 #include <ode/ode.h>
+#include <btBulletDynamicsCommon.h>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
@@ -19,12 +20,28 @@ inline double D2R(const double & x) {
 	return 0.0174532925 * x;
 }
 
-inline Ogre::Vector3 toVec3(Vector3d v) {
+inline btVector3 btConv(const Vec3 & v) {
+	return btVector3(btScalar(v[0]),btScalar(v[1]),btScalar(v[2]));
+}
+
+inline btQuaternion btConv(const Quat & q) {
+	return btQuaternion(btScalar(q.x()),btScalar(q.y()),btScalar(q.z()),btScalar(q.w()));
+}
+
+inline Ogre::Vector3 ogreConv(Vector3d v) {
 	return Ogre::Vector3((float) v[0],(float) v[1],(float) v[2]);
 }
 
-inline Ogre::Quaternion toQuat(Quaterniond q) {
+inline Ogre::Quaternion ogreConv(Quaterniond q) {
 	return Ogre::Quaternion((Ogre::Real) q.w(),(Ogre::Real) q.x(),(Ogre::Real) q.y(),(Ogre::Real) q.z());
+}
+
+inline Ogre::Vector3 ogreConv(btVector3 v) {
+	return Ogre::Vector3(v.x(), v.y(), v.z());
+}
+
+inline Ogre::Quaternion ogreConv(btQuaternion q) {
+	return Ogre::Quaternion(q.w(), q.x(), q.y(), q.z());
 }
 
 inline void toDQuat(Quaterniond q, dQuaternion out) {
@@ -80,7 +97,6 @@ inline void mapI(vector<E> & v, F f) {
 		e = f(e);
 	});
 }
-
 
 
 

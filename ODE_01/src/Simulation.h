@@ -16,7 +16,6 @@ class Simulation {
 public:
 	Simulation();
 	Simulation(const char * bvhFile);
-	~Simulation();
 
 	void step(double dt); // step the simulation by t seconds
 	vector<Skeleton*> getSkeletons();
@@ -28,8 +27,8 @@ public:
 protected:
 
 	BVHParser bvh;
-	map<Skeleton*,dBodyID> skelBodyMap;
-	map<dBodyID, Skeleton*> bodySkelMap;
+	map<Skeleton*,btRigidBody*> skelBodyMap;
+	map<btRigidBody*, Skeleton*> bodySkelMap;
 
 	btDynamicsWorld * world;
 
@@ -47,7 +46,7 @@ private:
 
 	map<dBodyID, vector<dBodyID> > overlapMap;
 
-	void initODESkeleton(Skeleton* s, dBodyID parentBodyID);
+	void initODESkeleton(Skeleton* s, btRigidBody* parentBodyID);
 	void initODE();
 	bool overlap(dBodyID,dBodyID);
 	void setOverlap(dBodyID,dBodyID);

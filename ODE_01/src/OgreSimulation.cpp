@@ -94,8 +94,8 @@ void OgreSimulation::mainLoop() {
 
 		// rotate the camera
 		double h = 1;
-		double d = 30;
-		double s = 1;
+		double d = 10;
+		double s = 10;
 		mCamera->setPosition(
 				Ogre::Vector3(d * Ogre::Math::Sin(t / s), h,
 						d * Ogre::Math::Cos(t / s)));
@@ -110,56 +110,36 @@ void OgreSimulation::mainLoop() {
 	}
 }
 
-void OgreSimulation::realizeBall() {
-	// ball properties
-	Vec3 pos(0,1,0);
-	dReal mass = 70;
-	dReal radius = 0.25;
-
-	// ode sphere
-	createBall(pos, mass, radius);
-
-	// ogre sphere
-	Ogre::SceneNode * node = mSceneMgr->getRootSceneNode()->createChildSceneNode();
-	node->setPosition((float) pos[0], (float) pos[1], (float) pos[2]);
-	Procedural::SphereGenerator gen = Procedural::SphereGenerator(radius,10,10);
-	Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
-	se->setMaterialName("Ogre/Earring");
-	node->attachObject(se);
-
-	ballNode = node;
-}
-
-void OgreSimulation::realizeHuman() {
-	human = new Human("Data/Model/Human_v0.2.model");
-	human->realize(wid,sid);
-	int size = human->getSize();
-	humanNodes = new Ogre::SceneNode*[size];
-	const Human::Props * props = human->getProps();
-	for(int i = 0; i < size; i++) {
-
-		// create a global scene node
-		Ogre::SceneNode * node = mSceneMgr->getRootSceneNode()->createChildSceneNode();
-		humanNodes[i] = node;
-
-		//position
-		Vec3 pos = props->pos;
-		node->setPosition((float) pos[0], (float) pos[1], (float) pos[2]);
-
-		// generate a mesh
-		Procedural::BoxGenerator gen = Procedural::BoxGenerator();
-		gen.setSizeX(props->width);
-		gen.setSizeY(props->height);
-		gen.setSizeZ(props->depth);
-
-		// attach to node
-		Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
-		se->setMaterialName("Ogre/Earring");
-		node->attachObject(se);
-
-		props++;
-	}
-}
+//void OgreSimulation::realizeHuman() {
+//	human = new Human("Data/Model/Human_v0.2.model");
+//	human->realize(wid,sid);
+//	int size = human->getSize();
+//	humanNodes = new Ogre::SceneNode*[size];
+//	const Human::Props * props = human->getProps();
+//	for(int i = 0; i < size; i++) {
+//
+//		// create a global scene node
+//		Ogre::SceneNode * node = mSceneMgr->getRootSceneNode()->createChildSceneNode();
+//		humanNodes[i] = node;
+//
+//		//position
+//		Vec3 pos = props->pos;
+//		node->setPosition((float) pos[0], (float) pos[1], (float) pos[2]);
+//
+//		// generate a mesh
+//		Procedural::BoxGenerator gen = Procedural::BoxGenerator();
+//		gen.setSizeX(props->width);
+//		gen.setSizeY(props->height);
+//		gen.setSizeZ(props->depth);
+//
+//		// attach to node
+//		Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
+//		se->setMaterialName("Ogre/Earring");
+//		node->attachObject(se);
+//
+//		props++;
+//	}
+//}
 
 void OgreSimulation::realizeSkeletons() {
 	nodeSkelPairs.clear();
@@ -192,7 +172,7 @@ void OgreSimulation::realizeSkeleton(Skeleton * s) {
 		//  ...by positioning the bone on the positive y axis, then rotating to correct orientation
 		//  handle the special case of pos being on the y axis (cross product will fail)
 		if(pos[0] == 0 && pos[2] == 0) {
-			gen.setPosition(toVec3(pos * 0.5));
+			gen.setPosition(ogreConv(pos * 0.5));
 		}
 		else {
 			Vec3 iDir = Vec3::UnitY();
@@ -201,9 +181,9 @@ void OgreSimulation::realizeSkeleton(Skeleton * s) {
 			double angle = acos(iDir.dot(tDir));
 			Quaterniond meshRot = (Quaterniond) AngleAxisd(angle, axis);
 
-			const Ogre::Vector3 finalPos = toVec3( (Vec3) tDir * (height/-2) );
+			const Ogre::Vector3 finalPos = ogreConv( (Vec3) tDir * (height/-2) );
 			gen.setPosition(finalPos);
-			gen.setOrientation(toQuat(meshRot));
+			gen.setOrientation(ogreConv(meshRot));
 		}
 
 		Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
@@ -222,42 +202,33 @@ void OgreSimulation::realizeSkeleton(Skeleton * s) {
 
 void OgreSimulation::updateFromSim() {
 
-	if(ballNode != nullptr) {
-		const dReal * pos = dBodyGetPosition(ballID);
-		const dReal * q = dBodyGetQuaternion(ballID);
-		ballNode->setPosition(Ogre::Vector3(pos[0],pos[1],pos[2]));
-		ballNode->setOrientation(Ogre::Quaternion(q[0],q[1],q[2],q[3]));
-	}
-
-	if(human != NULL) {
-		int size = human->getSize();
-		const dBodyID * bID = human->getBodyIDs();
-		Ogre::SceneNode * * sn = humanNodes;
-		for(int i = 0; i < size; i++) {
-			const dReal * pos = dBodyGetPosition(*bID);
-			const dReal * q = dBodyGetQuaternion(*bID);
-			(*sn)->setPosition(Ogre::Vector3(pos[0],pos[1],pos[2]));
-			(*sn)->setOrientation(Ogre::Quaternion(q[0],q[1],q[2],q[3]));
-			bID++;
-			sn++;
-		}
-	}
-	else {
+//	if(human != NULL) {
+//		int size = human->getSize();
+//		const dBodyID * bID = human->getBodyIDs();
+//		Ogre::SceneNode * * sn = humanNodes;
+//		for(int i = 0; i < size; i++) {
+//			const dReal * pos = dBodyGetPosition(*bID);
+//			const dReal * q = dBodyGetQuaternion(*bID);
+//			(*sn)->setPosition(Ogre::Vector3(pos[0],pos[1],pos[2]));
+//			(*sn)->setOrientation(Ogre::Quaternion(q[0],q[1],q[2],q[3]));
+//			bID++;
+//			sn++;
+//		}
+//	}
+//	else {
 		for(vector< pair<Ogre::SceneNode*,Skeleton*> >::iterator it = nodeSkelPairs.begin(); it != nodeSkelPairs.end(); it++) {
 			Ogre::SceneNode * sn = it->first;
 			Skeleton * sk = it->second;
 
 			// ensure that there is a valid dBodyID
 			if(skelBodyMap.count(sk) != 0) {
-				dBodyID bodyID = skelBodyMap[sk];
-				const dReal * pos = dBodyGetPosition(bodyID);
-				const dReal * q = dBodyGetQuaternion(bodyID);
+				btTransform bodyTrans = skelBodyMap[sk]->getWorldTransform();
 
-				sn->setPosition(Ogre::Vector3(pos[0],pos[1],pos[2]));
-				sn->setOrientation(Ogre::Quaternion(q[0],q[1],q[2],q[3]));
+				sn->setPosition(ogreConv(bodyTrans.getOrigin()));
+				sn->setOrientation(ogreConv(bodyTrans.getRotation()));
 			}
 		}
-	}
+//	}
 }
 
 
