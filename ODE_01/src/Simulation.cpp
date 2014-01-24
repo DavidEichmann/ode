@@ -226,13 +226,7 @@ void Simulation::initODESkeleton(Skeleton* s, btRigidBody* parent) {
 //		dJointSetAMotorParam(amid,dParamLoStop,-PI/8);
 //		dJointSetAMotorParam(amid,dParamHiStop,PI/8);
 
-		// skeleton uses local origin at the joint, while in bullet we use CoM for the origin
-		// 	it can be shown that the connection point is:
-		//    local to parent:	s->parent->getOffset()/2
-		//    local to s:		s->getPosCom()
-
-
-//		btPoint2PointConstraint(*parent, *body, btConv(s->parent->getOffset()/2), btConv(s->getPosCom()));
+		world->addConstraint(new btPoint2PointConstraint(*parent, *body, btConv(s->getOffset()), btVector3(0,0,0)), true);
 
 		// append to skelBodyMap
 		skelBodyMap[s] = parent;
