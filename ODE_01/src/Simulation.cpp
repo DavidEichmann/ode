@@ -125,16 +125,14 @@ void Simulation::step(double dt) {
 	f = min(f, bvh.numFrames - 1);
 	//bvh.loadKeyframe(f);
 
-	// reflect changes in ODE
-	// step ODE world in STEP_SIZE steps stopping just before current simT
+	// reflect changes in Bullet
+	// step Bullet world in STEP_SIZE steps stopping just before current simT
 	int odeSteps = (int) ((simT - odeSimT)/STEP_SIZE);
 	odeSimT += odeSteps*STEP_SIZE;
 	for(int i = 0; i < odeSteps; i++) {
 		simTcurrent += STEP_SIZE;
-		//		world->stepSimulation(STEP_SIZE,1,1/STEP_SIZE);
-//		world->stepSimulation(STEP_SIZE/2,1,STEP_SIZE/2);
-		// Remove all joints in the contact joint group.
-		cout << skelBodyMap[bvh.skeletons[0]->children[0]]->getWorldTransform().getOrigin().y() << endl;
+		world->stepSimulation(STEP_SIZE,1,STEP_SIZE);
+//		cout << skelBodyMap[bvh.skeletons[0]->children[0]]->getWorldTransform().getOrigin().y() << endl;
 	}
 }
 
@@ -180,7 +178,7 @@ void Simulation::initODESkeleton(Skeleton* s, btRigidBody* parent) {
 	btCompoundShape* boneShape = new btCompoundShape();
 	btRigidBody* body = new btRigidBody(1, NULL, boneShape, btVector3(0,0,0));
 	if (s->hasParent()) {
-		Vec3 pos = s->getPos();
+		Vec3 pos = s->getOffset();
 		double height = pos.norm();
 
 		// NOTE that capsules are aligned along the Z axis
@@ -208,12 +206,10 @@ void Simulation::initODESkeleton(Skeleton* s, btRigidBody* parent) {
 		btVector3 inertia;
 		parent->getCollisionShape()->calculateLocalInertia(mass,inertia);
 		parent->setMassProps(mass, inertia);
-		std::cout << "mass invMass: " << mass << " " << parent->getInvMass() << endl;
 	}
 
 	// set the position and orientation of the body
-	Vec3 gPos = s->getPosG();
-	body->setWorldTransform(btTransform(btConv(s->getRotG()), btConv(gPos)));
+	body->setWorldTransform(btTransform(btConv(s->getRotG()), btConv(s->getPosEndG())));
 
 	// TODO attach a joint to parent
 	if(s->hasParent()) {
@@ -229,6 +225,14 @@ void Simulation::initODESkeleton(Skeleton* s, btRigidBody* parent) {
 //		dJointSetAMotorAxis(amid,2,2, 0,-1,0);
 //		dJointSetAMotorParam(amid,dParamLoStop,-PI/8);
 //		dJointSetAMotorParam(amid,dParamHiStop,PI/8);
+
+		// skeleton uses local origin at the joint, while in bullet we use CoM for the origin
+		// 	it can be shown that the connection point is:
+		//    local to parent:	s->parent->getOffset()/2
+		//    local to s:		s->getPosCom()
+
+
+//		btPoint2PointConstraint(*parent, *body, btConv(s->parent->getOffset()/2), btConv(s->getPosCom()));
 
 		// append to skelBodyMap
 		skelBodyMap[s] = parent;

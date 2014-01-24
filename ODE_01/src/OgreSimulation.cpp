@@ -151,8 +151,8 @@ void OgreSimulation::realizeSkeletons() {
 
 void OgreSimulation::realizeSkeleton(Skeleton * s) {
 	// ignore root and 0 length nodes
-	Vec3 pos = s->getPos();
-	double height = pos.norm();
+	Vec3 offset = s->getOffset();
+	double height = offset.norm();
 	if(s->hasParent() && height > 0) {
 
 		// create a global scene node
@@ -164,19 +164,19 @@ void OgreSimulation::realizeSkeleton(Skeleton * s) {
 
 		/// height
 		gen.setHeight(height);
-		//gen.setHeight(1);
+		//gen.setHeight(0.0001);
 
 		//  Achieve this...
 		//    orientation: s's local position is a vector representing the orientation of the bone
 		//    position: one end at the origin, the other ending at (-1 * local position) a.k.a heading back to parent node
 		//  ...by positioning the bone on the positive y axis, then rotating to correct orientation
 		//  handle the special case of pos being on the y axis (cross product will fail)
-		if(pos[0] == 0 && pos[2] == 0) {
-			gen.setPosition(ogreConv(pos * 0.5));
+		if(offset[0] == 0 && offset[2] == 0) {
+			gen.setPosition(ogreConv(offset * 0.5));
 		}
 		else {
 			Vec3 iDir = Vec3::UnitY();
-			Vec3 tDir = (pos * (-1)).normalized();
+			Vec3 tDir = (offset * (-1)).normalized();
 			Vec3 axis = iDir.cross(tDir).normalized();
 			double angle = acos(iDir.dot(tDir));
 			Quaterniond meshRot = (Quaterniond) AngleAxisd(angle, axis);

@@ -26,13 +26,19 @@ public:
 	// we assume that if there is no position chanel, then pos is just the offset
 	bool hasPosChan;
 
-	double pos[3];	// Local position of the start of the bone (bone extends to it's childrens' pos-es)
+	double offset[3];	// offset from parent joint (in the local coordinate system of the parent joint)
 	double rot[3];	// rotation relative to parent (Z X Y: raw 3 axis rotation as found in BVH files)
 
 	Skeleton();
 	bool hasParent();
-	Vec3 getPos();
+	Vec3 getOffset();
 	Vec3 getPosG();
+	Vec3 getPosStart();
+	Vec3 getPosStartG();
+	Vec3 getPosEnd();
+	Vec3 getPosEndG();
+	Vec3 getPosCom();
+	Vec3 getPosComG();
 	Quat getRot();
 	Quat getRotG();
 	int calculateNumChan();
@@ -51,6 +57,7 @@ public:
 			scaleAndTranslate();
 		}
 	};
+	vector<Skeleton*> getAllSkeletons();
 
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
@@ -58,13 +65,11 @@ private:
 
 	void updateRotQ();	// update local rotQ
 	void updateGlobals();	// update local rotation quaternion
-	void scaleAndTranslate(float scaleFactor = -1) {
-		if(scaleFactor == -1) { scaleFactor = this->scaleFactor;  }
-		else { this->scaleFactor = scaleFactor; }
-		for(int i = 0; i < 3; i++) { pos[i] *= scaleFactor; }
+	void scaleAndTranslate() {
+		for(int i = 0; i < 3; i++) { offset[i] *= scaleFactor; }
 		posG[1] += translateY;
 		posG = posG * scaleFactor;
-		forall(children, [&](Skeleton * c){ c->scaleAndTranslate(scaleFactor); });
+		forall(children, [&](Skeleton * c){ c->scaleAndTranslate(); });
 	};
 	Vec3 posG;
 	Quat rotQG;
