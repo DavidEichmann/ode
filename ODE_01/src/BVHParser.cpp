@@ -98,8 +98,8 @@ void BVHParser::loadKeyframe(int index) {
 }
 
 void BVHParser::updateSkeletons() {
-	for(vector<Skeleton*>::iterator it = skeletons.begin(); it != skeletons.end(); it++) {
-		(*it)->update();
+	for(Skeleton* s : skeletons) {
+		s->update();
 	}
 }
 
@@ -113,7 +113,7 @@ void BVHParser::parse(ifstream & in) {
 	// heirarchy
 	nextWord(in); // HEIRARCHY
 	parseHierarchy(in);
-	updateSkeletons();
+//	updateSkeletons();
 
 	// parse the keyframes
 	parseKeyfames(in);

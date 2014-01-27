@@ -132,7 +132,6 @@ void Simulation::step(double dt) {
 	for(int i = 0; i < odeSteps; i++) {
 		simTcurrent += STEP_SIZE;
 		world->stepSimulation(STEP_SIZE,1,STEP_SIZE);
-//		cout << skelBodyMap[bvh.skeletons[0]->children[0]]->getWorldTransform().getOrigin().y() << endl;
 	}
 }
 
@@ -152,7 +151,7 @@ void Simulation::initODE() {
 	// floor
 	btCollisionShape* groundShape = new btStaticPlaneShape(btVector3(0,1,0),0);
 	btRigidBody* groundRigidBody = new btRigidBody(0, NULL, groundShape, btVector3(0,0,0));
-	world->addRigidBody(groundRigidBody);
+	world->addRigidBody(groundRigidBody, GROUND_GROUP, GROUND_MASK);
 
 	if(useBVH) {
 		///////
@@ -161,9 +160,8 @@ void Simulation::initODE() {
 		bvh.loadKeyframe(0);
 
 		//	Set the state (position etc) of all bodies.
-		for (vector<Skeleton*>::iterator ss = bvh.skeletons.begin();
-				ss != bvh.skeletons.end(); ss++) {
-			initODESkeleton(*ss, nullptr);
+		for (Skeleton* ss : bvh.skeletons) {
+			initODESkeleton(ss, nullptr);
 		}
 
 		// TODO identify overlapping body segments
@@ -240,5 +238,5 @@ void Simulation::initODESkeleton(Skeleton* s, btRigidBody* parent) {
 	}
 
 	// add to the world
-	world->addRigidBody(body);
+	world->addRigidBody(body, BONE_GROUP, BONE_MASK);
 }

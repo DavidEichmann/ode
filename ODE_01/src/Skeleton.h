@@ -20,8 +20,8 @@ public:
 	vector<Skeleton *> children;
 	Skeleton * parent;
 	string name;	// name of the (root) joint
-	float scaleFactor = 1;
-	float translateY = 0;
+	float scaleFactor = -1;
+	Vec3 translate;
 
 	// we assume that if there is no position chanel, then pos is just the offset
 	bool hasPosChan;
@@ -48,13 +48,10 @@ public:
 	void update() {
 		updateRotQ();
 		updateGlobals();
-		for(vector<Skeleton*>::iterator it = children.begin(); it!= children.end(); it++) {
-			(*it)->update();
-		}
 		if(!hasParent()) {
-			float targetHeight = 1.75;
-			float rawHeight = calculateScaleAndTranslate();
-			scaleAndTranslate();
+			if(scaleFactor == -1) {
+				calculateScaleAndTranslate();
+			}
 		}
 	};
 	vector<Skeleton*> getAllSkeletons();
@@ -63,20 +60,21 @@ public:
 
 private:
 
+	Vec3 getRawOffset();
 	void updateRotQ();	// update local rotQ
 	void updateGlobals();	// update local rotation quaternion
-	void scaleAndTranslate() {
-		for(int i = 0; i < 3; i++) { offset[i] *= scaleFactor; }
-		posG[1] += translateY;
-		posG = posG * scaleFactor;
-		forall(children, [&](Skeleton * c){ c->scaleAndTranslate(); });
-	};
+//	void scaleAndTranslate() {
+//		for(int i = 0; i < 3; i++) { offset[i] *= scaleFactor; }
+//		posG += translate;
+//		posG = posG * scaleFactor;
+//		forall(children, [&](Skeleton * c){ c->scaleAndTranslate(); });
+//	};
 	Vec3 posG;
 	Quat rotQG;
 	Quat rotQ;
 
-	void calculateMinMaxY(float & mi, float & ma);
-	float calculateScaleAndTranslate();
+	void calculateMinMax(Vec3 & mi, Vec3 & ma);
+	void calculateScaleAndTranslate();
 
 
 };

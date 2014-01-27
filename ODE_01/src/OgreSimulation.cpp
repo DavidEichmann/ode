@@ -94,7 +94,7 @@ void OgreSimulation::mainLoop() {
 
 		// rotate the camera
 		double h = 1;
-		double d = 10;
+		double d = 13;
 		double s = 10;
 		mCamera->setPosition(
 				Ogre::Vector3(d * Ogre::Math::Sin(t / s), h,

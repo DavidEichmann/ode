@@ -14,6 +14,12 @@ using namespace std;
 class Simulation {
 
 public:
+
+	static const short int BONE_GROUP = 1 << 0;
+	static const short int GROUND_GROUP = 1 << 1;
+	static const short int BONE_MASK = GROUND_GROUP;
+	static const short int GROUND_MASK = BONE_GROUP;
+
 	Simulation();
 	Simulation(const char * bvhFile);
 

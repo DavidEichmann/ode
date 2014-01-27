@@ -23,8 +23,12 @@ bool Skeleton::hasParent() {
 	return parent != NULL;
 }
 
+Vec3 Skeleton::getRawOffset() {
+	return Vec3(offset[0], offset[1], offset[2]);
+}
+
 Vec3 Skeleton::getOffset() {
-	return Vec3(offset[0],offset[1],offset[2]);
+	return getRawOffset() * scaleFactor;
 }
 
 Vec3 Skeleton::getPosStart() {
@@ -59,7 +63,7 @@ Quat Skeleton::getRot() {
 }
 
 Vec3 Skeleton::getPosG() {
-	return posG;
+	return (posG + translate) * scaleFactor;
 }
 
 Quat Skeleton::getRotG() {
@@ -74,8 +78,8 @@ int Skeleton::calculateNumChan() {
 
 	// recurse to children
 	if( ! children.empty()) {
-		for(vector<Skeleton *>::iterator it = children.begin(); it != children.end(); ++it) {
-			count += (*it)->calculateNumChan();
+		for(Skeleton * c : children) {
+			count += c->calculateNumChan();
 		}
 	}
 
@@ -98,8 +102,8 @@ void Skeleton::updateGlobals() {
 	Quat pQ;
 	Vec3 pPos;
 	if(hasParent()) {
-		pQ = parent->getRotG();
-		pPos = parent->getPosG();
+		pQ = parent->rotQG;
+		pPos = parent->posG;
 	}
 	else {
 		pQ = AngleAxisd(0,Vec3(0,0,1));
@@ -107,31 +111,39 @@ void Skeleton::updateGlobals() {
 	}
 
 	// apply parents global rot/pos to mine
-	posG = pPos + (pQ * getOffset());
+	posG = pPos + (pQ * getRawOffset());
 	rotQG = pQ * getRot();
+
+	// recurse to children
+	for(Skeleton* c : children) {
+		c->update();
+	}
 }
 
-void Skeleton::calculateMinMaxY(float & mi, float & ma) {
-	Vec3 pos = getPosG();
-	mi = min(mi, (float) pos[1]);
-	ma = max(ma, (float) pos[1]);
+void Skeleton::calculateMinMax(Vec3 & mi, Vec3 & ma) {
+	for(int i = 0; i < 3; i++) {
+		mi[i] = min((float) mi[i], (float) posG[i]);
+		ma[i] = max((float) ma[i], (float) posG[i]);
+	}
 	forall(children, [&](Skeleton * sk) {
-		sk->calculateMinMaxY(mi,ma);
+		sk->calculateMinMax(mi,ma);
 	});
 }
 
-float Skeleton::calculateScaleAndTranslate() {
-	float mi,ma;
-	Vec3 pos = getPosG();
-	mi = ma = pos[1];
-	calculateMinMaxY(mi,ma);
-	float targetHeight = 1.75;
-	float rawHeight = ma - mi;
-	float scaleFactor = targetHeight/rawHeight;
-	float translateY = 0.2 - mi;
+void Skeleton::calculateScaleAndTranslate() {
+	Vec3 mi,ma;
+	Vec3 pos = posG;
+	mi = ma = pos;
+	calculateMinMax(mi,ma);
+//	float targetHeight = 1.75;
+//	float rawHeight = ma[1] - mi[1];
+//	float scaleFactor = targetHeight/rawHeight;
+	float scaleFactor = BVH_SCALE;
+	Vec3 t = (ma + mi) / -2;
+	t += Vec3(0, (0.2/scaleFactor) + ((ma-mi)[1]/2), 0);
 	for(Skeleton* s : getAllSkeletons()) {
 		s->scaleFactor = scaleFactor;
-		s->translateY = translateY;
+		s->translate = t;
 	}
 }
 
