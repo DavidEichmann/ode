@@ -26,6 +26,8 @@ public:
 	void step(double dt); // step the simulation by t seconds
 	vector<Skeleton*> getSkeletons();
 
+	void internalTickCallback();
+
 	// is there a way to make collisionCallback private?
 	void collisionCallback(dGeomID o1, dGeomID o2);
 	void initialOverlapCallback(dGeomID o1, dGeomID o2);

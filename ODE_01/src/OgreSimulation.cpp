@@ -222,6 +222,14 @@ void OgreSimulation::updateFromSim() {
 
 			// ensure that there is a valid dBodyID
 			if(skelBodyMap.count(sk) != 0) {
+
+//				// animation
+//				if(sk->hasParent()) {
+//					sn->setPosition(ogreConv(sk->parent->getPosG()));
+//					sn->setOrientation(ogreConv(sk->parent->getRotG()));
+//				}
+
+				// simulation
 				btTransform bodyTrans = skelBodyMap[sk]->getWorldTransform();
 
 				sn->setPosition(ogreConv(bodyTrans.getOrigin()));

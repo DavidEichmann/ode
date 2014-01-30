@@ -93,9 +93,12 @@ int Skeleton::calculateContributingNumChan() {
 
 void Skeleton::updateRotQ() {
 	// done in BVH style (rotate Y the X then Z)
-	rotQ = 	AngleAxisd(D2R(rot[0]), Vec3::UnitZ()) *
+//	rotQ = 	AngleAxisd(D2R(rot[0]), Vec3::UnitZ()) *
+//			AngleAxisd(D2R(rot[1]), Vec3::UnitX()) *
+//			AngleAxisd(D2R(rot[2]), Vec3::UnitY());
+	rotQ = 	AngleAxisd(D2R(rot[0]), Vec3::UnitY()) *
 			AngleAxisd(D2R(rot[1]), Vec3::UnitX()) *
-			AngleAxisd(D2R(rot[2]), Vec3::UnitY());
+			AngleAxisd(D2R(rot[2]), Vec3::UnitZ());
 }
 void Skeleton::updateGlobals() {
 	// get parent Global pos and rot

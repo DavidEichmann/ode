@@ -116,6 +116,57 @@ Simulation::Simulation(const char * bvhFile) {
 	initODE();
 }
 
+void outofclassInternalTickCallback(btDynamicsWorld *world, btScalar dt) {
+	 static_cast<Simulation *>(world->getWorldUserInfo())->internalTickCallback();
+}
+
+void Simulation::internalTickCallback() {
+	// use PD control to move joint angles toward keyframe joint angles
+	for(Skeleton * ss : bvh.skeletons) { for(Skeleton * s : ss->getAllSkeletons()) {
+		if(s->hasParent() && skelBodyMap.count(s)) {
+			btRigidBody * body = skelBodyMap[s];
+
+			world->clearForces();
+			body->applyTorque(body->getTotalTorque() * -1);
+
+//				// calculate the end point relative to the parent joint (in the keyframe and the physics world)
+//				Quat kQ = s->parent->getRotG();
+//				Quat bQ = eigConv(body->getOrientation());
+//
+//				Vec3 kP = kQ * s->getOffset();
+//				Vec3 bP = bQ * s->getOffset();
+//
+//				// torque axis is the cross product of the 2 positions
+//				// normalize allowing for PD control to determine magnitude of the torque
+//				Vec3 tAx = kP.cross(bP);
+//				float tMag = tAx.norm();
+//				tAx /= tMag;
+//
+//				// PD control
+//				const float KP = 20;
+//
+//				float bPNorm = bP.norm();
+//				float kPNorm = kP.norm();
+//				float error = abs(asin( tMag / ( bPNorm * kPNorm ) ));
+//				if(bPNorm != 0 && kPNorm != 0 && error != 0) {
+//					Vec3 t = tAx * (KP * error);
+//					body->applyTorqueImpulse(btConv(t * STEP_SIZE));
+//
+//					if(s->name == "RightElbow" && std::isnan(t[0])) {
+//						cout << "(" << t[0] << ", " << t[1] << ", " << t[2] << ")" << endl;
+//					}
+//
+//	//				body->applyTorqueImpulse(btConv(Vec3(0.1,0,0)));
+//
+//					// TODO: D control
+//
+//
+//					// body->proceedToTransform(btTransform(btConv(s->parent->getRotG()), body->getWorldTransform().getOrigin()));
+//				}
+		}
+	}}
+}
+
 void Simulation::step(double dt) {
 
 	// load next keyframe according to time delta
@@ -123,13 +174,17 @@ void Simulation::step(double dt) {
 	simT += dt;
 	int f = (int) (simT / bvh.frameTime);
 	f = min(f, bvh.numFrames - 1);
-	//bvh.loadKeyframe(f);
+	bvh.loadKeyframe(f);
 
 	// reflect changes in Bullet
 	// step Bullet world in STEP_SIZE steps stopping just before current simT
 	int odeSteps = (int) ((simT - odeSimT)/STEP_SIZE);
 	odeSimT += odeSteps*STEP_SIZE;
 	for(int i = 0; i < odeSteps; i++) {
+
+
+
+
 		simTcurrent += STEP_SIZE;
 		world->stepSimulation(STEP_SIZE,1,STEP_SIZE);
 	}
@@ -147,6 +202,7 @@ void Simulation::initODE() {
 	btSequentialImpulseConstraintSolver* solver = new btSequentialImpulseConstraintSolver;
 	world = new btDiscreteDynamicsWorld(dispatcher,broadphase,solver,collisionConfiguration);
 	world->setGravity(btVector3(0,-GRAVITY_ACC,0));
+	world->setInternalTickCallback(outofclassInternalTickCallback, static_cast<void *>(this));
 
 	// floor
 	btCollisionShape* groundShape = new btStaticPlaneShape(btVector3(0,1,0),0);

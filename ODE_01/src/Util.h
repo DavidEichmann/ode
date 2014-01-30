@@ -28,6 +28,10 @@ inline btQuaternion btConv(const Quat & q) {
 	return btQuaternion(btScalar(q.x()),btScalar(q.y()),btScalar(q.z()),btScalar(q.w()));
 }
 
+inline Quat eigConv(const btQuaternion & q) {
+	return Quat(q.w(), q.x(), q.y(), q.z());
+}
+
 inline Ogre::Vector3 ogreConv(Vector3d v) {
 	return Ogre::Vector3((float) v[0],(float) v[1],(float) v[2]);
 }
