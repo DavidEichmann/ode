@@ -19,20 +19,35 @@ inline double D2R(const double & x) {
 	return 0.0174532925 * x;
 }
 
-inline Ogre::Vector3 toVec3(Vector3d v) {
+inline Ogre::Vector3 ogreConv(Vector3d v) {
 	return Ogre::Vector3((float) v[0],(float) v[1],(float) v[2]);
 }
 
-inline Ogre::Quaternion toQuat(Quaterniond q) {
+inline Ogre::Quaternion ogreConv(Quaterniond q) {
 	return Ogre::Quaternion((Ogre::Real) q.w(),(Ogre::Real) q.x(),(Ogre::Real) q.y(),(Ogre::Real) q.z());
 }
 
-inline void toDQuat(Quaterniond q, dQuaternion out) {
-	out[0] = q.w();
-	out[1] = q.x();
-	out[2] = q.y();
-	out[3] = q.z();
+inline void dConv(Vector3d v, dVector3 out) {
+	for(int i = 0; i < 3; i++) {
+		out[i] = (dReal) v[i];
+	}
 }
+
+inline void dConv(Quaterniond q, dQuaternion out) {
+	out[0] = (dReal) q.w();
+	out[1] = (dReal) q.x();
+	out[2] = (dReal) q.y();
+	out[3] = (dReal) q.z();
+}
+
+inline Vec3 eigVec3(const dVector3 v) {
+	return Vec3(v[0], v[1], v[2]);
+}
+
+inline Quat eigQuat(const dQuaternion q) {
+	return Quat(q[0], q[1], q[2], q[3]);
+}
+
 
 template<typename E>
 inline bool contains(std::vector<E> v, E el) {
@@ -80,7 +95,6 @@ inline void mapI(vector<E> & v, F f) {
 		e = f(e);
 	});
 }
-
 
 
 

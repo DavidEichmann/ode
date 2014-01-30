@@ -23,19 +23,47 @@ bool Skeleton::hasParent() {
 	return parent != NULL;
 }
 
-Vec3 Skeleton::getPos() {
-	if(hasPosChan) {
-		return Vec3(pos[0],pos[1],pos[2])*scaleFactor;
-	}
-	return Vec3(pos[0],pos[1],pos[2]);
+Vec3 Skeleton::getRawOffset() {
+	return Vec3(offset[0], offset[1], offset[2]);
 }
+
+Vec3 Skeleton::getOffset() {
+	return getRawOffset() * scaleFactor;
+}
+
+Vec3 Skeleton::getPosStart() {
+	return getOffset() * -1;
+}
+
+Vec3 Skeleton::getPosStartG() {
+	if(hasParent()) { return parent->getPosG(); }
+	return Vec3(0,0,0);
+}
+
+Vec3 Skeleton::getPosEndG() {
+	return getPosG();
+}
+
+Vec3 Skeleton::getPosEnd() {
+	return Vec3(0,0,0);
+}
+
+Vec3 Skeleton::getPosCom() {
+	if(hasParent()) { return getPosStart() * 0.5; }
+	return Vec3(0,0,0);
+}
+
+Vec3 Skeleton::getPosComG() {
+	return (getPosStartG() + getPosEndG()) * 0.5;
+}
+
 
 Quat Skeleton::getRot() {
 	return rotQ;
 }
 
 Vec3 Skeleton::getPosG() {
-	return posG;
+	return (posG + translate) * scaleFactor;
 }
 
 Quat Skeleton::getRotG() {
@@ -50,8 +78,8 @@ int Skeleton::calculateNumChan() {
 
 	// recurse to children
 	if( ! children.empty()) {
-		for(vector<Skeleton *>::iterator it = children.begin(); it != children.end(); ++it) {
-			count += (*it)->calculateNumChan();
+		for(Skeleton * c : children) {
+			count += c->calculateNumChan();
 		}
 	}
 
@@ -65,17 +93,20 @@ int Skeleton::calculateContributingNumChan() {
 
 void Skeleton::updateRotQ() {
 	// done in BVH style (rotate Y the X then Z)
-	rotQ = 	AngleAxisd(D2R(rot[0]), Vec3::UnitZ()) *
+//	rotQ = 	AngleAxisd(D2R(rot[0]), Vec3::UnitZ()) *
+//			AngleAxisd(D2R(rot[1]), Vec3::UnitX()) *
+//			AngleAxisd(D2R(rot[2]), Vec3::UnitY());
+	rotQ = 	AngleAxisd(D2R(rot[0]), Vec3::UnitY()) *
 			AngleAxisd(D2R(rot[1]), Vec3::UnitX()) *
-			AngleAxisd(D2R(rot[2]), Vec3::UnitY());
+			AngleAxisd(D2R(rot[2]), Vec3::UnitZ());
 }
 void Skeleton::updateGlobals() {
 	// get parent Global pos and rot
 	Quat pQ;
 	Vec3 pPos;
 	if(hasParent()) {
-		pQ = parent->getRotG();
-		pPos = parent->getPosG();
+		pQ = parent->rotQG;
+		pPos = parent->posG;
 	}
 	else {
 		pQ = AngleAxisd(0,Vec3(0,0,1));
@@ -83,30 +114,52 @@ void Skeleton::updateGlobals() {
 	}
 
 	// apply parents global rot/pos to mine
-	posG = pPos + (pQ * getPos());
+	posG = pPos + (pQ * getRawOffset());
 	rotQG = pQ * getRot();
+
+	// recurse to children
+	for(Skeleton* c : children) {
+		c->update();
+	}
 }
 
-void Skeleton::calculateMinMaxY(float & mi, float & ma) {
-	Vec3 pos = getPosG();
-	mi = min(mi, (float) pos[1]);
-	ma = max(ma, (float) pos[1]);
+void Skeleton::calculateMinMax(Vec3 & mi, Vec3 & ma) {
+	for(int i = 0; i < 3; i++) {
+		mi[i] = min((float) mi[i], (float) posG[i]);
+		ma[i] = max((float) ma[i], (float) posG[i]);
+	}
 	forall(children, [&](Skeleton * sk) {
-		sk->calculateMinMaxY(mi,ma);
+		sk->calculateMinMax(mi,ma);
 	});
 }
 
-float Skeleton::calculateScaleAndTranslate() {
-	float mi,ma;
-	Vec3 pos = getPosG();
-	mi = ma = pos[1];
-	calculateMinMaxY(mi,ma);
-	float targetHeight = 1.75;
-	float rawHeight = ma - mi;
-	scaleFactor = targetHeight/rawHeight;
-	translateY = 0.2 - mi;
+void Skeleton::calculateScaleAndTranslate() {
+	Vec3 mi,ma;
+	Vec3 pos = posG;
+	mi = ma = pos;
+	calculateMinMax(mi,ma);
+//	float targetHeight = 1.75;
+//	float rawHeight = ma[1] - mi[1];
+//	float scaleFactor = targetHeight/rawHeight;
+	float scaleFactor = BVH_SCALE;
+	Vec3 t = (ma + mi) / -2;
+	t += Vec3(0, (0.2/scaleFactor) + ((ma-mi)[1]/2), 0);
+	for(Skeleton* s : getAllSkeletons()) {
+		s->scaleFactor = scaleFactor;
+		s->translate = t;
+	}
 }
 
+vector<Skeleton*> Skeleton::getAllSkeletons() {
+	vector<Skeleton*> v;
+	v.push_back(this);
+	for(Skeleton* c : children) {
+		for(Skeleton* cs : c->getAllSkeletons()) {
+			v.push_back(cs);
+		}
+	}
+	return v;
+}
 
 
 

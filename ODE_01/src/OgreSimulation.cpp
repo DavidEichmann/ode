@@ -94,8 +94,8 @@ void OgreSimulation::mainLoop() {
 
 		// rotate the camera
 		double h = 1;
-		double d = 30;
-		double s = 1;
+		double d = 13;
+		double s = 10;
 		mCamera->setPosition(
 				Ogre::Vector3(d * Ogre::Math::Sin(t / s), h,
 						d * Ogre::Math::Cos(t / s)));
@@ -171,7 +171,7 @@ void OgreSimulation::realizeSkeletons() {
 
 void OgreSimulation::realizeSkeleton(Skeleton * s) {
 	// ignore root and 0 length nodes
-	Vec3 pos = s->getPos();
+	Vec3 pos = s->getOffset();
 	double height = pos.norm();
 	if(s->hasParent() && height > 0) {
 
@@ -192,7 +192,7 @@ void OgreSimulation::realizeSkeleton(Skeleton * s) {
 		//  ...by positioning the bone on the positive y axis, then rotating to correct orientation
 		//  handle the special case of pos being on the y axis (cross product will fail)
 		if(pos[0] == 0 && pos[2] == 0) {
-			gen.setPosition(toVec3(pos * 0.5));
+			gen.setPosition(ogreConv(pos * 0.5));
 		}
 		else {
 			Vec3 iDir = Vec3::UnitY();
@@ -201,9 +201,9 @@ void OgreSimulation::realizeSkeleton(Skeleton * s) {
 			double angle = acos(iDir.dot(tDir));
 			Quaterniond meshRot = (Quaterniond) AngleAxisd(angle, axis);
 
-			const Ogre::Vector3 finalPos = toVec3( (Vec3) tDir * (height/-2) );
+			const Ogre::Vector3 finalPos = ogreConv( (Vec3) tDir * (height/-2) );
 			gen.setPosition(finalPos);
-			gen.setOrientation(toQuat(meshRot));
+			gen.setOrientation(ogreConv(meshRot));
 		}
 
 		Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());

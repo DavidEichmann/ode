@@ -53,7 +53,7 @@ void BVHParser::fillChannelsArray(Skeleton * s, double * * & nextCPos) {
 	if(nC == 6) {
 		cout << "Joint with pos: " << s->name << endl;
 		for(int i = 0; i < 3; i++) {
-			nextCPos[i] = s->pos + i;
+			nextCPos[i] = s->offset + i;
 		}
 		for(int i = 0; i < 3; i++) {
 			nextCPos[i+3] =  s->rot + i;
@@ -98,8 +98,8 @@ void BVHParser::loadKeyframe(int index) {
 }
 
 void BVHParser::updateSkeletons() {
-	for(vector<Skeleton*>::iterator it = skeletons.begin(); it != skeletons.end(); it++) {
-		(*it)->update();
+	for(Skeleton* s : skeletons) {
+		s->update();
 	}
 }
 
@@ -113,7 +113,7 @@ void BVHParser::parse(ifstream & in) {
 	// heirarchy
 	nextWord(in); // HEIRARCHY
 	parseHierarchy(in);
-	updateSkeletons();
+//	updateSkeletons();
 
 	// parse the keyframes
 	parseKeyfames(in);
@@ -180,7 +180,7 @@ Skeleton * BVHParser::parseSkeleton(ifstream & in) {
 
 	// offset
 	nextWord(in); // OFFSET
-	in >> s->pos[0] >> s->pos[1] >> s->pos[2];
+	in >> s->offset[0] >> s->offset[1] >> s->offset[2];
 
 	// channels
 	nextWord(in); // CHANNELS
@@ -202,7 +202,7 @@ Skeleton * BVHParser::parseSkeleton(ifstream & in) {
 			sChild->name = "End_Site";
 			sChild->hasPosChan = false;
 			nextWord(in); nextWord(in); nextWord(in); // Site { OFFSET
-			in >> sChild->pos[0] >> sChild->pos[1] >> sChild->pos[2]; // get the offset
+			in >> sChild->offset[0] >> sChild->offset[1] >> sChild->offset[2]; // get the offset
 			nextWord(in); // }
 		}
 		sChild->parent = s;

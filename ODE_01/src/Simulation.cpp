@@ -61,15 +61,15 @@ void Simulation::collisionCallback(dGeomID o1, dGeomID o2) {
 	dBodyID b1 = dGeomGetBody(o1);
 	dBodyID b2 = dGeomGetBody(o2);
 
-	// don't collide overlapping/connected bones
-	if(b1 != 0 && b2 != 0 && (dAreConnectedExcluding(b1,b2,dJointTypeContact) || overlap(b1,b2))) {
-		return;
-	}
-
-//	// only plane collisions
-//	if(dGeomGetClass(o1) != dPlaneClass && dGeomGetClass(o2) != dPlaneClass) {
+//	// don't collide overlapping/connected bones
+//	if(b1 != 0 && b2 != 0 && (dAreConnectedExcluding(b1,b2,dJointTypeContact) || overlap(b1,b2))) {
 //		return;
 //	}
+
+	// only plane collisions
+	if(dGeomGetClass(o1) != dPlaneClass && dGeomGetClass(o2) != dPlaneClass) {
+		return;
+	}
 
 	// collect collision info
 	const int maxC = 10;
@@ -86,9 +86,10 @@ void Simulation::collisionCallback(dGeomID o1, dGeomID o2) {
 		if(contact[i].depth != 0) {
 			dContact dc;
 
-			dc.surface.mode = dContactSoftERP;
-			dc.surface.soft_erp = 0.1;
-			dc.surface.mu = 1;
+			dc.surface.mode = dContactSoftERP | dContactSoftCFM;
+			dc.surface.soft_erp = 1;
+			dc.surface.soft_cfm = 0.00007;
+			dc.surface.mu = dInfinity;
 //			dc.surface.bounce = 0;
 //			dc.surface.bounce_vel = 0.1;
 			dc.geom = contact[i];
@@ -127,7 +128,7 @@ void Simulation::step(double dt) {
 	simT += dt;
 	int f = (int) (simT / bvh.frameTime);
 	f = min(f, bvh.numFrames - 1);
-	//bvh.loadKeyframe(f);
+//	bvh.loadKeyframe(f);
 
 	// reflect changes in ODE
 	// step ODE world in STEP_SIZE steps stopping just before current simT
@@ -138,9 +139,34 @@ void Simulation::step(double dt) {
 		if(ballID != 0) { controlBall(ballID,simTcurrent,STEP_SIZE); }
 		simTcurrent += STEP_SIZE;
 		dWorldStep(wid,STEP_SIZE);
+//		dWorldQuickStep(wid,STEP_SIZE);
 		// Remove all joints in the contact joint group.
 		dJointGroupEmpty(contactGroupid);
 //		cout << bvh.skeletons[0]->getPosG()[1] << endl;
+
+		// update joint angles to fit keyframe
+		Vec3 pos;
+		for(Skeleton * ss : bvh.skeletons) { for(Skeleton * s : ss->getAllSkeletons()) {
+			dBodyID sbid = skelBodyMap[s];
+			if(s->hasParent() && s->parent->hasParent() && sbid != 0) {
+				Skeleton * p = s->parent;
+				dBodyID pbid = skelBodyMap[p];
+				if(pbid) {
+
+	//				pos = p->getPosG();
+	//				dBodySetPosition(sbid,(dReal)pos[0],(dReal)pos[1],(dReal)pos[2]);
+
+					// correct joint orientation relative to simulated parent joint (using keyframe as target)
+					// not that sbid refers to the body with this joint's bone, but the parent joint's orientation/position
+					// this is		ParentRotG_sim^-1 * RotG_sim	= 	RotL_sim	=   RotL_kf
+					//				ParentRotG_sim^-1 * RotG_sim	=	RotL_kf
+					//									RotG_sim	=	ParentRotG_sim * RotL_kf
+					Quat RotG_sim = eigQuat(dBodyGetQuaternion(sbid)) * s->getRot();
+					dQuaternion q; dConv(RotG_sim, q);
+					dBodySetQuaternion(sbid,q);
+				}
+			}
+		}}
 	}
 }
 
@@ -180,7 +206,7 @@ void Simulation::initODE() {
 	/// space
 	sid = dHashSpaceCreate(0);
 	/// floor
-	dCreatePlane(sid, 0, 1, 0, -1.5);
+	dCreatePlane(sid, 0, 1, 0, -3);
 
 	if(useBVH) {
 		///////
@@ -199,35 +225,6 @@ void Simulation::initODE() {
 
 	}
 
-//	double height = 10;
-//	dBodyID bid = dBodyCreate(wid);
-//	dBodySetPosition(bid,0,13,0);
-//	dGeomID bGeom = dCreateCapsule(sid, 2, height);
-//	dGeomSetBody(bGeom, bid);
-//	dQuaternion q;
-//	Vec3 pos = Vec3(0,-height,0);
-//	Vec3 iDir = Vec3::UnitZ();
-//	Vec3 tDir = pos.normalized();
-//	Vec3 axis = iDir.cross(tDir).normalized();
-//	double angle = acos(iDir.dot(tDir));
-//	//dQFromAxisAndAngle(q,(dReal)axis[0],(dReal)axis[1],(dReal)axis[2],(dReal)angle);
-//	Quat qEigen = (Quaterniond) AngleAxisd(angle, axis);
-//	toDQuat(qEigen, q);
-//	Vec3 fPos = tDir * (height/2);
-//	dGeomSetOffsetPosition(bGeom, (dReal)fPos[0], (dReal)fPos[1], (dReal)fPos[2]);
-//	dGeomSetOffsetQuaternion(bGeom, q);
-
-
-
-	//	Create joints in the dynamics world.
-
-	//	Attach the joints to the bodies.
-
-	//	Set the parameters of all joints.
-
-	//	Create a collision world and collision geometry objects, as necessary.
-	// ??? already done ???
-
 }
 
 void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
@@ -240,7 +237,7 @@ void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
 
 	// create a geometry for bone and attach to parent body
 	if (s->hasParent()) {
-		Vec3 pos = s->getPos();
+		Vec3 pos = s->getOffset();
 		double height = pos.norm();
 
 		// NOTE that capsules are aligned along the Z axis
@@ -258,7 +255,7 @@ void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
 			double angle = acos(iDir.dot(tDir));
 			//dQFromAxisAndAngle(q,(dReal)axis[0],(dReal)axis[1],(dReal)axis[2],(dReal)angle);
 			Quat qEigen = (Quaterniond) AngleAxisd(angle, axis);
-			toDQuat(qEigen, q);
+			dConv(qEigen, q);
 			Vec3 fPos = tDir * (height/2);
 			dGeomSetOffsetPosition(bGeom, (dReal)fPos[0], (dReal)fPos[1], (dReal)fPos[2]);
 			//dGeomSetOffsetPosition(bGeom, 0,0,1);
@@ -273,7 +270,7 @@ void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
 
 	// set the position and orientation of the body
 	Vec3 gPos = s->getPosG();
-	dQuaternion gRot; toDQuat(s->getRotG(), gRot);
+	dQuaternion gRot; dConv(s->getRotG(), gRot);
 	dBodySetPosition(bid,(dReal)gPos[0],(dReal)gPos[1],(dReal)gPos[2]);
 	dBodySetQuaternion(bid, gRot);
 
@@ -283,14 +280,14 @@ void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
 		dJointAttach(jid,parentBodyID,bid);
 		dJointSetBallAnchor(jid,(dReal)gPos[0],(dReal)gPos[1],(dReal)gPos[2]);
 
-		// constrain join
-		dJointID amid = dJointCreateAMotor(wid,jointGroupid);
-		dJointAttach(amid,parentBodyID,bid);
-		dJointSetAMotorMode(amid,dAMotorEuler);
-		dJointSetAMotorAxis(amid,0,1, 0,0,1);
-		dJointSetAMotorAxis(amid,2,2, 0,-1,0);
-		dJointSetAMotorParam(amid,dParamLoStop,-PI/8);
-		dJointSetAMotorParam(amid,dParamHiStop,PI/8);
+//		// constrain join
+//		dJointID amid = dJointCreateAMotor(wid,jointGroupid);
+//		dJointAttach(amid,parentBodyID,bid);
+//		dJointSetAMotorMode(amid,dAMotorEuler);
+//		dJointSetAMotorAxis(amid,0,1, 0,0,1);
+//		dJointSetAMotorAxis(amid,2,2, 0,-1,0);
+//		dJointSetAMotorParam(amid,dParamLoStop,-PI/8);
+//		dJointSetAMotorParam(amid,dParamHiStop,PI/8);
 
 		// append to skelBodyMap
 		skelBodyMap[s] = parentBodyID;
