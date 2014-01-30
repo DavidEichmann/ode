@@ -87,7 +87,7 @@ void Simulation::collisionCallback(dGeomID o1, dGeomID o2) {
 			dContact dc;
 
 			dc.surface.mode = dContactSoftERP | dContactSoftCFM;
-			dc.surface.soft_erp = 1;
+			dc.surface.soft_erp = 0.1;
 			dc.surface.soft_cfm = 0.00007;
 			dc.surface.mu = dInfinity;
 //			dc.surface.bounce = 0;
@@ -128,7 +128,7 @@ void Simulation::step(double dt) {
 	simT += dt;
 	int f = (int) (simT / bvh.frameTime);
 	f = min(f, bvh.numFrames - 1);
-//	bvh.loadKeyframe(f);
+	bvh.loadKeyframe(f);
 
 	// reflect changes in ODE
 	// step ODE world in STEP_SIZE steps stopping just before current simT
@@ -161,9 +161,14 @@ void Simulation::step(double dt) {
 					// this is		ParentRotG_sim^-1 * RotG_sim	= 	RotL_sim	=   RotL_kf
 					//				ParentRotG_sim^-1 * RotG_sim	=	RotL_kf
 					//									RotG_sim	=	ParentRotG_sim * RotL_kf
-					Quat RotG_sim = eigQuat(dBodyGetQuaternion(sbid)) * s->getRot();
+					Quat ParentRotG_sim = eigQuat(dBodyGetQuaternion(pbid));
+					Quat RotG_sim = ParentRotG_sim * p->getRot();
 					dQuaternion q; dConv(RotG_sim, q);
 					dBodySetQuaternion(sbid,q);
+					// correct joint position which is
+					//		Pos_sim = ParentPos_sim + ( ParentRotG_sim * Offset )
+					Vec3 pos = eigVec3(dBodyGetPosition(pbid)) + (eigQuat(dBodyGetQuaternion(pbid)) * p->getOffset());
+					dBodySetPosition(sbid, (dReal) pos[0], (dReal) pos[1], (dReal) pos[2]);
 				}
 			}
 		}}
@@ -202,7 +207,7 @@ void Simulation::initODE() {
 	contactGroupid = dJointGroupCreate(1000);
 	jointGroupid = dJointGroupCreate(100);
 	/// gravity
-	dWorldSetGravity(wid, 0, -GRAVITY_ACC, 0);
+//	dWorldSetGravity(wid, 0, -GRAVITY_ACC, 0);
 	/// space
 	sid = dHashSpaceCreate(0);
 	/// floor
