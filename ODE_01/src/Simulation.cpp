@@ -207,7 +207,7 @@ void Simulation::initODE() {
 	contactGroupid = dJointGroupCreate(1000);
 	jointGroupid = dJointGroupCreate(100);
 	/// gravity
-//	dWorldSetGravity(wid, 0, -GRAVITY_ACC, 0);
+	dWorldSetGravity(wid, 0, -GRAVITY_ACC, 0);
 	/// space
 	sid = dHashSpaceCreate(0);
 	/// floor
