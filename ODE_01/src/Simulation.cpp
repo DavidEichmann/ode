@@ -153,22 +153,30 @@ void Simulation::step(double dt) {
 				dBodyID pbid = skelBodyMap[p];
 				if(pbid) {
 
-	//				pos = p->getPosG();
-	//				dBodySetPosition(sbid,(dReal)pos[0],(dReal)pos[1],(dReal)pos[2]);
-
-					// correct joint orientation relative to simulated parent joint (using keyframe as target)
-					// not that sbid refers to the body with this joint's bone, but the parent joint's orientation/position
-					// this is		ParentRotG_sim^-1 * RotG_sim	= 	RotL_sim	=   RotL_kf
-					//				ParentRotG_sim^-1 * RotG_sim	=	RotL_kf
-					//									RotG_sim	=	ParentRotG_sim * RotL_kf
+					// ignore orientation, simply push each joint toward the desired position
+					// target_pos = ParentRotG_sim * PosCoMLocal_kf
 					Quat ParentRotG_sim = eigQuat(dBodyGetQuaternion(pbid));
-					Quat RotG_sim = ParentRotG_sim * p->getRot();
-					dQuaternion q; dConv(RotG_sim, q);
-					dBodySetQuaternion(sbid,q);
-					// correct joint position which is
-					//		Pos_sim = ParentPos_sim + ( ParentRotG_sim * Offset )
-					Vec3 pos = eigVec3(dBodyGetPosition(pbid)) + (eigQuat(dBodyGetQuaternion(pbid)) * p->getOffset());
-					dBodySetPosition(sbid, (dReal) pos[0], (dReal) pos[1], (dReal) pos[2]);
+					Vec3 target_pos = ParentRotG_sim * s->getPosCom();
+					Vec3 pos = eigVec3(dBodyGetPosition(sbid));
+
+					// use PD control
+					const float kp = 100;
+					Vec3 force = kp * (target_pos - pos); // TODO Derivative component
+
+					// apply the force
+					dBodyAddForce(sbid, (dReal) force[0], (dReal) force[1], (dReal) force[2]);
+
+
+
+//					// correct joint orientation relative to simulated parent joint (using keyframe as target)
+//					// not that sbid refers to the body with this joint's bone, but the parent joint's orientation/position
+//					// this is		ParentRotG_sim^-1 * RotG_sim	= 	RotL_sim	=   RotL_kf
+//					//				ParentRotG_sim^-1 * RotG_sim	=	RotL_kf
+//					//									RotG_sim	=	ParentRotG_sim * RotL_kf
+//					dBodySetQuaternion(sbid,q);
+//					// correct joint position which is
+//					//		Pos_sim = ParentPos_sim + ( ParentRotG_sim * Offset )
+//					dBodySetPosition(sbid, (dReal) target_pos[0], (dReal) target_pos[1], (dReal) target_pos[2]);
 				}
 			}
 		}}
@@ -207,7 +215,7 @@ void Simulation::initODE() {
 	contactGroupid = dJointGroupCreate(1000);
 	jointGroupid = dJointGroupCreate(100);
 	/// gravity
-	dWorldSetGravity(wid, 0, -GRAVITY_ACC, 0);
+//	dWorldSetGravity(wid, 0, -GRAVITY_ACC, 0);
 	/// space
 	sid = dHashSpaceCreate(0);
 	/// floor
