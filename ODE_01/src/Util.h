@@ -14,6 +14,11 @@ using namespace Eigen;
 typedef Quaterniond Quat;
 typedef Vector3d Vec3;
 
+
+inline void print(Vec3 v) {
+	cout << "(" << v[0] << ", " << v[1] << ", " << v[2] << ")\n";
+}
+
 // degree to radian
 inline double D2R(const double & x) {
 	return 0.0174532925 * x;
@@ -95,7 +100,6 @@ inline void mapI(vector<E> & v, F f) {
 		e = f(e);
 	});
 }
-
 
 
 #endif

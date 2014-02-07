@@ -30,6 +30,7 @@ protected:
 	BVHParser bvh;
 	map<Skeleton*,dBodyID> skelBodyMap;
 	map<dBodyID, Skeleton*> bodySkelMap;
+	map<Skeleton*, float> jointLastErrorMap;
 	dBodyID ballID = 0;
 
 	dWorldID wid;

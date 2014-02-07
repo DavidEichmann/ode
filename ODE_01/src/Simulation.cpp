@@ -128,7 +128,7 @@ void Simulation::step(double dt) {
 	simT += dt;
 	int f = (int) (simT / bvh.frameTime);
 	f = min(f, bvh.numFrames - 1);
-	bvh.loadKeyframe(f);
+	bvh.loadKeyframe(50);
 
 	// reflect changes in ODE
 	// step ODE world in STEP_SIZE steps stopping just before current simT
@@ -146,40 +146,87 @@ void Simulation::step(double dt) {
 
 		// update joint angles to fit keyframe
 		Vec3 pos;
-		for(Skeleton * ss : bvh.skeletons) { for(Skeleton * s : ss->getAllSkeletons()) {
-			dBodyID sbid = skelBodyMap[s];
-			if(s->hasParent() && s->parent->hasParent() && sbid != 0) {
-				Skeleton * p = s->parent;
-				dBodyID pbid = skelBodyMap[p];
-				if(pbid) {
+		for(Skeleton * ss : bvh.skeletons) {
+//			// lock root node
+//			dBodyID rootbid = skelBodyMap[ss->children[0]];
+//			dBodySetKinematic(rootbid);
+			for(Skeleton * s : ss->getAllSkeletons()) {
+				dBodyID sbid = skelBodyMap[s];
+				if(
+						s->hasParent() &&
+	//					(s->name == "LeftWrist" || s->name == "LeftElbow") &&
+	//					(!s->parent->hasParent() || s->parent->parent->name == "Hips") &&
+						sbid != 0) {
+					Skeleton * p = s->parent;
+					dBodyID pbid = skelBodyMap[p];
+					if(pbid) {
 
-					// ignore orientation, simply push each joint toward the desired position
-					// target_pos = ParentRotG_sim * PosCoMLocal_kf
-					Quat ParentRotG_sim = eigQuat(dBodyGetQuaternion(pbid));
-					Vec3 target_pos = ParentRotG_sim * s->getPosCom();
-					Vec3 pos = eigVec3(dBodyGetPosition(sbid));
+						// use Slerp based torque
+						Quat qi = eigQuat(dBodyGetQuaternion(sbid));
+						Quat qf = p->getRotG();
 
-					// use PD control
-					const float kp = 100;
-					Vec3 force = kp * (target_pos - pos); // TODO Derivative component
-
-					// apply the force
-					dBodyAddForce(sbid, (dReal) force[0], (dReal) force[1], (dReal) force[2]);
+						// according to http://courses.cms.caltech.edu/cs171/quatut.pdf under 'Quaternion calculus' we can find an axis of rotation
+						// this is the axis of our desired angular velocity
+						Quat qlnTerm = qf * qi.inverse();
+						const float angle = acos(qlnTerm.w());
+						Vec3 rotAxis = qlnTerm.vec() / sin(angle);
 
 
+						// use PD control
+						const float kp = 2000;
+						const float kd = 0;
 
-//					// correct joint orientation relative to simulated parent joint (using keyframe as target)
-//					// not that sbid refers to the body with this joint's bone, but the parent joint's orientation/position
-//					// this is		ParentRotG_sim^-1 * RotG_sim	= 	RotL_sim	=   RotL_kf
-//					//				ParentRotG_sim^-1 * RotG_sim	=	RotL_kf
-//					//									RotG_sim	=	ParentRotG_sim * RotL_kf
-//					dBodySetQuaternion(sbid,q);
-//					// correct joint position which is
-//					//		Pos_sim = ParentPos_sim + ( ParentRotG_sim * Offset )
-//					dBodySetPosition(sbid, (dReal) target_pos[0], (dReal) target_pos[1], (dReal) target_pos[2]);
+						const Quat ppjRotG_s = eigQuat(dBodyGetQuaternion(pbid));
+						const Quat pjRotG_s  = eigQuat(dBodyGetQuaternion(sbid));
+						const Quat pjRotL_s = ppjRotG_s.inverse() * pjRotG_s;
+						const Quat pjRotL_k = p->getRot();
+						const Vec3 posL			= pjRotL_s * s->getOffset();
+						const Vec3 targetPosL	= pjRotL_k * s->getOffset();
+//						const float errorP = acos((posL.dot(targetPosL)) / (posL.norm() * targetPosL.norm()));
+						const float errorP = 2 * angle * acos((rotAxis.dot(posL)) / (rotAxis.norm() * posL.norm()));
+
+						const float lastError = jointLastErrorMap[p];
+						jointLastErrorMap[p] = errorP;
+						const float errorD = (errorP - lastError) / STEP_SIZE;
+
+						Vec3 torque = (
+									(kp * errorP) +		// P
+									(kd * errorD)		// D
+								) * rotAxis;
+
+						// kill angular velocity
+						dBodySetAngularVel(sbid,0,0,0);
+						dBodySetAngularVel(pbid,0,0,0);
+						// apply torque to joint
+						float torqueNorm2 = torque.squaredNorm();
+						if(!isnan(torqueNorm2) && !isinff(torqueNorm2) && torqueNorm2 != 0) {
+							dBodyAddTorque(pbid, (dReal) -torque[0], (dReal) -torque[1], (dReal) -torque[2]);
+							dBodyAddTorque(sbid, (dReal)  torque[0], (dReal)  torque[1], (dReal)  torque[2]);
+						}
+
+						// apply the force
+	//					dBodyAddForce(sbid, (dReal) force[0], (dReal) force[1], (dReal) force[2]);
+
+
+
+	//					// correct joint orientation relative to simulated parent joint (using keyframe as target)
+	//					// not that sbid refers to the body with this joint's bone, but the parent joint's orientation/position
+	//					// this is		ParentRotG_sim^-1 * RotG_sim	= 	RotL_sim	=   RotL_kf
+	//					//				ParentRotG_sim^-1 * RotG_sim	=	RotL_kf
+	//					//									RotG_sim	=	ParentRotG_sim * RotL_kf
+	//					dBodySetQuaternion(sbid,q);
+	//					// correct joint position which is
+	//					//		Pos_sim = ParentPos_sim + ( ParentRotG_sim * Offset )
+	//					dBodySetPosition(sbid, (dReal) target_pos[0], (dReal) target_pos[1], (dReal) target_pos[2]);
+						if(p->hasParent() && p->parent->name == "Hips") {
+							cout << p->name << "\t" << errorP << endl;
+						}
+					}
 				}
 			}
-		}}
+//			dBodyID rootbid = skelBodyMap[ss->children[0]];
+//			print(eigVec3(dBodyGetTorque(rootbid)));
+		}
 	}
 }
 
@@ -225,7 +272,7 @@ void Simulation::initODE() {
 		///////
 		// read the first keyframe and realize the bones
 		///////
-		bvh.loadKeyframe(0);
+		bvh.loadKeyframe(43);
 
 		//	Set the state (position etc) of all bodies.
 		for (vector<Skeleton*>::iterator ss = bvh.skeletons.begin();
