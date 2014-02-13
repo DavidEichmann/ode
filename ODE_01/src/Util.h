@@ -13,6 +13,7 @@ using namespace Eigen;
 
 typedef Quaterniond Quat;
 typedef Vector3d Vec3;
+typedef Matrix3d Matrix3;
 
 
 inline void print(Vec3 v) {
@@ -51,6 +52,18 @@ inline Vec3 eigVec3(const dVector3 v) {
 
 inline Quat eigQuat(const dQuaternion q) {
 	return Quat(q[0], q[1], q[2], q[3]);
+}
+
+inline Matrix3 QuatToMatrix(Quat q) {
+
+	Matrix3 m;
+
+	m.col(0) = q * Vec3(1,0,0);
+	m.col(1) = q * Vec3(0,1,0);
+	m.col(2) = q * Vec3(0,0,1);
+
+	return m;
+
 }
 
 

@@ -12,21 +12,21 @@ class BVHParser {
 
 public:
 
-	vector<Skeleton *> skeletons;
-	int numChan;		// total number of channels
-	int numFrames;		// total number of key frames
-	double frameTime;
-
 	BVHParser();
 	BVHParser(const char * filePath);
 	~BVHParser();
 	void parse(const char * filePath);
-	void loadKeyframe(int index); // load the keyframe data into the skeleton object(s)
+	vector<Skeleton*> getKeyframe(int index); // load the keyframe data into the skeleton object(s)
+	double getFrameTime() { return frameTime; }
+	int getNumFrames() { return numFrames; }
 
 private:
 
-	double * * keyframes;	// [frame] [channelvalue]
-	double * * channels;	// convenient pointers to channel values in the skeleton
+	vector<Skeleton *> baseSkeletons;
+	vector< vector<Skeleton *> > frames;
+	int numChan;		// total number of channels
+	int numFrames;		// total number of key frames
+	double frameTime;
 	char wordBuf[100];
 	string nextWord(ifstream & in);
 
@@ -35,11 +35,9 @@ private:
 	void parseHierarchy(ifstream & in);
 	void parseRoot(ifstream & in);
 	Skeleton * parseSkeleton(ifstream & in);
+	vector<Skeleton*> cloneBaseSkeletons();
 
-	void updateSkeletons();
-	void calculateNumChan();
-	void fillChannelsArray();
-	void fillChannelsArray(Skeleton * s, double * * & nextCPos);
+	int getNumChan();
 };
 
 #endif

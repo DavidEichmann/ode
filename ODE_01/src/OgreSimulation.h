@@ -2,6 +2,7 @@
 #define	_OGRESIMULATION_H	1
 
 #include <OGRE/Ogre.h>
+#include <map>
 
 #include "Simulation.h"
 #include "Human.h"
@@ -19,7 +20,8 @@ public:
 
 private:
 
-	vector< pair<Ogre::SceneNode*,Skeleton*> > nodeSkelPairs;
+	vector< pair<Ogre::SceneNode*,Vector2i> > nodeSkelIndexPairs;
+	map<Ogre::SceneNode*,Ogre::SceneNode*> nodeAniNodeMap;
 
 	Ogre::Root * mRoot;
 	Ogre::Camera * mCamera;
@@ -35,7 +37,6 @@ private:
 	void realizeBall();
 	void realizeHuman();
 	void realizeSkeletons();
-	void realizeSkeleton(Skeleton * s);
 	void updateFromSim();
 	void mainLoop();
 

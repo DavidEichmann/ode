@@ -15,11 +15,6 @@ BVHParser::BVHParser() {
 }
 
 BVHParser::~BVHParser() {
-	delete[] channels;
-	for(int i = 0; i < numFrames; i++) {
-		delete[] keyframes[i];
-	}
-	delete[] keyframes;
 }
 
 string BVHParser::nextWord(ifstream & in) {
@@ -28,79 +23,20 @@ string BVHParser::nextWord(ifstream & in) {
 	return string(wordBuf);
 }
 
-void BVHParser::fillChannelsArray() {
-	// count channels
-	calculateNumChan();
-	// fill array
-	channels = new double*[numChan];
-	double * * nextCPos = channels;
-	if(skeletons.empty()) {
-		clog << "BVHParser: Warning: no skeletons detected." << endl;
-	}
-	else {
-		for(vector<Skeleton *>::iterator it = skeletons.begin(); it != skeletons.end(); it++) {
-			fillChannelsArray(*it, nextCPos);
-		}
-	}
-}
-
-// traverse in the order of Root then Left-to-Right children
-void BVHParser::fillChannelsArray(Skeleton * s, double * * & nextCPos) {
-	// either XYZZXY (pos + rot) or just ZXY (rot)
-	int nC = s->calculateContributingNumChan();
-	static int cBal = numChan;
-	cBal -= nC;
-	if(nC == 6) {
-		cout << "Joint with pos: " << s->name << endl;
-		for(int i = 0; i < 3; i++) {
-			nextCPos[i] = s->offset + i;
-		}
-		for(int i = 0; i < 3; i++) {
-			nextCPos[i+3] =  s->rot + i;
-		}
-	}
-	else if (nC == 3) {
-		for(int i = 0; i < 3; i++) {
-			nextCPos[i] =  s->rot + i;
-		}
-	}
-	else {
-		cout << "Unrecognised (" << nC << " != 6 or 3) number of channels for joint: " << s->name << endl;
-	}
-
-
-
-	nextCPos += nC;
-
-	// recurse to children
-	if( ! s->children.empty()) {
-		for(vector<Skeleton *>::iterator it = s->children.begin(); it != s->children.end(); it++) {
-			fillChannelsArray(*it, nextCPos);
-		}
-	}
-}
-
-void BVHParser::calculateNumChan() {
+int BVHParser::getNumChan() {
+	// cached result
 	numChan = 0;
-	if( ! skeletons.empty()) {
-		for(vector<Skeleton*>::iterator itt = skeletons.begin(); itt != skeletons.end(); ++itt) {
-			numChan += (*itt)->calculateNumChan();
+	// calculate
+	if( ! baseSkeletons.empty()) {
+		for(Skeleton * s : baseSkeletons) {
+			numChan += s->calculateNumChan();
 		}
 	}
+	return numChan;
 }
 
-void BVHParser::loadKeyframe(int index) {
-	for(int c = 0; c < numChan; c++) {
-		double d = keyframes[index][c];
-		*(channels[c]) = d;
-	}
-	updateSkeletons();
-}
-
-void BVHParser::updateSkeletons() {
-	for(Skeleton* s : skeletons) {
-		s->update();
-	}
+vector<Skeleton*> BVHParser::getKeyframe(int index) {
+	return frames[index];
 }
 
 void BVHParser::parse(const char * filePath) {
@@ -121,8 +57,8 @@ void BVHParser::parse(ifstream & in) {
 
 void BVHParser::parseKeyfames(ifstream & in) {
 
-	// fill the chanels array
-	fillChannelsArray();
+	// count channels
+	int numChan = getNumChan();
 
 	// MOTION
 	nextWord(in);
@@ -130,19 +66,46 @@ void BVHParser::parseKeyfames(ifstream & in) {
 	// Frames:	765
 	nextWord(in);
 	in >> numFrames;
-	keyframes = new double*[numFrames];
 
 	// Frame Time:	0.0333333
 	nextWord(in); nextWord(in);
 	in >> frameTime;
 
-	// keep reading values adding them circularly to channels
+	// keep reading values adding them to keyframes
 	for(int f = 0; f < numFrames; f++) {
-		keyframes[f] = new double[numChan];
-		for(int c = 0; c < numChan; c++) {
-			in >> keyframes[f][c];
+		vector<Skeleton*> frame = cloneBaseSkeletons();
+		for(Skeleton * ss : frame) {
+			for(Skeleton * s : ss->getAllSkeletons()) {
+				// either XYZZXY (pos + rot) or just ZXY (rot)
+				int nC = s->calculateContributingNumChan();
+				if(nC == 6) {
+					for(int i = 0; i < 3; i++) {
+						in >> s->offset[i];
+					}
+					for(int i = 0; i < 3; i++) {
+						in >> s->rot[i];
+					}
+				}
+				else if (nC == 3) {
+					for(int i = 0; i < 3; i++) {
+						in >> s->rot[i];
+					}
+				}
+				else if(nC != 0) {
+					cout << "Unrecognised (" << nC << " != 6 or 3 or 0) number of channels for joint: " << s->getLongName() << endl;
+				}
+			}
+
+			ss->update();
 		}
+		frames.push_back(frame);
 	}
+}
+
+vector<Skeleton*> BVHParser::cloneBaseSkeletons() {
+	vector<Skeleton*> frame = baseSkeletons;
+	for(Skeleton * & s : frame) { s = s->clone(); }
+	return frame;
 }
 
 void BVHParser::parseHierarchy(ifstream & in) {
@@ -155,7 +118,7 @@ void BVHParser::parseHierarchy(ifstream & in) {
 void BVHParser::parseRoot(ifstream & in) {
 	Skeleton * s = parseSkeleton(in);
 	s->parent = NULL;
-	skeletons.push_back(s);
+	baseSkeletons.push_back(s);
 }
 
 /**
@@ -208,6 +171,10 @@ Skeleton * BVHParser::parseSkeleton(ifstream & in) {
 		sChild->parent = s;
 		s->children.push_back(sChild);
 	}
+
+	// do the scaling/translatioin
+	s->calculateScaleAndTranslate();
+
 	// note that the final '}' is read in the wile loop above
 	return s;
 

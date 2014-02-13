@@ -19,7 +19,6 @@ public:
 	~Simulation();
 
 	void step(double dt); // step the simulation by t seconds
-	vector<Skeleton*> getSkeletons();
 
 	// is there a way to make collisionCallback private?
 	void collisionCallback(dGeomID o1, dGeomID o2);
@@ -28,8 +27,8 @@ public:
 protected:
 
 	BVHParser bvh;
-	map<Skeleton*,dBodyID> skelBodyMap;
-	map<dBodyID, Skeleton*> bodySkelMap;
+	map<string,dBodyID> skelBodyMap;
+	map<dBodyID, string> bodySkelMap;
 	map<Skeleton*, float> jointLastErrorMap;
 	dBodyID ballID = 0;
 
@@ -37,9 +36,17 @@ protected:
 	dSpaceID sid;
 
 	dBodyID createBall(const Vec3 & pos, const dReal & mass, const dReal & radius);
+	vector<Skeleton*> getCurrentFrame() { return currentFrame; }
+	vector<Skeleton*> getCurrentFrameFlat() {
+		vector<Skeleton*> flat;
+		for(Skeleton * ss : currentFrame)
+			for(Skeleton * s : ss->getAllSkeletons())
+				flat.push_back(s);
+		return flat;
+	}
+	void loadFrame(int index) { currentFrame = bvh.getKeyframe(index); };
 
 private:
-
 	// ODE variabels
 	dJointGroupID contactGroupid;
 	dJointGroupID jointGroupid;
@@ -49,6 +56,8 @@ private:
 	bool useBVH;
 
 	map<dBodyID, vector<dBodyID> > overlapMap;
+
+	vector<Skeleton*> currentFrame;
 
 	void initODESkeleton(Skeleton* s, dBodyID parentBodyID);
 	void initODE();

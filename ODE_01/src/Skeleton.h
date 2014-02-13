@@ -29,7 +29,10 @@ public:
 	double offset[3];	// offset from parent joint (in the local coordinate system of the parent joint)
 	double rot[3];	// rotation relative to parent (Z X Y: raw 3 axis rotation as found in BVH files)
 
+
 	Skeleton();
+	~Skeleton();
+	Skeleton * clone();
 	bool hasParent();
 	Vec3 getOffset();
 	Vec3 getPosG();
@@ -41,6 +44,14 @@ public:
 	Vec3 getPosComG();
 	Quat getRot();
 	Quat getRotG();
+	vector<Skeleton*> getAllSkeletons();
+	double getMass();
+	string getLongName() {
+		if(hasParent())
+			return parent->name + " -> " + name;
+		else
+			return "(0,0,0) -> " + name;
+	}
 	int calculateNumChan();
 	int calculateContributingNumChan();
 	// update values after rot and or pos have been changed
@@ -48,35 +59,30 @@ public:
 	void update() {
 		updateRotQ();
 		updateGlobals();
-		if(!hasParent()) {
-			if(scaleFactor == -1) {
-				calculateScaleAndTranslate();
-			}
-		}
 	};
-	vector<Skeleton*> getAllSkeletons();
+	void calculateScaleAndTranslate();
+	Skeleton * getRoot() {
+		if(hasParent())
+			return parent->getRoot();
+		else
+			return this;
+	};
+
+
 
 	EIGEN_MAKE_ALIGNED_OPERATOR_NEW
 
 private:
 
-	Vec3 getRawOffset();
-	void updateRotQ();	// update local rotQ
-	void updateGlobals();	// update local rotation quaternion
-//	void scaleAndTranslate() {
-//		for(int i = 0; i < 3; i++) { offset[i] *= scaleFactor; }
-//		posG += translate;
-//		posG = posG * scaleFactor;
-//		forall(children, [&](Skeleton * c){ c->scaleAndTranslate(); });
-//	};
 	Vec3 posG;
 	Quat rotQG;
 	Quat rotQ;
+	double mass = -1;
 
+	Vec3 getRawOffset();
+	void updateRotQ();	// update local rotQ
+	void updateGlobals();	// update local rotation quaternion
 	void calculateMinMax(Vec3 & mi, Vec3 & ma);
-	void calculateScaleAndTranslate();
-
-
 };
 
 #endif

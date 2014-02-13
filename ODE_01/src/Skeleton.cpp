@@ -19,6 +19,20 @@ Skeleton::Skeleton() {
 	parent = NULL;
 }
 
+Skeleton::~Skeleton() {
+	for(Skeleton * c : children) { delete c; }
+}
+
+
+Skeleton * Skeleton::clone() {
+	Skeleton * newClone = new Skeleton(*this);
+	for(Skeleton * & c : newClone->children) {
+		c = c->clone();
+		c->parent = newClone;
+	}
+	return newClone;
+}
+
 bool Skeleton::hasParent() {
 	return parent != NULL;
 }
@@ -68,6 +82,13 @@ Vec3 Skeleton::getPosG() {
 
 Quat Skeleton::getRotG() {
 	return rotQG;
+}
+
+double Skeleton::getMass() {
+	if(mass == -1) {
+		mass = getOffset().norm() * 20;
+	}
+	return mass;
 }
 
 int Skeleton::calculateNumChan() {
@@ -144,7 +165,7 @@ void Skeleton::calculateScaleAndTranslate() {
 	float scaleFactor = BVH_SCALE;
 	Vec3 t = (ma + mi) / -2;
 	t += Vec3(0, (0.2/scaleFactor) + ((ma-mi)[1]/2), 0);
-	for(Skeleton* s : getAllSkeletons()) {
+	for(Skeleton* s : getRoot()->getAllSkeletons()) {
 		s->scaleFactor = scaleFactor;
 		s->translate = t;
 	}
@@ -160,7 +181,5 @@ vector<Skeleton*> Skeleton::getAllSkeletons() {
 	}
 	return v;
 }
-
-
 
 

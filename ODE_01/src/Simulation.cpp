@@ -126,9 +126,9 @@ void Simulation::step(double dt) {
 	// load next keyframe according to time delta
 	double simTcurrent = simT;
 	simT += dt;
-	int f = (int) (simT / bvh.frameTime);
-	f = min(f, bvh.numFrames - 1);
-	bvh.loadKeyframe(50);
+	int f = (int) (simT / bvh.getFrameTime());
+	f = min(f, bvh.getNumFrames() - 1);
+	loadFrame(f+3);
 
 	// reflect changes in ODE
 	// step ODE world in STEP_SIZE steps stopping just before current simT
@@ -146,24 +146,24 @@ void Simulation::step(double dt) {
 
 		// update joint angles to fit keyframe
 		Vec3 pos;
-		for(Skeleton * ss : bvh.skeletons) {
+		for(Skeleton * ss : getCurrentFrame()) {
 //			// lock root node
 //			dBodyID rootbid = skelBodyMap[ss->children[0]];
 //			dBodySetKinematic(rootbid);
 			for(Skeleton * s : ss->getAllSkeletons()) {
-				dBodyID sbid = skelBodyMap[s];
+				dBodyID sbid = skelBodyMap[s->getLongName()];
 				if(
 						s->hasParent() &&
 	//					(s->name == "LeftWrist" || s->name == "LeftElbow") &&
 	//					(!s->parent->hasParent() || s->parent->parent->name == "Hips") &&
 						sbid != 0) {
 					Skeleton * p = s->parent;
-					dBodyID pbid = skelBodyMap[p];
+					dBodyID pbid = skelBodyMap[p->getLongName()];
 					if(pbid) {
 
 						// use Slerp based torque
 						Quat qi = eigQuat(dBodyGetQuaternion(sbid));
-						Quat qf = p->getRotG();
+						Quat qf = eigQuat(dBodyGetQuaternion(pbid)) * p->getRot();
 
 						// according to http://courses.cms.caltech.edu/cs171/quatut.pdf under 'Quaternion calculus' we can find an axis of rotation
 						// this is the axis of our desired angular velocity
@@ -173,8 +173,8 @@ void Simulation::step(double dt) {
 
 
 						// use PD control
-						const float kp = 2000;
-						const float kd = 0;
+						const float kp = 5000;	// with killing angular velocity at each step, a good range is 1000 <= kp <= 6000
+						const float kd = 10;
 
 						const Quat ppjRotG_s = eigQuat(dBodyGetQuaternion(pbid));
 						const Quat pjRotG_s  = eigQuat(dBodyGetQuaternion(sbid));
@@ -183,7 +183,7 @@ void Simulation::step(double dt) {
 						const Vec3 posL			= pjRotL_s * s->getOffset();
 						const Vec3 targetPosL	= pjRotL_k * s->getOffset();
 //						const float errorP = acos((posL.dot(targetPosL)) / (posL.norm() * targetPosL.norm()));
-						const float errorP = 2 * angle * acos((rotAxis.dot(posL)) / (rotAxis.norm() * posL.norm()));
+						const float errorP = 2 * angle;// * acos((rotAxis.dot(posL)) / (rotAxis.norm() * posL.norm()));
 
 						const float lastError = jointLastErrorMap[p];
 						jointLastErrorMap[p] = errorP;
@@ -194,9 +194,9 @@ void Simulation::step(double dt) {
 									(kd * errorD)		// D
 								) * rotAxis;
 
-						// kill angular velocity
-						dBodySetAngularVel(sbid,0,0,0);
-						dBodySetAngularVel(pbid,0,0,0);
+//						// kill angular velocity
+//						dBodySetAngularVel(sbid,0,0,0);
+//						dBodySetAngularVel(pbid,0,0,0);
 						// apply torque to joint
 						float torqueNorm2 = torque.squaredNorm();
 						if(!isnan(torqueNorm2) && !isinff(torqueNorm2) && torqueNorm2 != 0) {
@@ -219,7 +219,7 @@ void Simulation::step(double dt) {
 	//					//		Pos_sim = ParentPos_sim + ( ParentRotG_sim * Offset )
 	//					dBodySetPosition(sbid, (dReal) target_pos[0], (dReal) target_pos[1], (dReal) target_pos[2]);
 						if(p->hasParent() && p->parent->name == "Hips") {
-							cout << p->name << "\t" << errorP << endl;
+							cout << p->name << "\t" << errorD << endl;
 						}
 					}
 				}
@@ -228,10 +228,6 @@ void Simulation::step(double dt) {
 //			print(eigVec3(dBodyGetTorque(rootbid)));
 		}
 	}
-}
-
-vector<Skeleton*> Simulation::getSkeletons() {
-	return bvh.skeletons;
 }
 
 dBodyID Simulation::createBall(const Vec3 & pos, const dReal & mass, const dReal & radius) {
@@ -272,12 +268,10 @@ void Simulation::initODE() {
 		///////
 		// read the first keyframe and realize the bones
 		///////
-		bvh.loadKeyframe(43);
 
 		//	Set the state (position etc) of all bodies.
-		for (vector<Skeleton*>::iterator ss = bvh.skeletons.begin();
-				ss != bvh.skeletons.end(); ss++) {
-			initODESkeleton(*ss, dBodyID());
+		for(Skeleton * ss : bvh.getKeyframe(3)) {
+			initODESkeleton(ss, dBodyID());
 		}
 
 		// identify overlapping body segments
@@ -291,9 +285,6 @@ void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
 
 	// create a body for this bone
 	dBodyID bid = dBodyCreate(wid);
-//	dMass mass;
-//	dMassSetSphere(&mass, 0.1, 0.1);
-//	dBodySetMass(bid, &mass);
 
 	// create a geometry for bone and attach to parent body
 	if (s->hasParent()) {
@@ -324,7 +315,7 @@ void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
 		// add mass to the parent
 		dMass * pMass = new dMass;
 		dBodyGetMass(parentBodyID, pMass);
-		pMass->mass += height * 20;	// TODO have some better way of deciding mass
+		pMass->mass += s->getMass();	// TODO have some better way of deciding mass
 		dBodySetMass(parentBodyID, pMass);
 	}
 
@@ -350,8 +341,8 @@ void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
 //		dJointSetAMotorParam(amid,dParamHiStop,PI/8);
 
 		// append to skelBodyMap
-		skelBodyMap[s] = parentBodyID;
-		bodySkelMap[parentBodyID] = s;
+		skelBodyMap[s->getLongName()] = parentBodyID;
+		bodySkelMap[parentBodyID] = s->getLongName();
 	}
 
 	// recurse to children
