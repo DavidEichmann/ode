@@ -27,14 +27,11 @@ private:
 	Ogre::Camera * mCamera;
 	Ogre::SceneManager * mSceneMgr;
 	Ogre::RenderWindow * mWindow;
-	Ogre::SceneNode * sphereNode;
-	Ogre::SceneNode* ballNode = nullptr;
 
 	Human * human = NULL;
 	Ogre::SceneNode * * humanNodes;
 
 	void initOgre();
-	void realizeBall();
 	void realizeHuman();
 	void realizeSkeletons();
 	void updateFromSim();

@@ -110,26 +110,6 @@ void OgreSimulation::mainLoop() {
 	}
 }
 
-void OgreSimulation::realizeBall() {
-	// ball properties
-	Vec3 pos(0,1,0);
-	dReal mass = 70;
-	dReal radius = 0.25;
-
-	// ode sphere
-	createBall(pos, mass, radius);
-
-	// ogre sphere
-	Ogre::SceneNode * node = mSceneMgr->getRootSceneNode()->createChildSceneNode();
-	node->setPosition((float) pos[0], (float) pos[1], (float) pos[2]);
-	Procedural::SphereGenerator gen = Procedural::SphereGenerator(radius,10,10);
-	Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
-	se->setMaterialName("Ogre/Earring");
-	node->attachObject(se);
-
-	ballNode = node;
-}
-
 void OgreSimulation::realizeHuman() {
 	human = new Human("Data/Model/Human_v0.2.model");
 	human->realize(wid,sid);
@@ -224,13 +204,6 @@ void OgreSimulation::realizeSkeletons() {
 }
 
 void OgreSimulation::updateFromSim() {
-
-	if(ballNode != nullptr) {
-		const dReal * pos = dBodyGetPosition(ballID);
-		const dReal * q = dBodyGetQuaternion(ballID);
-		ballNode->setPosition(Ogre::Vector3(pos[0],pos[1],pos[2]));
-		ballNode->setOrientation(Ogre::Quaternion(q[0],q[1],q[2],q[3]));
-	}
 
 	if(human != NULL) {
 		int size = human->getSize();

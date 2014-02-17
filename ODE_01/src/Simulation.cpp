@@ -136,7 +136,6 @@ void Simulation::step(double dt) {
 	odeSimT += odeSteps*STEP_SIZE;
 	for(int i = 0; i < odeSteps; i++) {
 		dSpaceCollide(sid, this, &collisionCallbackNonmemberFn);
-		if(ballID != 0) { controlBall(ballID,simTcurrent,STEP_SIZE); }
 		simTcurrent += STEP_SIZE;
 		dWorldStep(wid,STEP_SIZE);
 //		dWorldQuickStep(wid,STEP_SIZE);
@@ -228,23 +227,6 @@ void Simulation::step(double dt) {
 //			print(eigVec3(dBodyGetTorque(rootbid)));
 		}
 	}
-}
-
-dBodyID Simulation::createBall(const Vec3 & pos, const dReal & mass, const dReal & radius) {
-	if(ballID != 0) {
-		dBodyDestroy(ballID);
-	}
-
-	// ode sphere
-	dBodyID bid = ballID = dBodyCreate(wid);
-	dGeomID gid = dCreateSphere(sid,radius);
-	dGeomSetBody(gid,bid);
-	dBodySetPosition(bid,(dReal)pos[0],(dReal)pos[1],(dReal)pos[2]);
-	dMass dmass;
-	dBodyGetMass(bid, &dmass);
-	dmass.mass = mass;
-
-	return bid;
 }
 
 void Simulation::initODE() {
@@ -350,38 +332,5 @@ void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
 			c != s->children.end(); c++) {
 		initODESkeleton(*c, bid);
 	}
-}
-
-void Simulation::controlBall(dBodyID bid, dReal t, dReal dt) {
-	dMass mass;
-	dBodyGetMass(bid, &mass);
-
-	// if starting next impulse
-	if(stepsLeft == 0) {
-		stepsLeft = impulsSteps + restSteps;
-		// aim to maintain position at end of full period
-		dReal aR = -GRAVITY_ACC;
-		dReal TR = restSteps * STEP_SIZE;
-		dReal TR2 = TR*TR;
-		dReal TA = impulsSteps * STEP_SIZE;
-		dReal TA2 = TA*TA;
-		dReal V0 = dBodyGetLinearVel(bid)[1];
-
-		dReal aA = (((aR*TR2)/2) + (V0*TA) + (TR*V0))   /   (-1 * ((TA*TR) + (TA2/2)));
-		impulseF = (aA + GRAVITY_ACC) * mass.mass;
-
-		cout << dBodyGetPosition(bid)[1] << endl;
-	}
-
-	// if in Active state
-	if(stepsLeft > restSteps) {
-		dBodyAddForce(bid,0,impulseF,0);
-	}
-	// if in Rest state
-	else {
-		// apply no force
-	}
-	stepsLeft--;
-
 }
 
