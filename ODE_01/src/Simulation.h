@@ -6,7 +6,7 @@
 #include <map>
 
 #include "Simulation.h"
-#include "BVHParser.h"
+#include "MotionData.h"
 #include "Constants.h"
 
 using namespace std;
@@ -26,7 +26,7 @@ public:
 
 protected:
 
-	BVHParser bvh;
+	MotionData bvh;
 	map<string,dBodyID> skelBodyMap;
 	map<dBodyID, string> bodySkelMap;
 	map<Skeleton*, float> jointLastErrorMap;

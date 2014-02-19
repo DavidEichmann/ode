@@ -1,6 +1,6 @@
 
-#ifndef	_BVHPARSER_H
-#define	_BVHPARSER_H	1
+#ifndef	_MOTIONDATA_H
+#define	_MOTIONDATA_H	1
 
 #include <vector>
 
@@ -8,22 +8,25 @@
 
 using namespace std;
 
-class BVHParser {
+class MotionData {
 
 public:
 
-	BVHParser();
-	BVHParser(const char * filePath);
-	~BVHParser();
+	MotionData();
+	MotionData(const char * filePath);
+	~MotionData();
 	void parse(const char * filePath);
 	vector<Skeleton*> getKeyframe(int index); // load the keyframe data into the skeleton object(s)
 	double getFrameTime() { return frameTime; }
 	int getNumFrames() { return numFrames; }
 
+protected:
+
+	vector< vector<Skeleton *> > frames;
+
 private:
 
 	vector<Skeleton *> baseSkeletons;
-	vector< vector<Skeleton *> > frames;
 	int numChan;		// total number of channels
 	int numFrames;		// total number of key frames
 	double frameTime;

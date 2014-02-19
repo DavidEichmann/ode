@@ -2,28 +2,28 @@
 #include <iostream>
 #include <fstream>
 
-#include "BVHParser.h"
+#include "MotionData.h"
 #include "Skeleton.h"
 
 using namespace std;
 
-BVHParser::BVHParser(const char * filePath) {
+MotionData::MotionData(const char * filePath) {
 	parse(filePath);
 }
 
-BVHParser::BVHParser() {
+MotionData::MotionData() {
 }
 
-BVHParser::~BVHParser() {
+MotionData::~MotionData() {
 }
 
-string BVHParser::nextWord(ifstream & in) {
+string MotionData::nextWord(ifstream & in) {
 	// read next word
 	in >> wordBuf;
 	return string(wordBuf);
 }
 
-int BVHParser::getNumChan() {
+int MotionData::getNumChan() {
 	// cached result
 	numChan = 0;
 	// calculate
@@ -35,17 +35,17 @@ int BVHParser::getNumChan() {
 	return numChan;
 }
 
-vector<Skeleton*> BVHParser::getKeyframe(int index) {
+vector<Skeleton*> MotionData::getKeyframe(int index) {
 	return frames[index];
 }
 
-void BVHParser::parse(const char * filePath) {
+void MotionData::parse(const char * filePath) {
 	ifstream in;
 	in.open(filePath, ios::in);
 	parse(in);
 }
 
-void BVHParser::parse(ifstream & in) {
+void MotionData::parse(ifstream & in) {
 	// heirarchy
 	nextWord(in); // HEIRARCHY
 	parseHierarchy(in);
@@ -55,7 +55,7 @@ void BVHParser::parse(ifstream & in) {
 	parseKeyfames(in);
 }
 
-void BVHParser::parseKeyfames(ifstream & in) {
+void MotionData::parseKeyfames(ifstream & in) {
 
 	// count channels
 	int numChan = getNumChan();
@@ -102,20 +102,20 @@ void BVHParser::parseKeyfames(ifstream & in) {
 	}
 }
 
-vector<Skeleton*> BVHParser::cloneBaseSkeletons() {
+vector<Skeleton*> MotionData::cloneBaseSkeletons() {
 	vector<Skeleton*> frame = baseSkeletons;
 	for(Skeleton * & s : frame) { s = s->clone(); }
 	return frame;
 }
 
-void BVHParser::parseHierarchy(ifstream & in) {
+void MotionData::parseHierarchy(ifstream & in) {
 	string word;
 	nextWord(in); // ROOT
 	parseRoot(in);
 }
 
 // Same as skeleton, but this is the top level
-void BVHParser::parseRoot(ifstream & in) {
+void MotionData::parseRoot(ifstream & in) {
 	Skeleton * s = parseSkeleton(in);
 	s->parent = NULL;
 	baseSkeletons.push_back(s);
@@ -132,7 +132,7 @@ void BVHParser::parseRoot(ifstream & in) {
  *
  * technically the JOINT keyword is part of the subskeleton, but it is parsed here
  */
-Skeleton * BVHParser::parseSkeleton(ifstream & in) {
+Skeleton * MotionData::parseSkeleton(ifstream & in) {
 	Skeleton * s = new Skeleton();
 
 	// name

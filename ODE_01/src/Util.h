@@ -54,6 +54,15 @@ inline Quat eigQuat(const dQuaternion q) {
 	return Quat(q[0], q[1], q[2], q[3]);
 }
 
+inline Matrix3d eigM3(const dMatrix3 md) {
+	Matrix3d me;
+	for(int i = 0; i < 3; i++) {
+		for(int j = 0; j < 3; j++) {
+			me(i,j) = md[(3*i)+j];
+		}
+	}
+}
+
 inline Matrix3 QuatToMatrix(Quat q) {
 
 	Matrix3 m;
@@ -66,6 +75,27 @@ inline Matrix3 QuatToMatrix(Quat q) {
 
 }
 
+inline Vec3 getAngularVelocity(Quat qi, Quat qf, double dt) {
+	Quat qlnTerm = qf * qi.inverse();
+	const float angleHalf = acos(qlnTerm.w());
+	Vec3 rotAxis = qlnTerm.vec() / sin(angleHalf);
+	return (2 * angleHalf * rotAxis) / dt;
+}
+
+/**
+ * return a quaternion to rotate the z axis to pass throught he given point (a.k.a face the given direction)
+ */
+inline Quat zToDirQuat(Vec3 dir) {
+	if (dir[0] == 0 && dir[1] == 0) {
+		return Quat{0,0,0,1};
+	}
+	Quat q;
+	Vec3 iDir = Vec3::UnitZ();
+	Vec3 tDir = dir.normalized();
+	Vec3 axis = iDir.cross(tDir).normalized();
+	double angle = acos(iDir.dot(tDir));
+	return (Quaterniond) AngleAxisd(angle, axis);
+}
 
 template<typename E>
 inline bool contains(std::vector<E> v, E el) {

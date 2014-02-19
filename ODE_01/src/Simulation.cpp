@@ -277,28 +277,18 @@ void Simulation::initODESkeleton(Skeleton* s, dBodyID parentBodyID) {
 		dGeomID bGeom = dCreateCapsule(sid, 3, height);
 		dGeomSetBody(bGeom, parentBodyID);
 
-		if (pos[0] == 0 && pos[1] == 0) {
-			dGeomSetOffsetPosition(bGeom, 0, 0, (dReal) (pos[2] * 0.5));
-		}
-		else {
-			dQuaternion q;
-			Vec3 iDir = Vec3::UnitZ();
-			Vec3 tDir = pos.normalized();
-			Vec3 axis = iDir.cross(tDir).normalized();
-			double angle = acos(iDir.dot(tDir));
-			//dQFromAxisAndAngle(q,(dReal)axis[0],(dReal)axis[1],(dReal)axis[2],(dReal)angle);
-			Quat qEigen = (Quaterniond) AngleAxisd(angle, axis);
-			dConv(qEigen, q);
-			Vec3 fPos = tDir * (height/2);
-			dGeomSetOffsetPosition(bGeom, (dReal)fPos[0], (dReal)fPos[1], (dReal)fPos[2]);
-			//dGeomSetOffsetPosition(bGeom, 0,0,1);
-			dGeomSetOffsetQuaternion(bGeom, q);
-		}
+		// set the local rotation and offset
+		dQuaternion q;
+		Quat qEigen = zToDirQuat(pos);
+		dConv(qEigen, q);
+		dGeomSetOffsetQuaternion(bGeom, q);
+		dGeomSetOffsetPosition(bGeom, (dReal) (pos[0] * 0.5), (dReal) (pos[1] * 0.5), (dReal) (pos[2] * 0.5));
+
 		// add mass to the parent
-		dMass * pMass = new dMass;
-		dBodyGetMass(parentBodyID, pMass);
-		pMass->mass += s->getMass();	// TODO have some better way of deciding mass
-		dBodySetMass(parentBodyID, pMass);
+		dMass pMass;
+		dBodyGetMass(parentBodyID, &pMass);
+		pMass.mass += s->getMass();	// TODO have some better way of deciding mass
+		dBodySetMass(parentBodyID, &pMass);
 	}
 
 	// set the position and orientation of the body

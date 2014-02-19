@@ -12,7 +12,7 @@
 #include "Simulation.h"
 #include "Constants.h"
 #include "Util.h"
-#include "BVHParser.h"
+#include "MotionData.h"
 #include "Procedural.h"
 #include "OgreSimulation.h"
 

@@ -45,6 +45,10 @@ Vec3 Skeleton::getOffset() {
 	return getRawOffset() * scaleFactor;
 }
 
+double Skeleton::getLength() {
+	return getRawOffset().norm() * scaleFactor;
+}
+
 Vec3 Skeleton::getPosStart() {
 	return getOffset() * -1;
 }
@@ -89,6 +93,73 @@ double Skeleton::getMass() {
 		mass = getOffset().norm() * 20;
 	}
 	return mass;
+}
+
+double Skeleton::getTotalMass() {
+	double m = getMass();
+	for(Skeleton * c : children) {
+		m += c->getTotalMass();
+	}
+	return m;
+}
+
+Vec3 Skeleton::getLinearMomentum() {
+	return getLinearVel() * getMass();
+}
+
+Vec3 Skeleton::getTotalLinearMomentum() {
+	Vec3 p{0,0,0};
+	for(Skeleton * s : getAllSkeletons()) {
+		p += s->getLinearMomentum();
+	}
+	return p;
+}
+
+Vec3 Skeleton::getTotalLinearMomentum_deriv() {
+	Vec3 p{0,0,0};
+	for(Skeleton * s : getAllSkeletons()) {
+		p += s->getMass() * s->getLinearAcc();
+	}
+	return p;
+}
+
+/**
+ * this is about the center of mass, but using the global coordinate system
+ */
+Vec3 Skeleton::getAngularMomentum() {
+	return getRotG() * getInertiaTensor() * getRotG().inverse() * getAngularVel();
+}
+
+Vec3 Skeleton::getAngularMomentum_deriv() {
+	return getRotG() * getInertiaTensor() * getRotG().inverse() * getAngularAcc();
+}
+
+Vec3 Skeleton::getTotalAngularMomentum() {
+	Vec3 h{0,0,0};
+	for(Skeleton * s : getAllSkeletons()) {
+		h += s->getPosComG().cross(s->getLinearMomentum()) + s->getAngularMomentum();
+	}
+	return h;
+}
+
+Vec3 Skeleton::getTotalAngularMomentum_deriv() {
+	Vec3 h{0,0,0};
+	for(Skeleton * s : getAllSkeletons()) {
+		h +=
+				s->getLinearVel().cross(s->getLinearVel() * s->getMass()) +
+				s->getPosComG().cross(s->getLinearAcc() * s->getMass()) +
+				s->getAngularMomentum_deriv() +
+				s->getAngularVel().cross(s->getAngularMomentum());
+	}
+	return h;
+}
+
+Matrix3d Skeleton::getInertiaTensor() {
+	dMass m;
+	dMassSetCapsuleTotal(&m,getMass(),3,BONE_RADIUS,getLength());
+	Matrix3d localRot = QuatToMatrix(zToDirQuat(getOffset()));
+	Matrix3d i = eigM3(m.I) * localRot;
+	return i;
 }
 
 int Skeleton::calculateNumChan() {
