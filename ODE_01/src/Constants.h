@@ -8,7 +8,7 @@ const float STEP_SIZE = 1.0 / 200.0; // in seconds
 const double PI = 3.14159265359;
 
 
-const double BONE_RADIUS = 3; // radius (thickness) of the bones
+const double BONE_RADIUS = 0.1; // radius (thickness) of the bones
 
 const float BVH_SCALE = 0.01;
 

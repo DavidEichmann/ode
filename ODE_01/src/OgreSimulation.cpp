@@ -21,7 +21,6 @@ OgreSimulation::OgreSimulation(const char * bvhFile) : Simulation(bvhFile) {};
 
 void OgreSimulation::run() {
 	initOgre();
-	realizeSkeletons();
 	// realizeHuman();
 	// realizeBall();
 	mainLoop();
@@ -101,12 +100,9 @@ void OgreSimulation::mainLoop() {
 						d * Ogre::Math::Cos(t / s)));
 		mCamera->lookAt(Ogre::Vector3(0, h, 0));
 
-		// update the position of all bones
-		updateFromSim();
-
-		// Render the world
-		Ogre::WindowEventUtilities::messagePump();
-		mRoot->renderOneFrame(10);
+		// draw the scene
+		draw();
+		doRender();
 	}
 }
 
@@ -141,69 +137,7 @@ void OgreSimulation::realizeHuman() {
 	}
 }
 
-void OgreSimulation::realizeSkeletons() {
-	nodeSkelIndexPairs.clear();
-	nodeAniNodeMap.clear();
-
-	vector<Skeleton*> ss = md.getKeyframe(0);
-	for(int ssi = 0; ssi < ss.size(); ssi++) {
-		vector<Skeleton*> ssAll = ss[ssi]->getAllSkeletons();
-		for(int si = 0; si < ssAll.size(); si++) {
-			Skeleton * s = ssAll[si];
-			// ignore root and 0 length nodes
-			Vec3 pos = s->getOffset();
-			double height = pos.norm();
-
-			if(s->hasParent() && height > 0) {
-
-				// generate a mesh
-				Procedural::CapsuleGenerator gen = Procedural::CapsuleGenerator();
-				gen.setRadius(0.1);
-
-				/// height
-				gen.setHeight(height);
-				//gen.setHeight(1);
-
-				//  Achieve this...
-				//    orientation: s's local position is a vector representing the orientation of the bone
-				//    position: one end at the origin, the other ending at (-1 * local position) a.k.a heading back to parent node
-				//  ...by positioning the bone on the positive y axis, then rotating to correct orientation
-				//  handle the special case of pos being on the y axis (cross product will fail)
-				if(pos[0] == 0 && pos[2] == 0) {
-					gen.setPosition(ogreConv(pos * 0.5));
-				}
-				else {
-					Vec3 iDir = Vec3::UnitY();
-					Vec3 tDir = (pos * (-1)).normalized();
-					Vec3 axis = iDir.cross(tDir).normalized();
-					double angle = acos(iDir.dot(tDir));
-					Quaterniond meshRot = (Quaterniond) AngleAxisd(angle, axis);
-
-					const Ogre::Vector3 finalPos = ogreConv( (Vec3) tDir * (height/-2) );
-					gen.setPosition(finalPos);
-					gen.setOrientation(ogreConv(meshRot));
-				}
-
-				// create a global scene node
-				Ogre::SceneNode * node = mSceneMgr->getRootSceneNode()->createChildSceneNode();
-				Ogre::SceneNode * aniNode = mSceneMgr->getRootSceneNode()->createChildSceneNode();
-				Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
-				Ogre::Entity * aniSe = mSceneMgr->createEntity(gen.realizeMesh());
-				se->setMaterialName("Ogre/Earring");
-				aniSe->setMaterialName("Ogre/Earring");
-				node->attachObject(se);
-				aniNode->attachObject(aniSe);
-
-				// save node/skeleton pair
-
-				nodeSkelIndexPairs.push_back(make_pair(node,Vector2i(ssi,si)));
-				nodeAniNodeMap[node] = aniNode;
-			}
-		}
-	}
-}
-
-void OgreSimulation::updateFromSim() {
+void OgreSimulation::draw() {
 
 	if(human != NULL) {
 		int size = human->getSize();
@@ -219,35 +153,89 @@ void OgreSimulation::updateFromSim() {
 		}
 	}
 	else {
-		vector<vector<Skeleton*> > skelsAll;
-		for(Skeleton * s : getCurrentFrame()) {
-			skelsAll.push_back(s->getAllSkeletons());
-		}
-
-		for(pair<Ogre::SceneNode*,Vector2i> & pair : nodeSkelIndexPairs) {
-			Ogre::SceneNode * sn = pair.first;
-			Skeleton * sk = skelsAll[ pair.second[0] ][ pair.second[1] ];
-
-			// ensure that there is a valid dBodyID
-			if(skelBodyMap.count(sk->getLongName()) != 0) {
-				dBodyID bodyID = skelBodyMap[sk->getLongName()];
-
-				const dReal * pos = dBodyGetPosition(bodyID);
-				const dReal * q = dBodyGetQuaternion(bodyID);
-				sn->setPosition(Ogre::Vector3(pos[0],pos[1],pos[2]));
-				sn->setOrientation(Ogre::Quaternion(q[0],q[1],q[2],q[3]));
-
+		for(Skeleton * ss : getCurrentFrame()) {
+			for(Skeleton * s : ss->getAllSkeletons()) {
+				if(s->hasParent()) {
+					drawBone(s->getPosStartG(), s->getPosEndG());
+				}
 			}
-
-			// animation
-			// ensure that there is a parent joint
-			if(sk->hasParent()) {
-				Ogre::SceneNode * aniSn = nodeAniNodeMap[sn];
-				aniSn->setPosition(ogreConv(sk->parent->getPosG() + Vec3(-3.5,0,0)));
-				aniSn->setOrientation(ogreConv(sk->parent->getRotG()));
-			}
+			drawPoint(ss->getZMP());
+			Vec3 comp = ss->getPosTotalComG();
+			comp[1] = 0;
+			drawPoint(comp);
 		}
 	}
+//	else {
+//		vector<vector<Skeleton*> > skelsAll;
+//		for(Skeleton * s : getCurrentFrame()) {
+//			skelsAll.push_back(s->getAllSkeletons());
+//		}
+//
+//		for(pair<Ogre::SceneNode*,Vector2i> & pair : nodeSkelIndexPairs) {
+//			Ogre::SceneNode * sn = pair.first;
+//			Skeleton * sk = skelsAll[ pair.second[0] ][ pair.second[1] ];
+//
+//			// ensure that there is a valid dBodyID
+//			if(skelBodyMap.count(sk->getLongName()) != 0) {
+//				dBodyID bodyID = skelBodyMap[sk->getLongName()];
+//
+//				const dReal * pos = dBodyGetPosition(bodyID);
+//				const dReal * q = dBodyGetQuaternion(bodyID);
+//				sn->setPosition(Ogre::Vector3(pos[0],pos[1],pos[2]));
+//				sn->setOrientation(Ogre::Quaternion(q[0],q[1],q[2],q[3]));
+//
+//			}
+//
+//			// animation
+//			// ensure that there is a parent joint
+//			if(sk->hasParent()) {
+//				Ogre::SceneNode * aniSn = nodeAniNodeMap[sn];
+//				aniSn->setPosition(ogreConv(sk->parent->getPosG() + Vec3(-3.5,0,0)));
+//				aniSn->setOrientation(ogreConv(sk->parent->getRotG()));
+//			}
+//		}
+//	}
 }
 
+void OgreSimulation::draw(Ogre::Entity * e, Vec3 pos, Quat rot) {
+	Ogre::SceneNode * node = mSceneMgr->getRootSceneNode()->createChildSceneNode();
+	node->setPosition(ogreConv(pos));
+	node->setOrientation(ogreConv(rot));
+	node->attachObject(e);
+}
 
+void OgreSimulation::doRender() {
+	// Render the world
+	Ogre::WindowEventUtilities::messagePump();
+	mRoot->renderOneFrame(10);
+
+	// remove all nodes for next frame
+	mSceneMgr->getRootSceneNode()->removeAndDestroyAllChildren();
+}
+
+void OgreSimulation::drawBone(Vec3 start, Vec3 end, double radius) {
+	drawVec3(start, end-start, radius);
+};
+
+void OgreSimulation::drawVec3(Vec3 origin, Vec3 vec, double radius) {
+				// generate a mesh
+				Procedural::CapsuleGenerator gen = Procedural::CapsuleGenerator();
+				gen.setRadius(radius);
+				gen.setHeight(vec.norm());
+
+				// create an entity
+				Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
+				se->setMaterialName("Ogre/Earring");
+				draw(se, origin + (vec * 0.5), yToDirQuat(vec));
+}
+
+void OgreSimulation::drawPoint(Vec3 p, double radius) {
+				// generate a mesh
+				Procedural::SphereGenerator gen = Procedural::SphereGenerator();
+				gen.setRadius(radius);
+
+				// create an entity
+				Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
+				se->setMaterialName("Ogre/Earring");
+				draw(se, p);
+}

@@ -20,9 +20,6 @@ public:
 
 private:
 
-	vector< pair<Ogre::SceneNode*,Vector2i> > nodeSkelIndexPairs;
-	map<Ogre::SceneNode*,Ogre::SceneNode*> nodeAniNodeMap;
-
 	Ogre::Root * mRoot;
 	Ogre::Camera * mCamera;
 	Ogre::SceneManager * mSceneMgr;
@@ -34,8 +31,14 @@ private:
 	void initOgre();
 	void realizeHuman();
 	void realizeSkeletons();
-	void updateFromSim();
 	void mainLoop();
+
+	void draw();
+	void draw(Ogre::Entity * e, Vec3 pos = Vec3::Zero(), Quat rot = Quat::Identity());
+	virtual void drawBone(Vec3 start, Vec3 end, double radius = BONE_RADIUS);
+	virtual void drawVec3(Vec3 origin, Vec3 vec, double radius = 0.05);
+	virtual void drawPoint(Vec3 p, double radius = 0.07);
+	void doRender();
 
 };
 
