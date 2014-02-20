@@ -6,7 +6,7 @@
 #include <map>
 
 #include "Simulation.h"
-#include "MotionData.h"
+#include "DynamicsMotionData.h"
 #include "Constants.h"
 
 using namespace std;
@@ -26,7 +26,7 @@ public:
 
 protected:
 
-	MotionData bvh;
+	DynamicsMotionData md;
 	map<string,dBodyID> skelBodyMap;
 	map<dBodyID, string> bodySkelMap;
 	map<Skeleton*, float> jointLastErrorMap;
@@ -42,7 +42,7 @@ protected:
 				flat.push_back(s);
 		return flat;
 	}
-	void loadFrame(int index) { currentFrame = bvh.getKeyframe(index); };
+	void loadFrame(int index) { currentFrame = md.getKeyframe(index); };
 
 private:
 	// ODE variabels

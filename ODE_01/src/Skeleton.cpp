@@ -103,6 +103,15 @@ double Skeleton::getTotalMass() {
 	return m;
 }
 
+Vec3 Skeleton::getPosTotalComG() {
+	double m_tot = getTotalMass();
+	Vec3 p{0,0,0};
+	for(Skeleton * c : getAllSkeletons()) {
+		p += c->getPosComG() * (c->getMass() / m_tot);
+	}
+	return p;
+}
+
 Vec3 Skeleton::getLinearMomentum() {
 	return getLinearVel() * getMass();
 }
@@ -152,6 +161,22 @@ Vec3 Skeleton::getTotalAngularMomentum_deriv() {
 				s->getAngularVel().cross(s->getAngularMomentum());
 	}
 	return h;
+}
+
+Vec3 Skeleton::getZMP() {
+	Vec3 zmp{0,0,0};
+
+	double m_tot = getTotalMass();
+	double g = GRAVITY_ACC;
+	Vec3 com = getPosTotalComG();
+	Vec3 h_deriv = getTotalAngularMomentum_deriv();
+	Vec3 p_deriv = getTotalLinearMomentum_deriv();
+
+	// assume that ZMP is on the floor (y component is 0)
+	zmp[0] = ((m_tot * g * com[0]) - h_deriv[2]) / ((m_tot * g) + p_deriv[1]);
+	zmp[2] = ((m_tot * g * com[2]) + h_deriv[0]) / ((m_tot * g) + p_deriv[1]);
+
+	return zmp;
 }
 
 Matrix3d Skeleton::getInertiaTensor() {

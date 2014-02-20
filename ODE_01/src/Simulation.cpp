@@ -76,11 +76,6 @@ void Simulation::collisionCallback(dGeomID o1, dGeomID o2) {
 	dContactGeom contact[maxC];
 	const int c = dCollide(o1, o2, maxC, contact, (int) sizeof(dContactGeom));
 
-//	if(c > 0 && dGeomGetClass(o1) != dPlaneClass && dGeomGetClass(o2) != dPlaneClass) {
-//		cout << "collision between: " << bodySkelMap[b1]->name << " and " << bodySkelMap[b2]->name << endl;
-//		cout << contact[0].pos[0] << ", " << contact[0].pos[1] << ", " << contact[0].pos[2] << endl;
-//	}
-
 	// create collision joints
 	for (int i = 0; i < c; i++) {
 		if(contact[i].depth != 0) {
@@ -111,7 +106,7 @@ Simulation::Simulation(const char * bvhFile) {
 	simT = 0;
 
 	// parse input file
-	bvh.parse(bvhFile);
+	md.parse(bvhFile);
 
 	// setup ODE
 	initODE();
@@ -126,8 +121,8 @@ void Simulation::step(double dt) {
 	// load next keyframe according to time delta
 	double simTcurrent = simT;
 	simT += dt;
-	int f = (int) (simT / bvh.getFrameTime());
-	f = min(f, bvh.getNumFrames() - 1);
+	int f = (int) (simT / md.getFrameTime());
+	f = min(f, md.getNumFrames() - 1);
 	loadFrame(f+3);
 
 	// reflect changes in ODE
@@ -141,7 +136,6 @@ void Simulation::step(double dt) {
 //		dWorldQuickStep(wid,STEP_SIZE);
 		// Remove all joints in the contact joint group.
 		dJointGroupEmpty(contactGroupid);
-//		cout << bvh.skeletons[0]->getPosG()[1] << endl;
 
 		// update joint angles to fit keyframe
 		Vec3 pos;
@@ -217,9 +211,6 @@ void Simulation::step(double dt) {
 	//					// correct joint position which is
 	//					//		Pos_sim = ParentPos_sim + ( ParentRotG_sim * Offset )
 	//					dBodySetPosition(sbid, (dReal) target_pos[0], (dReal) target_pos[1], (dReal) target_pos[2]);
-						if(p->hasParent() && p->parent->name == "Hips") {
-							cout << p->name << "\t" << errorD << endl;
-						}
 					}
 				}
 			}
@@ -252,7 +243,7 @@ void Simulation::initODE() {
 		///////
 
 		//	Set the state (position etc) of all bodies.
-		for(Skeleton * ss : bvh.getKeyframe(3)) {
+		for(Skeleton * ss : md.getKeyframe(3)) {
 			initODESkeleton(ss, dBodyID());
 		}
 

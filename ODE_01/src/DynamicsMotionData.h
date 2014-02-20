@@ -14,7 +14,9 @@ class DynamicsMotionData : public MotionData {
 
 public:
 
-	DynamicsMotionData(const char * filePath);
+	DynamicsMotionData() : MotionData() {};
+	DynamicsMotionData(const char * filePath) : MotionData(filePath) {};
+	void parse(const char * filePath);
 
 private:
 

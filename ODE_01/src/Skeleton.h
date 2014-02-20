@@ -48,6 +48,7 @@ public:
 	vector<Skeleton*> getAllSkeletons();
 	double getMass();
 	double getTotalMass();
+	Vec3 getPosTotalComG();
 	Vec3 getLinearVel() { return linearVel; }
 	void setLinearVel(Vec3 lv) { linearVel = lv; }
 	Vec3 getLinearAcc() { return linearAcc; }
@@ -63,6 +64,7 @@ public:
 	Vec3 getAngularMomentum_deriv();
 	Vec3 getTotalAngularMomentum();
 	Vec3 getTotalAngularMomentum_deriv();
+	Vec3 getZMP();
 	Matrix3d getInertiaTensor();
 	string getLongName() {
 		if(hasParent())

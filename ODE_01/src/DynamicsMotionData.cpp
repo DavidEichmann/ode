@@ -5,19 +5,17 @@
 #include "MotionData.h"
 #include "DynamicsMotionData.h"
 
-DynamicsMotionData::DynamicsMotionData(const char * filePath) :
-
-	MotionData(filePath) {
-
+void DynamicsMotionData::parse(const char * filePath) {
+	MotionData::parse(filePath);
 	calculateDynamics();
-
 }
+
 
 void DynamicsMotionData::calculateDynamics() {
 	for(auto p0 = frames.begin()+1; p0 != frames.end(); p0++) {
 		// get a windows of 3 frames
-		vector<Skeleton*> & f0 = *p0;
-		vector<Skeleton*> & f1 = *(p0+1);
+		vector<Skeleton*> & f0 = *(p0-1);
+		vector<Skeleton*> & f1 = *p0;
 
 		// for each skeleton
 		for(int i = 0; i < f0.size(); i++) {

@@ -145,7 +145,7 @@ void OgreSimulation::realizeSkeletons() {
 	nodeSkelIndexPairs.clear();
 	nodeAniNodeMap.clear();
 
-	vector<Skeleton*> ss = bvh.getKeyframe(0);
+	vector<Skeleton*> ss = md.getKeyframe(0);
 	for(int ssi = 0; ssi < ss.size(); ssi++) {
 		vector<Skeleton*> ssAll = ss[ssi]->getAllSkeletons();
 		for(int si = 0; si < ssAll.size(); si++) {
@@ -223,8 +223,6 @@ void OgreSimulation::updateFromSim() {
 		for(Skeleton * s : getCurrentFrame()) {
 			skelsAll.push_back(s->getAllSkeletons());
 		}
-
-		print(eigVec3(dBodyGetPosition(skelBodyMap[skelsAll[0][10]->getLongName()])));
 
 		for(pair<Ogre::SceneNode*,Vector2i> & pair : nodeSkelIndexPairs) {
 			Ogre::SceneNode * sn = pair.first;

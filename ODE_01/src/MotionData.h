@@ -15,7 +15,7 @@ public:
 	MotionData();
 	MotionData(const char * filePath);
 	~MotionData();
-	void parse(const char * filePath);
+	virtual void parse(const char * filePath);
 	vector<Skeleton*> getKeyframe(int index); // load the keyframe data into the skeleton object(s)
 	double getFrameTime() { return frameTime; }
 	int getNumFrames() { return numFrames; }
