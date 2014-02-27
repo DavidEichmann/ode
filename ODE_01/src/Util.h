@@ -87,14 +87,14 @@ inline Vec3 getAngularVelocity(Quat qi, Quat qf, double dt) {
  * return a quaternion to rotate the dirI axis to pass through the given point (a.k.a face the given direction)
  */
 inline Quat dirToDirQuat(Vec3 dirI, Vec3 dir) {
-	if (abs(dirI.dot(dir)) < 0.0000001) {
-		return Quat{0,0,0,1};
-	}
 	Quat q;
 	Vec3 iDir = dirI.normalized();
 	Vec3 tDir = dir.normalized();
-	Vec3 axis = iDir.cross(tDir).normalized();
 	double angle = acos(iDir.dot(tDir));
+	if (angle < 0.0000001) {
+		return (Quaterniond) AngleAxisd(0, dir);
+	}
+	Vec3 axis = iDir.cross(tDir).normalized();
 	return (Quaterniond) AngleAxisd(angle, axis);
 }
 
@@ -104,11 +104,11 @@ inline Quat dirToDirQuat(Vec3 dirI, Vec3 dir) {
 inline Quat xToDirQuat(Vec3 dir) {
 	return dirToDirQuat((Vec3) Vec3::UnitX(), dir);
 }
-inline Quat zToDirQuat(Vec3 dir) {
-	return dirToDirQuat((Vec3) Vec3::UnitZ(), dir);
-}
 inline Quat yToDirQuat(Vec3 dir) {
 	return dirToDirQuat((Vec3) Vec3::UnitY(), dir);
+}
+inline Quat zToDirQuat(Vec3 dir) {
+	return dirToDirQuat((Vec3) Vec3::UnitZ(), dir);
 }
 
 template<typename E>

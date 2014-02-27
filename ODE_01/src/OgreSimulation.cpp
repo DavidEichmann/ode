@@ -21,9 +21,6 @@ OgreSimulation::OgreSimulation(const char * bvhFile) : Simulation(bvhFile) {};
 
 void OgreSimulation::run() {
 	initOgre();
-	// realizeHuman();
-	// realizeBall();
-	mainLoop();
 }
 
 void OgreSimulation::initOgre() {
@@ -197,45 +194,45 @@ void OgreSimulation::draw() {
 //	}
 }
 
-void OgreSimulation::draw(Ogre::Entity * e, Vec3 pos, Quat rot) {
-	Ogre::SceneNode * node = mSceneMgr->getRootSceneNode()->createChildSceneNode();
-	node->setPosition(ogreConv(pos));
-	node->setOrientation(ogreConv(rot));
-	node->attachObject(e);
-}
-
-void OgreSimulation::doRender() {
-	// Render the world
-	Ogre::WindowEventUtilities::messagePump();
-	mRoot->renderOneFrame(10);
-
-	// remove all nodes for next frame
-	mSceneMgr->getRootSceneNode()->removeAndDestroyAllChildren();
-}
-
-void OgreSimulation::drawBone(Vec3 start, Vec3 end, double radius) {
-	drawVec3(start, end-start, radius);
-};
-
-void OgreSimulation::drawVec3(Vec3 origin, Vec3 vec, double radius) {
-				// generate a mesh
-				Procedural::CapsuleGenerator gen = Procedural::CapsuleGenerator();
-				gen.setRadius(radius);
-				gen.setHeight(vec.norm());
-
-				// create an entity
-				Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
-				se->setMaterialName("Ogre/Earring");
-				draw(se, origin + (vec * 0.5), yToDirQuat(vec));
-}
-
-void OgreSimulation::drawPoint(Vec3 p, double radius) {
-				// generate a mesh
-				Procedural::SphereGenerator gen = Procedural::SphereGenerator();
-				gen.setRadius(radius);
-
-				// create an entity
-				Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
-				se->setMaterialName("Ogre/Earring");
-				draw(se, p);
-}
+//void OgreSimulation::draw(Ogre::Entity * e, Vec3 pos, Quat rot) {
+//	Ogre::SceneNode * node = mSceneMgr->getRootSceneNode()->createChildSceneNode();
+//	node->setPosition(ogreConv(pos));
+//	node->setOrientation(ogreConv(rot));
+//	node->attachObject(e);
+//}
+//
+//void OgreSimulation::doRender() {
+//	// Render the world
+//	Ogre::WindowEventUtilities::messagePump();
+//	mRoot->renderOneFrame(10);
+//
+//	// remove all nodes for next frame
+//	mSceneMgr->getRootSceneNode()->removeAndDestroyAllChildren();
+//}
+//
+//void OgreSimulation::drawBone(Vec3 start, Vec3 end, double radius) {
+//	drawVec3(start, end-start, radius);
+//};
+//
+//void OgreSimulation::drawVec3(Vec3 origin, Vec3 vec, double radius) {
+//				// generate a mesh
+//				Procedural::CapsuleGenerator gen = Procedural::CapsuleGenerator();
+//				gen.setRadius(radius);
+//				gen.setHeight(vec.norm());
+//
+//				// create an entity
+//				Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
+//				se->setMaterialName("Ogre/Earring");
+//				draw(se, origin + (vec * 0.5), yToDirQuat(vec));
+//}
+//
+//void OgreSimulation::drawPoint(Vec3 p, double radius) {
+//				// generate a mesh
+//				Procedural::SphereGenerator gen = Procedural::SphereGenerator();
+//				gen.setRadius(radius);
+//
+//				// create an entity
+//				Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
+//				se->setMaterialName("Ogre/Earring");
+//				draw(se, p);
+//}

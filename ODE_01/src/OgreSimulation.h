@@ -5,11 +5,12 @@
 #include <map>
 
 #include "Simulation.h"
+#include "OgreCanvas.h"
 #include "Human.h"
 
 using namespace std;
 
-class OgreSimulation: public Simulation {
+class OgreSimulation : public Simulation, public OgreCanvas {
 
 public:
 
@@ -20,11 +21,6 @@ public:
 
 private:
 
-	Ogre::Root * mRoot;
-	Ogre::Camera * mCamera;
-	Ogre::SceneManager * mSceneMgr;
-	Ogre::RenderWindow * mWindow;
-
 	Human * human = NULL;
 	Ogre::SceneNode * * humanNodes;
 
@@ -34,11 +30,21 @@ private:
 	void mainLoop();
 
 	void draw();
-	void draw(Ogre::Entity * e, Vec3 pos = Vec3::Zero(), Quat rot = Quat::Identity());
-	virtual void drawBone(Vec3 start, Vec3 end, double radius = BONE_RADIUS);
-	virtual void drawVec3(Vec3 origin, Vec3 vec, double radius = 0.05);
-	virtual void drawPoint(Vec3 p, double radius = 0.07);
-	void doRender();
+	void draw(Ogre::Entity * e, Vec3 pos = Vec3::Zero(), Quat rot = Quat::Identity()) {
+		OgreCanvas::draw(e,pos,rot);
+	};
+	virtual void drawBone(Vec3 start, Vec3 end, double radius = BONE_RADIUS) {
+		OgreCanvas::drawBone(start,end,radius);
+	};
+	virtual void drawVec3(Vec3 origin, Vec3 vec, double radius = 0.05) {
+		OgreCanvas::drawVec3(origin, vec, radius);
+	};
+	virtual void drawPoint(Vec3 p, double radius = 0.07) {
+		OgreCanvas::drawPoint(p, radius);
+	};
+	bool doRender() {
+		return OgreCanvas::doRender();
+	}
 
 };
 
