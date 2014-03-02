@@ -5,6 +5,7 @@
 #include <time.h>
 #include <ode/ode.h>
 #include <OGRE/Ogre.h>
+#include <OGRE/OgreFrameListener.h>
 #include <OIS/OIS.h>
 #include <Eigen/Geometry>
 #include <tuple>
@@ -15,6 +16,64 @@
 #include "MotionData.h"
 #include "Procedural.h"
 #include "OgreCanvas.h"
+
+
+class SimpleFrameListener : public Ogre::FrameListener
+{
+public:
+    SimpleFrameListener(OIS::Keyboard* keyboard, OIS::Mouse* mouse, Ogre::Camera* camera)
+    {
+        mKeyboard = keyboard;
+        mMouse = mouse;
+        mCam = camera;
+    }
+    // This gets called before the next frame is beeing rendered.
+    bool frameStarted(const Ogre::FrameEvent& evt)
+    {
+        //update the input devices
+        mKeyboard->capture();
+        mMouse->capture();
+
+        //exit if key KC_ESCAPE pressed
+        if(mKeyboard->isKeyDown(OIS::KC_ESCAPE))
+            return false;
+
+        // move cam
+        Ogre::Vector3 camdir = mCam->getDerivedDirection();
+        Ogre::Vector3 campos = mCam->getPosition();
+        double speed = 0.1;
+        double mspeed = 0.001;
+        if(mKeyboard->isKeyDown(OIS::KC_A))
+        	mCam->setPosition(campos + (camdir.crossProduct(Ogre::Vector3::UNIT_Y).normalisedCopy() * -speed));
+        if(mKeyboard->isKeyDown(OIS::KC_D))
+        	mCam->setPosition(campos + (camdir.crossProduct(Ogre::Vector3::UNIT_Y).normalisedCopy() * speed));
+        if(mKeyboard->isKeyDown(OIS::KC_W))
+        	mCam->setPosition(campos + (camdir.normalisedCopy() * speed));
+        if(mKeyboard->isKeyDown(OIS::KC_S))
+        	mCam->setPosition(campos + (camdir.normalisedCopy() * -speed));
+
+        Vec3 nd = ((Quaterniond) AngleAxisd(
+        		mMouse->getMouseState().X.rel * -mspeed, Vec3::UnitY()))
+        				* eigConv(camdir);
+		mCam->setDirection(
+			ogreConv(
+				nd
+			)
+		);
+
+        return true;
+    }
+    // This gets called at the end of a frame.
+    bool frameEnded(const Ogre::FrameEvent& evt)
+    {
+        return true;
+    }
+private:
+    OIS::Keyboard* mKeyboard;
+    OIS::Mouse* mMouse;
+    Ogre::Camera* mCam;
+};
+
 
 OgreCanvas::OgreCanvas() {};
 
@@ -62,6 +121,41 @@ void OgreCanvas::initOgre() {
 	mSceneMgr->setAmbientLight(Ogre::ColourValue(0.5, 0.5, 0.5));
 	Ogre::Light* l = mSceneMgr->createLight("MainLight");
 	l->setPosition(200, 200, 50);
+
+
+	// setup OIS input
+	OIS::ParamList pl;
+	size_t windowHnd = 0;
+	std::ostringstream windowHndStr;
+
+	//tell OIS about the Ogre window
+	mWindow->getCustomAttribute("WINDOW", &windowHnd);
+	windowHndStr << windowHnd;
+	pl.insert(std::make_pair(std::string("WINDOW"), windowHndStr.str()));
+
+	//setup the manager, keyboard and mouse to handle input
+	OIS::InputManager* inputManager = OIS::InputManager::createInputSystem(pl);
+	OIS::Keyboard* keyboard = static_cast<OIS::Keyboard*>(inputManager->createInputObject(OIS::OISKeyboard, true));
+	OIS::Mouse*    mouse = static_cast<OIS::Mouse*>(inputManager->createInputObject(OIS::OISMouse, true));
+
+	//tell OIS about the window's dimensions
+	unsigned int width, height, depth;
+	int top, left;
+	mWindow->getMetrics(width, height, depth, left, top);
+	const OIS::MouseState &ms = mouse->getMouseState();
+	ms.width = width;
+	ms.height = height;
+
+	// everything is set up, now we listen for input and frames (replaces while loops)
+//	//key events
+//	SimpleKeyListener* keyListener = new SimpleKeyListener();
+//	keyboard->setEventCallback(keyListener);
+//	//mouse events
+//	SimpleMouseListener* mouseListener = new SimpleMouseListener();
+//	mouse->setEventCallback(mouseListener);
+	//render events
+	SimpleFrameListener* frameListener = new SimpleFrameListener(keyboard, mouse, mCamera);
+	mRoot->addFrameListener(frameListener);
 }
 
 
@@ -80,7 +174,7 @@ bool OgreCanvas::doRender() {
 	// remove all nodes for next frame
 	mSceneMgr->getRootSceneNode()->removeAndDestroyAllChildren();
 
-	return mWindow->isClosed();
+	return ! mWindow->isActive();
 }
 
 void OgreCanvas::drawBone(Vec3 start, Vec3 end, double radius) {

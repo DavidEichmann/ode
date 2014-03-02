@@ -3,7 +3,7 @@ module Main where
 import MotionData
 import Constants
 import Data.Maybe
-import MotionData.BVHParser
+import Data.TreeF
 import FFI
 import Linear
 import Util
@@ -12,11 +12,7 @@ import Data.Time.Clock
 
 main :: IO ()
 main = do
-    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-005_David.bvh"
-    --print $ setJoint ((getJoint testF){offset=V3 0 0 1}) testF
-    --print $ jointMap (\f -> setJoint ((getJoint f){offset=V3 0 0 1}) f) testF
-    --print $ getJoint $ fromJust . child0 $ (frames md)!!10
-    
+    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-025_David.bvh"
     initOgre
     mainLoopOut md
     
@@ -36,9 +32,11 @@ mainLoop md t = do
 
     let
         ft = frameTime md
-        maxFIndex = length $ frames md
+        fLength = length $ frames md
+        maxFIndex = fLength -1
     
-    drawSkeleton $ (frames md) !! (min maxFIndex (floor $ t / ft))
+    --drawSkeleton $ (frames md) !! 0
+    drawSkeleton $ (frames md) !! (min maxFIndex ((floor $ t / ft) `mod` maxFIndex))
     notDone <- doRender
     
     --threadDelay $ floor $ (frameTime md) * 1000000
@@ -48,13 +46,14 @@ mainLoop md t = do
 
    
 drawSkeleton :: Frame -> IO ()
-drawSkeleton = jointMapM_ drawBone' where
+drawSkeleton = treeMapM_ drawBone' where
      drawBone' :: JointF -> IO ()
      drawBone' j
             | hasParent j   = drawBone (getPosStart j) (getPosEnd j) boneRadius
             | otherwise     = return ()
             
             
+{-
 
 emptyJoint = Joint{
                 name = "lol",
@@ -62,6 +61,6 @@ emptyJoint = Joint{
                 rotation = identity,
                 channels = [Xpos,Ypos]}
                 
-testF = toFocus (JointTree emptyJoint [JointTree emptyJoint [],JointTree emptyJoint []])
+testF = toFocus (Tree emptyJoint [Tree emptyJoint [],Tree emptyJoint []])
             
-            
+  -}          

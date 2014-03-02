@@ -21,6 +21,7 @@ OgreSimulation::OgreSimulation(const char * bvhFile) : Simulation(bvhFile) {};
 
 void OgreSimulation::run() {
 	initOgre();
+	mainLoop();
 }
 
 void OgreSimulation::initOgre() {

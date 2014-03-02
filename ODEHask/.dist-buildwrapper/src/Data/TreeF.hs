@@ -75,11 +75,11 @@ treeMapCon fnC d f = applyToChildren $ applyToSelf (d,f) where
               where
                 dr'@(d',r') = treeMapCon fnC d r
                 
-                
-treeMapM :: Monad m => (TreeF a -> m a) -> TreeF a -> m [a]
-treeMapM fn j = sequence $ treeFold (\ms j' -> (fn j'):ms) [] j
+                 
+treeMapM :: Monad m => (TreeF a -> m b) -> TreeF a -> m [b]
+treeMapM fn j = sequence $ reverse $ treeFold (\ms j' -> (fn j'):ms) [] j
 
-treeMapM_ :: (Functor m, Monad m) => (TreeF a -> m a) -> TreeF a -> m ()
+treeMapM_ :: (Functor m, Monad m) => (TreeF a -> m b) -> TreeF a -> m ()
 treeMapM_ fn = void . (treeMapM fn)
 
 

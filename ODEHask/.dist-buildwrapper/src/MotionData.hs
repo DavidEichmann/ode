@@ -1,10 +1,8 @@
 module MotionData where
 
-import Control.Monad
 import Control.Applicative (liftA2)
 import Data.List
 import Data.Char
-import Data.Maybe
 import Data.TreeF
 import Text.Parsec
 import Text.Parsec.Token
@@ -22,10 +20,10 @@ rotChans = [Xrot,Yrot,Zrot]
 --type JointF = TreeF Joint
 
 data Joint = Joint {
-                name     :: String,
-                offset   :: Vec3,
-                rotation :: Quat,
-                channels :: [Channel]
+                name      :: String,
+                offset    :: Vec3,
+                rotationL :: Quat,
+                channels  :: [Channel]
         } deriving Show
                 
 -- this data (mass/inertiaM) refers to the bone between this and parent joint
@@ -47,7 +45,7 @@ nullJoint :: Joint
 nullJoint = Joint {
         name = "",
         offset = zero,
-        rotation = identity,
+        rotationL = identity,
         channels = []
 }
 
@@ -88,20 +86,29 @@ jointTranslate :: Vec3 -> JointF -> JointF
 jointTranslate t = map1 (\r@Joint{offset=o} -> r{offset=o+t})
 
 fromChanVals :: JointF -> [Double] -> JointF
-fromChanVals jf cv = treeMapCon_ applyChans cv jf where
-         applyChans cv jf = (cv', set (sk{ offset = offset', rotation = rotation'}) jf) where
+fromChanVals jf cv = (\(d,r) -> if d == [] then r else error $ "chan vals left over: " ++ (show d)) $ treeMapCon applyChans cv jf where
+         applyChans cv jf = (cv', set (sk{ offset = offset', rotationL = rotationL'}) jf) where
                 sk = view jf 
                 baseOffset = offset sk
-                baseRot    = rotation sk
-                (offset', rotation', cv') = consume baseOffset baseRot (channels sk) cv
+                baseRot    = rotationL sk
+                (offset', rotationL', cv') = consume baseOffset baseRot (channels sk) cv
                 consume ost rot [] vs = (ost, rot, vs)
                 consume _ _ _ [] = error("Not enough values to fill channels")
                 consume (V3 _ py pz) rot (Xpos:cs) (v:vs) = consume (V3 v py pz) rot cs vs
                 consume (V3 px _ pz) rot (Ypos:cs) (v:vs) = consume (V3 px v pz) rot cs vs
                 consume (V3 px py _) rot (Zpos:cs) (v:vs) = consume (V3 px py v) rot cs vs
-                consume pos rot (Xrot:cs) (v:vs) = consume pos (rot * (axisAngle (unitX) (degreeToRadian v))) cs vs
-                consume pos rot (Yrot:cs) (v:vs) = consume pos (rot * (axisAngle (unitY) (degreeToRadian v))) cs vs
-                consume pos rot (Zrot:cs) (v:vs) = consume pos (rot * (axisAngle (unitZ) (degreeToRadian v))) cs vs
+                
+                
+               {- consume pos rot (Yrot:Xrot:Zrot:cs) (y:x:z:vs) = consume pos (
+                        rot *
+                        (axisAngle (unitY) (degreeToRadian y)) *
+                        (axisAngle (unitX) (degreeToRadian x)) *
+                        (axisAngle (unitZ) (degreeToRadian z))
+                    ) cs vs -}
+                
+                consume pos rot (Xrot:cs) (v:vs) = consume pos (rot *-* (axisAngle (unitX) (degreeToRadian v))) cs vs
+                consume pos rot (Yrot:cs) (v:vs) = consume pos (rot *-* (axisAngle (unitY) (degreeToRadian v))) cs vs
+                consume pos rot (Zrot:cs) (v:vs) = consume pos (rot *-* (axisAngle (unitZ) (degreeToRadian v))) cs vs
                          
 
 parseBVH :: String -> IO (MotionData)
@@ -120,19 +127,21 @@ parseBVH filePath = do
 
 getRot :: JointF -> Quat
 getRot j = case parent j of
-        Nothing  ->  rotation $- j
-        Just p   ->  (rotation $- p) * (rotation $- j)
+        Nothing  ->  rotationL $- j
+        Just p   ->  (getRot p) *-* (rotationL $- j)
         
 getPosEnd :: JointF -> Vec3
-getPosEnd j = getPosEnd' j (parent j) where
-        getPosEnd' j Nothing = offset $- j
-        getPosEnd' j (Just p) = (getPosEnd p) + (getRot p `rotate` (offset $- j))
+getPosEnd j = getPosEnd' (parent j) where
+        getPosEnd' Nothing = offset $- j
+        getPosEnd' (Just p) = (getPosEnd p) + ((getRot p) `rotate` (offset $- j))
 
 getPosStart :: JointF -> Vec3
 getPosStart j = maybe zero getPosEnd (parent j)
 
 getPosCom :: JointF -> Vec3
-getPosCom jf = ((getPosStart jf) + (getPosEnd jf)) / 2 where
+getPosCom jf = case parent jf of
+        Nothing  ->  getPosEnd jf
+        Just _   ->  ((getPosStart jf) + (getPosEnd jf)) / 2 where
 
 
 -- get the (min, max) coordinates of the system
@@ -207,10 +216,9 @@ hierarchy = do
                         spaces
                         char '}'
                         spaces
-                        return (Tree Joint{
+                        return (Tree nullJoint{
                                 name = name,
                                 offset = offset,
-                                rotation = identity,
                                 channels = channels
                         } children)
                 endSite = do
@@ -223,11 +231,9 @@ hierarchy = do
                         offset <- vec3
                         spaces
                         char '}'
-                        return (Tree Joint{
+                        return (Tree nullJoint{
                                 name = endSiteName,
-                                offset = offset,
-                                rotation = identity,
-                                channels = []
+                                offset = offset
                         } [])
                         where endSiteName = "End Site"
                 channels 0 = return []
@@ -242,6 +248,8 @@ hierarchy = do
                                 toChan "Xrotation" = Xrot
                                 toChan "Yrotation" = Yrot
                                 toChan "Zrotation" = Zrot
+
+newline' = try (string "\r\n") <|> (string "\n")
 
 motion skel = do
         spaces
@@ -258,12 +266,11 @@ motion skel = do
         frames <- getFrames
         spaces
         return (frames, frameTime) where
-                getFrames = endBy line newline <?> "Frames"
+                getFrames = endBy line newline' <?> "Frames"
                 line = do
                         vs <- sepBy floatP (many1 (char ' '))
                         return (fromChanVals skel vs)
                       <?> "Line"
-                vals = many (floatP)
         
 
 bvh = do
@@ -279,6 +286,6 @@ bvh = do
 raw_parseBVH :: String -> IO(MotionData)
 raw_parseBVH filePath = do
         content <- readFile filePath
-        out <- either (\e -> do print e; return (MotionData{})) (return) (parse bvh "" content)
+        out <- either (error $ "Failed to parse bvh file: " ++ filePath) (return) (parse bvh "" content)
         print "done Parsing"
         return out

@@ -46,6 +46,10 @@ inline void dConv(Quaterniond q, dQuaternion out) {
 	out[3] = (dReal) q.z();
 }
 
+inline Vec3 eigConv(Ogre::Vector3 v) {
+	return Vec3(v.x, v.y, v.z);
+}
+
 inline Vec3 eigVec3(const dVector3 v) {
 	return Vec3(v[0], v[1], v[2]);
 }
