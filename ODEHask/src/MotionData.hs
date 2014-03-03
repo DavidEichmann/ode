@@ -114,8 +114,17 @@ fromChanVals jf cv = (\(d,r) -> if d == [] then r else error $ "chan vals left o
 parseBVH :: String -> IO (MotionData)
 parseBVH filePath = do
         bvh <- raw_parseBVH filePath
-        return bvh
+        calculateDynamics bvh
+        return bvh'
 
+calculateDynamics :: MotionData -> MotionData
+calculateDynamics md = md{frames = fF} where
+    f = frames md
+    f2 = map treeZip (zip f (tail f))
+    fv = map (tMap calcVels) f2
+    
+    calcVels :: (Joint,Joint) -> Joint
+    calcVels (a,b) = 
 
 
 {-------------------------
