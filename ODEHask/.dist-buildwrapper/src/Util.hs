@@ -31,3 +31,12 @@ a *-* b = a*b
 
 degreeToRadian :: Fractional a => a -> a
 degreeToRadian d = 0.01745329251 * d
+
+xToDirQuat :: Vec3 -> Quat
+xToDirQuat (V3 x 0 0)
+            | x < 0     = axisAngle unitY pi
+            | otherwise = identity
+xToDirQuat dir = axisAngle axis angle where
+    dirU = normalize dir
+    axis = normalize $ unitX `cross` dirU
+    angle = acos (dirU `dot` unitX)

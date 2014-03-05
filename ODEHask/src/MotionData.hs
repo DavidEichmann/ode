@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -F -pgmF htfpp #-}
 module MotionData where
 
 import Control.Applicative (liftA2)
@@ -10,6 +11,10 @@ import Text.Parsec.Language
 import Linear
 import Util
 import Constants
+import Test.Framework
+
+prop_a = 1 == 1
+test_empty = assertEqual ([] :: [Int]) ([])
 
 data Channel = Xpos | Ypos | Zpos | Xrot | Yrot | Zrot deriving (Eq, Show)
 posChans :: [Channel]
@@ -20,33 +25,141 @@ rotChans = [Xrot,Yrot,Zrot]
 --type JointF = TreeF Joint
 
 data Joint = Joint {
-                name      :: String,
-                offset    :: Vec3,
-                rotationL :: Quat,
-                channels  :: [Channel]
+                name       :: String,
+                offset     :: Vec3,
+                rotationL  :: Quat,
+                channels   :: [Channel],
+                linearVel  :: Vec3,
+                linearAcc  :: Vec3,
+                angularVel :: Vec3,
+                angularAcc :: Vec3
         } deriving Show
                 
 -- this data (mass/inertiaM) refers to the bone between this and parent joint
 
--- mass is bone length * 10 kg  (root has no mass)
-mass :: JointF -> Double
-mass jF
-        | hasParent jF   = 10 * (norm $ offset $-  jF)
+density :: JointF -> Double
+density jF
+        | hasParent jF   = 100
         | otherwise     = 0
+        
+        
+mass :: JointF -> Double
+mass = fst . massInertiaM
+        
+inertiaM :: JointF -> M3
+inertiaM = snd . massInertiaM
         
 -- inertia matrix is computed as that of a capsule represented by the offset vector
 -- as the root joint does not represent a bone, it has no valid inertia matrix, so zero is used  
-inertiaM :: JointF -> M3
-inertiaM jF
-        | hasParent jF   = zero
-        | otherwise     = zero
+massInertiaM :: JointF -> (Double, M3)
+massInertiaM jF
+        | hasParent jF   = getCapsulMassInertiaM (density jF) boneRadius (offset $- jF)
+        | otherwise     = (0,zero)
         
+getCapsulMassInertiaM :: Double -> Double -> Vec3 -> (Double,M3)
+getCapsulMassInertiaM d r boneVec = --(mass, rotM !*! xm !*! rotInvM) where
+    (mass, rotM !*! xm !*! rotInvM) where
+        (mass, xm) = getXCapsulMassInertiaM d r (norm boneVec)
+        rot     = xToDirQuat boneVec
+        rotInv  = conjugate rot
+        rotM    = fromQuaternion rot
+        rotInvM = fromQuaternion rotInv
+
+getXCapsulMassInertiaM :: Double -> Double -> Double -> (Double,M3)
+getXCapsulMassInertiaM d r l = (m1+m2, im) where
+    r2 = r ** 2
+    l2 = l ** 2
+    m1 = pi * l * r2 * d
+    m2 = (4/3) * pi * r2 * r * d
+    ia = m1 * (0.25 * r2 + (1/12) * l2) +
+         m2 * (0.4  * r2 + 0.375  * r * l + 0.25 * l2)
+    ib = ((m1 * 0.5) + (m2 * 0.4)) * r2;
+    
+    im = V3 (V3  ib  0   0)
+            (V3  0   ia  0)
+            (V3  0   0   ia)
+
+
+getTotalMass :: JointF -> Double
+getTotalMass rf = treeFoldNR (\m jf -> m + (mass jf)) 0 rf
+
+getPosTotalCom :: JointF -> Vec3
+getPosTotalCom rf = (treeFoldNR (\p jf -> p + (getPosCom jf ^* ((mass jf) / (m_tot)))) zero rf) where
+    m_tot = getTotalMass rf
+    
+getLinearVel :: JointF -> Vec3
+getLinearVel f = linearVel $- f
+
+getLinearAcc :: JointF -> Vec3
+getLinearAcc f = linearAcc $- f
+
+getAngularVel :: JointF -> Vec3
+getAngularVel f = angularVel $- f
+
+getAngularAcc :: JointF -> Vec3
+getAngularAcc f = angularAcc $- f
+
+getLinearMomentum :: JointF -> Vec3
+getLinearMomentum jf = (getLinearVel jf) ^* (mass jf)
+
+getLinearMomentum' :: JointF -> Vec3
+getLinearMomentum' jf = (getLinearAcc jf) ^* (mass jf)
+
+getTotalLinearMomentum :: JointF -> Vec3
+getTotalLinearMomentum rf = treeFoldNR (\p jf -> p + (getLinearMomentum jf)) zero rf
+
+getTotalLinearMomentum' :: JointF -> Vec3
+getTotalLinearMomentum' rf = treeFoldNR (\p jf -> p + (getLinearMomentum' jf)) zero rf
+
+--this is about the center of mass, but using the global coordinate system
+getAngularMomentum :: JointF -> Vec3
+getAngularMomentum rf = rot `rotate` ((inertiaM rf) !* (rotInv `rotate` (getAngularVel rf))) where
+    rot = getRot rf
+    rotInv = conjugate rot
+
+getAngularMomentum' :: JointF -> Vec3
+getAngularMomentum' rf = rot `rotate` ((inertiaM rf) !* (rotInv `rotate` (getAngularAcc rf))) where
+    rot = getRot rf
+    rotInv = conjugate rot
+
+getTotalAngularMomentum :: JointF -> Vec3
+getTotalAngularMomentum rf = treeFoldNR (\h jf -> h + (((getPosCom jf) `cross` (getLinearMomentum jf)) + (getAngularMomentum jf))) zero rf
+
+getTotalAngularMomentum' :: JointF -> Vec3
+getTotalAngularMomentum' rf = treeFoldNR sumH zero rf where
+    sumH h jf = h +
+        ((getLinearVel jf) `cross` (getLinearMomentum  jf)) +
+        ((getPosCom jf)    `cross` (getLinearMomentum' jf)) + 
+        ((getAngularMomentum' jf)) +
+        ((getAngularVel jf) `cross` (getAngularMomentum jf))
+    
+getZMP :: JointF -> Vec3
+getZMP jf = zmp where
+    m_tot = getTotalMass jf
+    g = gravityAcc
+    (V3 comX _ comZ) = getPosTotalCom jf
+    (V3 h'X _ h'Z) = getTotalAngularMomentum' jf
+    (V3 _ p'Y _) = getTotalLinearMomentum' jf
+
+    -- assume that ZMP is on the floor (y component is 0)
+    -- to preserve right-handedness we must swap (ZMP paper axis -> my code axis): z -> y, y -> x, x -> y)
+    zmp = V3
+        (((m_tot * g * comX) + h'Z) / ((m_tot * g) + p'Y))
+--        (((m_tot * g * comX)) / ((m_tot * g) + p'Y))
+        0
+        (((m_tot * g * comZ) - h'X) / ((m_tot * g) + p'Y))
+--        (((m_tot * g * comZ)) / ((m_tot * g) + p'Y))
+
 nullJoint :: Joint
 nullJoint = Joint {
         name = "",
         offset = zero,
         rotationL = identity,
-        channels = []
+        channels = [],
+        linearVel = zero,
+        linearAcc = zero,
+        angularVel = zero,
+        angularAcc = zero
 }
 
 type JointTree = (Tree Joint)
@@ -114,18 +227,44 @@ fromChanVals jf cv = (\(d,r) -> if d == [] then r else error $ "chan vals left o
 parseBVH :: String -> IO (MotionData)
 parseBVH filePath = do
         bvh <- raw_parseBVH filePath
-        calculateDynamics bvh
-        return bvh'
+        return $ calculateDynamics bvh --{frames = replicate 100 ((frames bvh) !! 10)}
 
 calculateDynamics :: MotionData -> MotionData
-calculateDynamics md = md{frames = fF} where
+calculateDynamics md = md{frames = fva} where
     f = frames md
-    f2 = map treeZip (zip f (tail f))
-    fv = map (tMap calcVels) f2
+    fv =  map (uncurry $ treeZipWith calcVels) (zip f  (tail f))
+    fva = map (uncurry $ treeZipWith calcAccs) (zip fv (tail fv))
     
-    calcVels :: (Joint,Joint) -> Joint
-    calcVels (a,b) = 
+    
+    dt = frameTime md 
+    
+    calcVels :: JointF -> JointF -> Joint
+    calcVels a b
+        | hasParent a  = (view a){
+                                linearVel  = ((getPosCom b) - (getPosCom a))  ^/  dt,
+                                angularVel = toAngularVel (getRot a) (getRot b)  dt
+                            }
+        | otherwise     = (view a){
+                                linearVel  = zero,
+                                angularVel = zero
+                            }
+    
+    calcAccs :: JointF -> JointF -> Joint
+    calcAccs a b
+        | hasParent a  = (view a){
+                                linearAcc  = ((getLinearVel b)  - (getLinearVel a))   ^/  dt,
+                                angularAcc = ((getAngularVel b) - (getAngularVel a))  ^/  dt
+                            }
+        | otherwise     = (view a){
+                                linearAcc  = zero,
+                                angularAcc = zero
+                            }
 
+toAngularVel :: Quat -> Quat -> Double -> Vec3
+toAngularVel qi qf dt = if angleHalf == 0 then zero else ((2 * angleHalf) *^ rotAxis) ^/ dt where
+                        Quaternion qlnW qlnV = qf * (conjugate qi)
+                        angleHalf = acos $ max (-1) (min qlnW 1)
+                        rotAxis = qlnV ^/ (sin angleHalf)
 
 {-------------------------
 
@@ -155,7 +294,7 @@ getPosCom jf = case parent jf of
 
 -- get the (min, max) coordinates of the system
 frameBoundingBox :: Frame -> (Vec3, Vec3)
-frameBoundingBox f = treeFold minMax initMinMax f where
+frameBoundingBox f = treeFoldNR minMax initMinMax f where
         initMinMax = let o = offset $- f in (o, o)
         minMax :: (Vec3, Vec3) -> JointF -> (Vec3, Vec3)
         minMax (cMin,cMax) v = let vPos = getPosEnd v in ((liftA2 min) cMin vPos, (liftA2 max) cMax vPos)
@@ -166,8 +305,8 @@ scaleAndTranslate :: Double -> Int -> MotionData -> MotionData
 scaleAndTranslate targetHeight sampleFrameIndex md = mdTS where
     bb = frameBoundingBox $ (frames md)!!sampleFrameIndex
     bbDiag = uncurry (+) bb
-    bbC = bbDiag / 2
-    targetC = scaleFactor *^ (V3 0 (2 + boneRadius) 0)
+    bbC@(V3 _ cHeight _) = bbDiag / 2
+    targetC = (V3 0 (cHeight + boneRadius) 0)
     translation = targetC - bbC
     scaleFactor = let V3 _ height _ = bbDiag in targetHeight / height
     

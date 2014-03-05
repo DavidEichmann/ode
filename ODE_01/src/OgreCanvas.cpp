@@ -182,6 +182,13 @@ void OgreCanvas::drawBone(Vec3 start, Vec3 end, double radius) {
 };
 
 void OgreCanvas::drawVec3(Vec3 origin, Vec3 vec, double radius) {
+//	if(isnan((double) vec(0)) || isnan((double) vec(1)) || isnan((double) vec(2)) || isnan((double) origin(0)) || isnan((double) origin(1)) || isnan((double) origin(2))) {
+//		cout << "Error: Attempting to draw a vector with NAN value (origin, vec):\n\t";
+//		print(origin);
+//		cout << "\t";
+//		print(vec);
+//		return;
+//	}
 	if(vec.isApprox(Vec3(0,0,0))) {
 		drawPoint(origin, radius);
 	}
@@ -193,7 +200,8 @@ void OgreCanvas::drawVec3(Vec3 origin, Vec3 vec, double radius) {
 
 		// create an entity
 		Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
-		se->setMaterialName("Ogre/Earring");
+		//se->setMaterialName("Ogre/Earring");
+		se->setMaterial(createMaterial(Ogre::ColourValue(1,0,0,1)));
 		draw(se, origin + (vec * 0.5), yToDirQuat(vec));
 	}
 }
@@ -207,4 +215,15 @@ void OgreCanvas::drawPoint(Vec3 p, double radius) {
 	Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
 	se->setMaterialName("Ogre/Earring");
 	draw(se, p);
+}
+
+// Ogre::ColourValue(red, green, blue, alpha)
+Ogre::MaterialPtr OgreCanvas::createMaterial(Ogre::ColourValue c) {
+	Ogre::MaterialPtr mMat = Ogre::MaterialManager::getSingleton().create("", "General", true);
+	Ogre::Technique* mTech = mMat->createTechnique();
+	Ogre::Pass* mPass = mTech->createPass();
+	Ogre::TextureUnitState* mTexUnitState = mPass->createTextureUnitState();
+	mPass = mMat->getTechnique(0)->getPass(0);
+	mPass->setDiffuse(c);
+	return mMat;
 }
