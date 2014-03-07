@@ -102,14 +102,14 @@ void OgreCanvas::initOgre() {
 
 	/// create camera
 	mCamera = mSceneMgr->createCamera("My Cam");
-	mCamera->setPosition(Ogre::Vector3(0, 0, 7));
-	mCamera->lookAt(Ogre::Vector3(0, 0, 0));
+	mCamera->setPosition(Ogre::Vector3(0, 1, 7));
+	mCamera->lookAt(Ogre::Vector3(0, 1, 0));
 	mCamera->setNearClipDistance(0.05);
 	mCamera->setFarClipDistance(100);
 
 	/// create window/viewport
 	Ogre::Viewport* vp = mWindow->addViewport(mCamera);
-	vp->setBackgroundColour(Ogre::ColourValue(0.5, 0.5, 1));
+	vp->setBackgroundColour(Ogre::ColourValue(0.7, 0.7, 1));
 	// Alter the camera aspect ratio to match the viewport
 	mCamera->setAspectRatio(
 			Ogre::Real(vp->getActualWidth())
@@ -120,7 +120,7 @@ void OgreCanvas::initOgre() {
 	/// light
 	mSceneMgr->setAmbientLight(Ogre::ColourValue(0.5, 0.5, 0.5));
 	Ogre::Light* l = mSceneMgr->createLight("MainLight");
-	l->setPosition(200, 200, 50);
+	l->setPosition(200, 200, 300);
 
 
 	// setup OIS input
@@ -177,11 +177,11 @@ bool OgreCanvas::doRender() {
 	return ! mWindow->isActive();
 }
 
-void OgreCanvas::drawBone(Vec3 start, Vec3 end, double radius) {
-	drawVec3(start, end-start, radius);
+void OgreCanvas::drawBone(Ogre::ColourValue c, Vec3 start, Vec3 end, double radius) {
+	drawVec3(c, start, end-start, radius);
 };
 
-void OgreCanvas::drawVec3(Vec3 origin, Vec3 vec, double radius) {
+void OgreCanvas::drawVec3(Ogre::ColourValue c, Vec3 origin, Vec3 vec, double radius) {
 //	if(isnan((double) vec(0)) || isnan((double) vec(1)) || isnan((double) vec(2)) || isnan((double) origin(0)) || isnan((double) origin(1)) || isnan((double) origin(2))) {
 //		cout << "Error: Attempting to draw a vector with NAN value (origin, vec):\n\t";
 //		print(origin);
@@ -190,7 +190,7 @@ void OgreCanvas::drawVec3(Vec3 origin, Vec3 vec, double radius) {
 //		return;
 //	}
 	if(vec.isApprox(Vec3(0,0,0))) {
-		drawPoint(origin, radius);
+		drawPoint(c, origin, radius);
 	}
 	else {
 		// generate a mesh
@@ -201,29 +201,39 @@ void OgreCanvas::drawVec3(Vec3 origin, Vec3 vec, double radius) {
 		// create an entity
 		Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
 		//se->setMaterialName("Ogre/Earring");
-		se->setMaterial(createMaterial(Ogre::ColourValue(1,0,0,1)));
+		se->setMaterial(createMaterial(c));
 		draw(se, origin + (vec * 0.5), yToDirQuat(vec));
 	}
 }
 
-void OgreCanvas::drawPoint(Vec3 p, double radius) {
+void OgreCanvas::drawPoint(Ogre::ColourValue c, Vec3 p, double radius) {
 	// generate a mesh
 	Procedural::SphereGenerator gen = Procedural::SphereGenerator();
 	gen.setRadius(radius);
 
 	// create an entity
 	Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
-	se->setMaterialName("Ogre/Earring");
+	se->setMaterial(createMaterial(c));
 	draw(se, p);
 }
 
+void OgreCanvas::drawBone(Vec3 start, Vec3 end, double radius) { drawBone(Ogre::ColourValue::White, start, end, radius); }
+void OgreCanvas::drawVec3(Vec3 origin, Vec3 vec, double radius) { drawVec3(Ogre::ColourValue::White, origin, vec, radius); }
+void OgreCanvas::drawPoint(Vec3 p, double radius) { drawPoint(Ogre::ColourValue::White, p, radius); }
+
 // Ogre::ColourValue(red, green, blue, alpha)
 Ogre::MaterialPtr OgreCanvas::createMaterial(Ogre::ColourValue c) {
-	Ogre::MaterialPtr mMat = Ogre::MaterialManager::getSingleton().create("", "General", true);
+
+	Ogre::MaterialPtr mMat = Ogre::MaterialManager::getSingleton().create("", "General", false);
 	Ogre::Technique* mTech = mMat->createTechnique();
 	Ogre::Pass* mPass = mTech->createPass();
 	Ogre::TextureUnitState* mTexUnitState = mPass->createTextureUnitState();
 	mPass = mMat->getTechnique(0)->getPass(0);
+
+	mPass->setSceneBlending(Ogre::SBT_TRANSPARENT_ALPHA);	// allow transparency
 	mPass->setDiffuse(c);
+	mPass->setAmbient(c * 0.4);
+	mPass->setSpecular(1,1,1,c.a);
+
 	return mMat;
 }

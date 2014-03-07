@@ -1,6 +1,7 @@
 module Util where
 
-import Linear
+import Linear hiding (slerp)
+import Linear.Matrix
 
 type Vec3 = V3 Double
 type M3 = M33 Double
@@ -18,17 +19,6 @@ unitZ = V3 0 0 1
 identity :: Quat
 identity = axisAngle unitZ 0
 
-(*-*) :: Quat -> Quat -> Quat
-a *-* b = a*b
-{-
-(Quaternion a1 (V3 b1 c1 d1)) *-* (Quaternion a2 (V3 b2 c2 d2)) =
-    Quaternion (a1*a2 - b1*b2 - c1*c2 - d1*d2) (V3
-        (a1*b2 + b1*a2 + c1*d2 - d1*c2)
-        (a1*c2 - b1*d2 + c1*a2 + d1*b2)
-        (a1*d2 + b1*c2 - c1*b2 + d1*a2)
-    )
--}
-
 degreeToRadian :: Fractional a => a -> a
 degreeToRadian d = 0.01745329251 * d
 
@@ -40,3 +30,23 @@ xToDirQuat dir = axisAngle axis angle where
     dirU = normalize dir
     axis = normalize $ unitX `cross` dirU
     angle = acos (dirU `dot` unitX)
+    
+-- average a number of rotations, this is done by repeated application of Slerp 
+avgRot :: [Quat] -> Quat
+avgRot [] = identity
+avgRot qs = fst . head . avgRot' $ map (flip (,) 1) qs where
+    avgRot' :: [(Quat,Integer)] -> [(Quat,Integer)]
+    avgRot' [] = []
+    avgRot' (qw:[]) = [qw]
+    avgRot' (qw1:qw2:qws) = avgRot' $ (merge qw1 qw2) : (avgRot' qws)
+    merge (q1,w1) (q2,w2) = (slerp q1 q2 (fromInteger w2 / fromInteger (w1+w2)), w1+w2)
+    
+slerp :: RealFloat a => Quaternion a -> Quaternion a -> a -> Quaternion a
+slerp q p t
+  | 1.0 - cosphi < 1e-8 = q
+  | otherwise           = ((sin ((1-t)*phi) *^ q) + (sin (t*phi)) *^ (f p)) ^/ (sin phi)
+  where
+    dqp = dot q p
+    (cosphi, f) = if dqp < 0 then (-dqp, negate) else (dqp, id)
+    phi = acos cosphi
+

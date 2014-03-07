@@ -39,7 +39,7 @@ data Joint = Joint {
 
 density :: JointF -> Double
 density jF
-        | hasParent jF   = 100
+        | hasParent jF   = 350
         | otherwise     = 0
         
         
@@ -66,10 +66,13 @@ getCapsulMassInertiaM d r boneVec = --(mass, rotM !*! xm !*! rotInvM) where
         rotInvM = fromQuaternion rotInv
 
 getXCapsulMassInertiaM :: Double -> Double -> Double -> (Double,M3)
-getXCapsulMassInertiaM d r l = (m1+m2, im) where
+getXCapsulMassInertiaM d r l = (m, im) where
     r2 = r ** 2
     l2 = l ** 2
     m1 = pi * l * r2 * d
+    m = m1 {- +m2
+    
+    For now just use a cylinder 
     m2 = (4/3) * pi * r2 * r * d
     ia = m1 * (0.25 * r2 + (1/12) * l2) +
          m2 * (0.4  * r2 + 0.375  * r * l + 0.25 * l2)
@@ -78,6 +81,13 @@ getXCapsulMassInertiaM d r l = (m1+m2, im) where
     im = V3 (V3  ib  0   0)
             (V3  0   ia  0)
             (V3  0   0   ia)
+            -}
+            
+    iX  = 0.5 * m1 * r2
+    iZY = (1/12) * m1 * ((3 * r2) + (l2))  
+    im = V3 (V3  iX  0   0)
+            (V3  0   iZY  0)
+            (V3  0   0   iZY)
 
 
 getTotalMass :: JointF -> Double
@@ -145,10 +155,8 @@ getZMP jf = zmp where
     -- to preserve right-handedness we must swap (ZMP paper axis -> my code axis): z -> y, y -> x, x -> y)
     zmp = V3
         (((m_tot * g * comX) + h'Z) / ((m_tot * g) + p'Y))
---        (((m_tot * g * comX)) / ((m_tot * g) + p'Y))
         0
         (((m_tot * g * comZ) - h'X) / ((m_tot * g) + p'Y))
---        (((m_tot * g * comZ)) / ((m_tot * g) + p'Y))
 
 nullJoint :: Joint
 nullJoint = Joint {
@@ -219,15 +227,36 @@ fromChanVals jf cv = (\(d,r) -> if d == [] then r else error $ "chan vals left o
                         (axisAngle (unitZ) (degreeToRadian z))
                     ) cs vs -}
                 
-                consume pos rot (Xrot:cs) (v:vs) = consume pos (rot *-* (axisAngle (unitX) (degreeToRadian v))) cs vs
-                consume pos rot (Yrot:cs) (v:vs) = consume pos (rot *-* (axisAngle (unitY) (degreeToRadian v))) cs vs
-                consume pos rot (Zrot:cs) (v:vs) = consume pos (rot *-* (axisAngle (unitZ) (degreeToRadian v))) cs vs
+                consume pos rot (Xrot:cs) (v:vs) = consume pos (rot * (axisAngle (unitX) (degreeToRadian v))) cs vs
+                consume pos rot (Yrot:cs) (v:vs) = consume pos (rot * (axisAngle (unitY) (degreeToRadian v))) cs vs
+                consume pos rot (Zrot:cs) (v:vs) = consume pos (rot * (axisAngle (unitZ) (degreeToRadian v))) cs vs
                          
 
-parseBVH :: String -> IO (MotionData)
-parseBVH filePath = do
+parseBVH :: String -> Bool -> IO (MotionData)
+parseBVH filePath doPreprocessing = do
         bvh <- raw_parseBVH filePath
-        return $ calculateDynamics bvh --{frames = replicate 100 ((frames bvh) !! 10)}
+        return $ calculateDynamics $ (if doPreprocessing then preProcess else id) bvh --{frames = replicate 100 ((frames bvh) !! 10)}
+
+-- currently this just uses moving average for joint angles and positions 
+preProcess :: MotionData -> MotionData
+preProcess md = mdF where
+    n = 10
+    mdF = md{
+             frames = map avg (windows (frames md))
+        }
+    windows fs
+        | length lfsn == n  = lfsn : windows (tail fs)
+        | otherwise         = []
+        where
+            lfsn = take n fs
+    avg fs = fmap avgJ (foldl1 (treeZipWith (\a b -> (view a) ++ (view b))) (map (fmap (:[])) fs))
+    avgJ :: [Joint] -> Joint
+    avgJ js = (head js) {
+        offset   = avgPos,
+        rotationL = avgRotL
+    }  where
+        avgPos = (foldl1 (+) (map offset js)) ^/ (fromIntegral n)
+        avgRotL = avgRot (map rotationL js)
 
 calculateDynamics :: MotionData -> MotionData
 calculateDynamics md = md{frames = fva} where
@@ -276,7 +305,7 @@ toAngularVel qi qf dt = if angleHalf == 0 then zero else ((2 * angleHalf) *^ rot
 getRot :: JointF -> Quat
 getRot j = case parent j of
         Nothing  ->  rotationL $- j
-        Just p   ->  (getRot p) *-* (rotationL $- j)
+        Just p   ->  (getRot p) * (rotationL $- j)
         
 getPosEnd :: JointF -> Vec3
 getPosEnd j = getPosEnd' (parent j) where
@@ -302,7 +331,7 @@ frameBoundingBox f = treeFoldNR minMax initMinMax f where
 
 
 scaleAndTranslate :: Double -> Int -> MotionData -> MotionData
-scaleAndTranslate targetHeight sampleFrameIndex md = mdTS where
+scaleAndTranslate targetHeight sampleFrameIndex md = calculateDynamics $ mdTS where
     bb = frameBoundingBox $ (frames md)!!sampleFrameIndex
     bbDiag = uncurry (+) bb
     bbC@(V3 _ cHeight _) = bbDiag / 2

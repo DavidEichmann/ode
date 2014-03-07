@@ -3,6 +3,7 @@
 #include <fstream>
 #include <math.h>
 
+#include <vector>
 #include "Constants.h"
 #include "Util.h"
 #include "Skeleton.h"

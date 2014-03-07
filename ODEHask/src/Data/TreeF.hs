@@ -4,11 +4,11 @@ module Data.TreeF (
     toFocus,
     map1,
     view,set,($-),
+    depth,
     parent,child0,rightSib,hasParent,root,
     treeZip,treeZipWith,
     treeMap',treeMap,treeMapM,treeMapM_,treeMapCon_,treeMapCon,
     treeFold,treeFoldNR
-    
 ) where
 
 
@@ -138,6 +138,8 @@ treeMapM fn j = sequence $ reverse $ treeFold (\ms j' -> (fn j'):ms) [] j
 treeMapM_ :: (Functor m, Monad m) => (TreeF a -> m b) -> TreeF a -> m ()
 treeMapM_ fn = void . (treeMapM fn)
 
+depth :: TreeF a -> Integer
+depth f = maybe 0 ((+1) . depth) (parent f)
 
     
 -- Apply a function to the currently focused element

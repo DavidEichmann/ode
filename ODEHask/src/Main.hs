@@ -4,6 +4,7 @@ import MotionData
 import Constants
 import Data.Maybe
 import Data.TreeF
+import Data.Color
 import FFI
 import Linear
 import Util
@@ -42,22 +43,28 @@ doDebug md = do
                 getTotalAngularMomentum'
                 ,getZMP
                ]
-    treeMapM_ printDynamics (frames md !! 10)
+--    print $ getTotalMass (baseSkeleton md)
+--    treeMapM_ printDynamics (frames md !! 10)
 --    mapM_ (printDynamics) (take 30 (map (fromJust . child0) (frames md)))
 --    mapM_ (print . getZMP) (frames md)
+    return ()
 
 
 main :: IO ()
 main = do
---    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-025_David.bvh"
-    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-011_David.bvh"
+    let pp = True
+    
+    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-025_David.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-011_David.bvh" pp
 
---    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test.bvh"
---    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_sin.bvh"
---    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_sinZ.bvh"
---    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_spin.bvh"
---    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_spin_acc.bvh"
---    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_spinZ_acc.bvh"
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_sin.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_sinZ.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_spin.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_spin_acc.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_spinZ_acc.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_arm_spin.bvh" pp
+    
     if debug 
         then
             doDebug md
@@ -99,7 +106,7 @@ mainLoop md t = do
 --                    drawVec3 (getPosCom j) ((getAngularVel j) ^* 0.5) 0.05
 --                    drawVec3 (getPosCom j) ((getAngularAcc j) ^* 0.5) 0.01
 --                    drawVec3 (getPosCom j) ((getAngularMomentum j) ^* 10) 0.05
-                    drawVec3 (getPosCom j) ((getAngularMomentum j) ^* 1) 0.05
+--                    drawVec3 (getPosCom j) ((getAngularMomentum j) ^* 1) 0.05
 --                    print $ getAngularVel j
 --                    print $ getAngularMomentum' j
                     return ()
@@ -109,28 +116,29 @@ mainLoop md t = do
     -- Annimation    
     drawSkeleton $ cFrame
     -- ZMP
-    drawPoint ((getZMP cFrame)) 0.06
+    drawPointC Green ((getZMP cFrame)) 0.04
+    -- COM
+    drawPointC Yellow com 0.04
     -- COM floor
-    let (V3 x _ z,r) = (com,0.05) in drawPoint (V3 x (-r) z) r
+    let V3 x _ z = com in drawPointC Yellow (V3 x 0 z) 0.04
     
     -- print output
---    putStrLn $ "c0 ang momentum' = " ++ (show $ getAngularMomentum' c0)
+--    putStrLn $ "tot lin momentum = " ++ (show $ norm $ getTotalLinearMomentum cFrame)
 --    putStrLn $ "getTotalAngularMomentum' = " ++ (show $ getTotalAngularMomentum' cFrame)
     
-    -- endSite0 angular vel
-    --drawVec3 (getPosCom endSite0) ((getAngularVel endSite0) ^* 0.5) 0.015
     
     -- local props for all joits (not root)
     treeMapM_ drawLocalJointProps cFrame
     
---    drawVec3 com ((getTotalAngularMomentum cFrame) ^* 1) 0.07
+--    drawVec3C Black com ((getTotalAngularMomentum' cFrame) ^* 0.1) 0.015
+--    drawVec3C Green com ((getTotalLinearMomentum' cFrame) ^* 0.1) 0.015
     --drawVec3 com ((getTotalLinearMomentum cFrame) ^* 0.2) 0.05
     --drawVec3 (getPosTotalCom endSite0) ((getTotalLinearMomentum endSite0) ^* 1) 0.03
     
     
     -- do render, sleep, then loop
     notDone <- doRender
-    threadDelay $ floor $ (frameTime md) * 1000000
+    --threadDelay $ floor $ (frameTime md) * 1000000
     if notDone
         then mainLoop md (t+0.03)
         else return ()
@@ -140,7 +148,7 @@ drawSkeleton :: Frame -> IO ()
 drawSkeleton = treeMapM_ drawBone' where
      drawBone' :: JointF -> IO ()
      drawBone' j
-            | hasParent j   = drawBone (getPosStart j) (getPosEnd j) boneRadiusDisplay
+            | hasParent j   = drawBoneC (RedA 0.5) (getPosStart j) (getPosEnd j) boneRadiusDisplay
             | otherwise     = return ()
             
 
