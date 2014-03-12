@@ -16,8 +16,8 @@ import Data.Maybe
 import Control.Monad
 
 
-data Tree a   = Tree a [Tree a] deriving Show
-data TreeFC a = TreeFC a [Tree a] [Tree a] deriving Show
+data Tree a   = Tree !a [Tree a] deriving Show
+data TreeFC a = TreeFC !a [Tree a] [Tree a] deriving Show
 data TreeF a  = TreeF (Tree a) [TreeFC a] deriving Show
 
 

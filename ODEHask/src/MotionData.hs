@@ -1,4 +1,6 @@
 {-# OPTIONS_GHC -F -pgmF htfpp #-}
+{-# LANGUAGE BangPatterns #-}
+
 module MotionData where
 
 import Control.Applicative (liftA2)
@@ -232,15 +234,15 @@ fromChanVals jf cv = (\(d,r) -> if d == [] then r else error $ "chan vals left o
                 consume pos rot (Zrot:cs) (v:vs) = consume pos (rot * (axisAngle (unitZ) (degreeToRadian v))) cs vs
                          
 
-parseBVH :: String -> Bool -> IO (MotionData)
-parseBVH filePath doPreprocessing = do
+parseBVH :: String -> Integer -> IO (MotionData)
+parseBVH filePath ppFilterWindow = do
         bvh <- raw_parseBVH filePath
-        return $ calculateDynamics $ (if doPreprocessing then preProcess else id) bvh --{frames = replicate 100 ((frames bvh) !! 10)}
+        return $ calculateDynamics $ (if ppFilterWindow > 0 then preProcess ppFilterWindow else id) bvh --{frames = replicate 100 ((frames bvh) !! 10)}
 
 -- currently this just uses moving average for joint angles and positions 
-preProcess :: MotionData -> MotionData
-preProcess md = mdF where
-    n = 10
+preProcess :: Integer -> MotionData -> MotionData
+preProcess windowSize md = mdF where
+    n = fromInteger windowSize
     mdF = md{
              frames = map avg (windows (frames md))
         }

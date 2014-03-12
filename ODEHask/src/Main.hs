@@ -1,15 +1,20 @@
+{-# LANGUAGE BangPatterns #-}
+
 module Main where
 
 import MotionData
 import Constants
 import Data.Maybe
+import Data.List
 import Data.TreeF
 import Data.Color
 import FFI
 import Linear
 import Util
 import Control.Concurrent
+import Control.DeepSeq
 import Data.Time.Clock
+import System.Environment
 
 
 debug =
@@ -48,13 +53,32 @@ doDebug md = do
 --    mapM_ (printDynamics) (take 30 (map (fromJust . child0) (frames md)))
 --    mapM_ (print . getZMP) (frames md)
     return ()
+    
+-- get (bvhFilePath, preProcessInteger
+getArguments :: IO (String, Integer)
+getArguments = do
+    ws <- getArgs
+    return (getPath ws, getPP ws) where
+        getPath (('-':_):_:ws) = getPath ws
+        getPath (path:_)
+                | elem '/' path  = path
+                | otherwise      = "/home/david/git/ode/ODE_01/Data/Animation/" ++ path
+        getPath [] = "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-025_David.bvh"
+        
+        getPP ("-pp":nStr:_)
+                | all (flip elem ['0'..'9']) nStr  = read nStr
+                | otherwise                        = 15
+        getPP (_:ws) = getPP ws
+        getPP [] = 0
 
 
 main :: IO ()
 main = do
-    let pp = True
+
+    (file, pp) <- getArguments
     
-    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-025_David.bvh" pp
+    md <- fmap (scaleAndTranslate 2 10) $ parseBVH file pp
+--    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-025_David.bvh" pp
 --    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-011_David.bvh" pp
 
 --    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test.bvh" pp
@@ -69,6 +93,7 @@ main = do
         then
             doDebug md
         else do
+            seq (foldl1' seq (show md)) (putStrLn "Done processing data.")
             initOgre
             mainLoopOut md
     
