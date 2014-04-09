@@ -22,14 +22,27 @@ identity = axisAngle unitZ 0
 degreeToRadian :: Fractional a => a -> a
 degreeToRadian d = 0.01745329251 * d
 
+zToDirQuat :: Vec3 -> Quat
+zToDirQuat = dirToDirQuat unitZ
+
 xToDirQuat :: Vec3 -> Quat
-xToDirQuat (V3 x 0 0)
+xToDirQuat = dirToDirQuat unitX
+{-xToDirQuat (V3 x 0 0)
             | x < 0     = axisAngle unitY pi
             | otherwise = identity
 xToDirQuat dir = axisAngle axis angle where
     dirU = normalize dir
     axis = normalize $ unitX `cross` dirU
-    angle = acos (dirU `dot` unitX)
+    angle = acos (dirU `dot` unitX) -}
+
+dirToDirQuat :: Vec3 -> Vec3 -> Quat
+dirToDirQuat a b
+            | cross a b == 0    =  axisAngle unitY pi --if dot a b > 0 then identity else axisAngle unitY pi
+            | otherwise         = axisAngle axis angle where
+                                    aU = normalize a
+                                    bU = normalize b
+                                    axis = normalize $ aU `cross` bU
+                                    angle = acos (bU `dot` aU)
     
 -- average a number of rotations, this is done by repeated application of Slerp 
 avgRot :: [Quat] -> Quat

@@ -180,6 +180,7 @@ numChannels = length . channels
 
 hasPosChan :: Joint -> Bool
 hasPosChan j = not $ null (intersect posChans (channels j))
+
 hasRotChan :: Joint -> Bool
 hasRotChan j = not $ null (intersect rotChans (channels j))
 
@@ -345,6 +346,27 @@ scaleAndTranslate targetHeight sampleFrameIndex md = calculateDynamics $ mdTS wh
     mdTS = scale scaleFactor mdT
 
     
+getInterpolatedFrame :: Double -> MotionData -> Frame
+getInterpolatedFrame t md = f where
+    n = length $ frames md
+    i = doMod (t / (frameTime md)) where
+        nd = fromIntegral $ n
+        doMod x
+            | x <= nd = x
+            | otherwise = doMod (x - nd)
+    
+    a = (frames md) !! (floor i)
+    b = (frames md) !! if ceiling i > n then 0 else (ceiling i)
+    f = treeZipWith interpJoint a b
+    interp = i - (fromIntegral (floor i))
+    interpJoint af bf = (view af){
+                            rotationL  = Util.slerp (rotationL $- af) (rotationL $- bf) interp,
+                            linearVel  = ((1 - interp) *^ (linearVel $- af))  + (interp *^ (linearVel $- bf)),
+                            angularVel = ((1 - interp) *^ (angularVel $- af)) + (interp *^ (angularVel $- bf))
+                        }
+    
+    
+    
 -- Parsing code
 
 hsToken = makeTokenParser haskellStyle
@@ -442,7 +464,8 @@ motion skel = do
         spaces
         frameTime <- floatP
         spaces
-        frames <- getFrames
+        -- As most motion data has the first frame as a rest pose, we prune that frame
+        frames <- fmap tail getFrames
         spaces
         return (frames, frameTime) where
                 getFrames = endBy line newline' <?> "Frames"

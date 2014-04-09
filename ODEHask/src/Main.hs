@@ -8,6 +8,7 @@ import Data.Maybe
 import Data.List
 import Data.TreeF
 import Data.Color
+import Simulation
 import FFI
 import Linear
 import Util
@@ -63,11 +64,11 @@ getArguments = do
         getPath (path:_)
                 | elem '/' path  = path
                 | otherwise      = "/home/david/git/ode/ODE_01/Data/Animation/" ++ path
-        getPath [] = "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-025_David.bvh"
+        getPath [] = "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-004_David.bvh"
         
         getPP ("-pp":nStr:_)
                 | all (flip elem ['0'..'9']) nStr  = read nStr
-                | otherwise                        = 15
+                | otherwise                        = 0
         getPP (_:ws) = getPP ws
         getPP [] = 0
 
@@ -81,6 +82,7 @@ main = do
 --    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-025_David.bvh" pp
 --    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-011_David.bvh" pp
 
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/testDrop.bvh" pp
 --    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test.bvh" pp
 --    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_sin.bvh" pp
 --    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_sinZ.bvh" pp
@@ -95,33 +97,37 @@ main = do
         else do
             seq (foldl1' seq (show md)) (putStrLn "Done processing data.")
             initOgre
-            mainLoopOut md
+            sim <- startSim md
+            mainLoopOut sim
     
     
-mainLoopOut :: MotionData -> IO ()
-mainLoopOut md = do
+mainLoopOut :: Sim -> IO ()
+mainLoopOut sim = do
     ti <- getCurrentTime
-    loop ti where
-        loop ti = do
+    loop sim ti ti where
+        loop sim ti tl = do
             tc <- getCurrentTime
-            mainLoop md (realToFrac $ diffUTCTime tc ti)
-            loop ti
+            sim' <- mainLoop sim (realToFrac $ diffUTCTime tc ti) (realToFrac $ diffUTCTime tc tl)
+            loop sim' ti tc
 
-mainLoop :: MotionData -> Double -> IO ()
-mainLoop md t = do
-
+mainLoop :: Sim -> Double -> Double -> IO Sim
+mainLoop sim t dt = do
+    sim' <- step sim dt
+--    let sim' = sim
+    cSimFrame <- getSimSkel sim'
     let
+        md = targetMotion sim
         ft = frameTime md
         fLength = length $ frames md
         maxFIndex = fLength -1
-        cFrame = (frames md) !! (min maxFIndex ((floor $ t / ft) `mod` maxFIndex))
+        cAniFrame = (frames md) !! (min maxFIndex ((floor $ t / ft) `mod` maxFIndex))
         
-        endSite0 = des cFrame where
-            des f = maybe f right (child0 f)
-            right f = maybe (des f) right (rightSib f)
-        c0 = fromJust $ child0 cFrame 
-        
-        com = getPosTotalCom cFrame
+--        endSite0 = des cFrame where
+--            des f = maybe f right (child0 f)
+--            right f = maybe (des f) right (rightSib f)
+--        c0 = fromJust $ child0 cFrame 
+--        
+--        com = getPosTotalCom cFrame
         
         drawLocalJointProps j = do
             if hasParent j
@@ -137,15 +143,16 @@ mainLoop md t = do
                     return ()
                 else
                     return ()
-
+    -- sim visualization
+    drawSkeleton $ cSimFrame
     -- Annimation    
-    drawSkeleton $ cFrame
+    drawFrame (V3 (-2) 0 0) cAniFrame
     -- ZMP
-    drawPointC Green ((getZMP cFrame)) 0.04
+--    drawPointC Green ((getZMP cFrame)) 0.04
     -- COM
-    drawPointC Yellow com 0.04
+--    drawPointC Yellow com 0.04
     -- COM floor
-    let V3 x _ z = com in drawPointC Yellow (V3 x 0 z) 0.04
+--    let V3 x _ z = com in drawPointC Yellow (V3 x 0 z) 0.04
     
     -- print output
 --    putStrLn $ "tot lin momentum = " ++ (show $ norm $ getTotalLinearMomentum cFrame)
@@ -153,7 +160,7 @@ mainLoop md t = do
     
     
     -- local props for all joits (not root)
-    treeMapM_ drawLocalJointProps cFrame
+--    treeMapM_ drawLocalJointProps cFrame
     
 --    drawVec3C Black com ((getTotalAngularMomentum' cFrame) ^* 0.1) 0.015
 --    drawVec3C Green com ((getTotalLinearMomentum' cFrame) ^* 0.1) 0.015
@@ -163,21 +170,28 @@ mainLoop md t = do
     
     -- do render, sleep, then loop
     notDone <- doRender
+    
+    
+    
     --threadDelay $ floor $ (frameTime md) * 1000000
-    if notDone
-        then mainLoop md (t+0.03)
-        else return ()
+--    if notDone
+--        then mainLoop sim (t+0.03)
+--        else return ()
+    return sim'
 
    
-drawSkeleton :: Frame -> IO ()
-drawSkeleton = treeMapM_ drawBone' where
+   
+drawFrame ::  Vec3 -> Frame -> IO ()
+drawFrame offset' j = treeMapM_ drawBone' (set ((view j){offset = (offset $- j) + offset'}) j) where
      drawBone' :: JointF -> IO ()
      drawBone' j
-            | hasParent j   = drawBoneC (RedA 0.5) (getPosStart j) (getPosEnd j) boneRadiusDisplay
+            | hasParent j   = drawBoneC (BlueA 0.5) (getPosStart j) (getPosEnd j) boneRadiusDisplay
             | otherwise     = return ()
-            
-
-
+   
+drawSkeleton :: [Bone] -> IO ()
+drawSkeleton = mapM_ drawBone' where
+     drawBone' :: Bone -> IO ()
+     drawBone' (start,end) = drawBoneC (RedA 0.5) start end boneRadiusDisplay
 
 
                 

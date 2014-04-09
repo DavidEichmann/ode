@@ -47,9 +47,6 @@
 									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="OIS"/>
 									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="boost_system"/>
 									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="boost_chrono"/>
-									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="glut"/>
-									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="GL"/>
-									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="GLU"/>
 									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="ode"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.cpp.linker.input.1465535254" superClass="cdt.managedbuild.tool.gnu.cpp.linker.input">
