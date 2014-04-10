@@ -4,6 +4,8 @@ module FFI (
     initOgre,
     drawBone,
     drawBoneC,
+    drawBox,
+    drawBoxC,
     drawVec3,
     drawVec3C,
     drawPoint,
@@ -17,8 +19,9 @@ module FFI (
     initODE,
     getBodyPosRot,
     setBodyPosRot,
-    getBodyStartEnd,
+    getBodyBone,
     appendCapsuleBody,
+    appendFootBody,
     createBallJoint,
     createAMotor,
     setAMotorVelocity,
@@ -33,6 +36,7 @@ import Linear
 import Util
 import Data.Color
 import Data.Maybe
+import Data.Bone
 import Control.Arrow
 
 foreign import ccall unsafe "ODE_01.h"
@@ -45,6 +49,13 @@ foreign import ccall unsafe "Interface.h doRender"
         doRender_c :: IO (CInt)
 doRender :: IO (Bool)
 doRender = fmap ((/=0) . fromIntegral) doRender_c
+
+foreign import ccall unsafe "Interface.h drawBox"
+    drawBox_c :: CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()
+drawBoxC :: Color -> Vec3 -> Vec3 -> Quat -> IO ()
+drawBoxC c size center rot = ((applyColor c) >>> (applyVec3 size) >>> (applyVec3 center) >>> (applyQuat rot)) drawBox_c
+drawBox :: Vec3 -> Vec3 -> Quat -> IO ()
+drawBox = drawBoxC White
         
 foreign import ccall unsafe "Interface.h drawBone"
         drawBone_c :: CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()
@@ -75,7 +86,7 @@ type CBool = CInt
 type DBodyID = Ptr ()
 type DJointID = Ptr ()
 type DWorldID = Ptr ()
-cd = fromRational . realToFrac
+cdPeekArray n = (fmap (map (fromRational . realToFrac))) . (peekArray n)
 foreign import ccall unsafe "Interface.h initODE"
         initODE :: IO DWorldID
 
@@ -83,45 +94,67 @@ foreign import ccall unsafe "Interface.h getBodyPosRot"
         getBodyPosRot_c :: DBodyID -> IO (Ptr CDouble)
 getBodyPosRot :: DBodyID -> IO (Vec3, Quat)
 getBodyPosRot bid = do
-    (x:y:z:w:qx:qy:qz:_) <- getBodyPosRot_c bid >>= peekArray 7
-    return (V3 (cd x) (cd y) (cd z), Quaternion (cd w) (V3 (cd qx) (cd qy) (cd qz)))
+    (x:y:z:w:qx:qy:qz:_) <- getBodyPosRot_c bid >>= cdPeekArray 7
+    return (V3 x y z, Quaternion w (V3 qx qy qz))
 
 foreign import ccall unsafe "Interface.h setBodyPosRot"
         setBodyPosRot_c :: DBodyID -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()
 setBodyPosRot :: DBodyID -> Vec3 -> Quat -> IO ()
 setBodyPosRot bid pos rot = ((apply bid) >>> (applyVec3 pos) >>> (applyQuat rot)) setBodyPosRot_c
-    
 
-foreign import ccall unsafe "Interface.h getBodyStartEnd"
-        getBodyStartEnd_c :: DBodyID -> IO (Ptr CDouble)
-getBodyStartEnd :: DBodyID -> IO (Vec3, Vec3)
-getBodyStartEnd bid = do
-    (x1:y1:z1:x2:y2:z2:_) <- getBodyStartEnd_c bid >>= peekArray 7
-    return (V3 (cd x1) (cd y1) (cd z1), V3 (cd x2) (cd y2) (cd z2))
+foreign import ccall unsafe "Interface.h getBodyGeom"
+        getBodyGeom_c :: DBodyID -> IO (Ptr CDouble)
+getBodyBone :: DBodyID -> IO Bone
+getBodyBone bid = do
+    (cls:x1:y1:z1:x2:y2:z2:qw:qx:qy:qz:_) <- getBodyGeom_c bid >>= cdPeekArray 12
+    case round cls of
+        1   -> return (Box (V3 x1 y1 z1) (V3 x2 y2 z2) (Quaternion qw (V3 qx qy qz)))
+        2   -> return (Long (V3 x1 y1 z1) (V3 x2 y2 z2))
+        
 
 foreign import ccall unsafe "Interface.h appendCapsuleBody"
         appendCapsuleBody_c :: CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble
                                 -> IO DBodyID
 appendCapsuleBody :: Vec3 -> Quat -> Quat -> Double -> Double -> Double -> M3 -> IO DBodyID
 appendCapsuleBody
-        -- position CoM
-        com
-        -- local rotation for the bone from Z aligned
-        lRotZ
-        -- global quaternion rotation
-        gRot
-        -- dimensions, mass
-        radius length mass
-        -- Inertia matrix (about CoM)
-        (V3     (V3 i11 i12 i13)
-                (V3  _  i22 i23)
-                (V3  _   _  i33))
-                
-            =  apps appendCapsuleBody_c where
-                    apps =  (applyVec3 com) >>>
-                            (applyQuat2 lRotZ gRot) >>>
-                            (applyDouble9 radius length mass i11 i12 i13 i22 i23 i33)
-                            
+    -- position CoM
+    com
+    -- local rotation for the bone from Z aligned
+    lRotZ
+    -- global quaternion rotation
+    gRot
+    -- dimensions, mass
+    radius length mass
+    -- Inertia matrix (about CoM)
+    (V3     (V3 i11 i12 i13)
+            (V3  _  i22 i23)
+            (V3  _   _  i33))
+            
+        =  apps appendCapsuleBody_c where
+                apps =  (applyVec3 com) >>>
+                        (applyQuat2 lRotZ gRot) >>>
+                        (applyDouble9 radius length mass i11 i12 i13 i22 i23 i33)
+
+foreign import ccall unsafe "Interface.h appendFootBody"
+    appendFootBody_c :: CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble
+                            -> IO DBodyID
+appendFootBody :: Vec3 -> Quat -> Vec3 -> Double -> M3 -> IO DBodyID
+appendFootBody
+     -- position CoM
+    com
+    -- global quaternion rotation
+    rot
+    -- dimensions
+    boxSize
+    -- mass and Inertia matrix (about CoM)
+    mass
+    (V3     (V3 i11 i12 i13)
+            (V3  _  i22 i23)
+            (V3  _   _  i33))
+        = ((applyVec3 com) >>>
+            (applyQuat rot) >>>
+            (applyVec3 boxSize) >>>
+            (applyDouble7 mass i11 i12 i13 i22 i23 i33)) appendFootBody_c
                         
 foreign import ccall unsafe "Interface.h createBallJoint"
     createBallJoint_c :: DBodyID -> DBodyID -> CDouble -> CDouble -> CDouble -> IO ()

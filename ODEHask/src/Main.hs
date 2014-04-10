@@ -145,10 +145,12 @@ mainLoop sim t dt = do
                     return ()
     -- sim visualization
     drawSkeleton $ cSimFrame
-    -- Annimation    
-    drawFrame (V3 (-2) 0 0) cAniFrame
+    
+    -- Annimation
+    let aniOffset =   V3 (-2) 0 0
+    drawFrame aniOffset cAniFrame
     -- ZMP
---    drawPointC Green ((getZMP cFrame)) 0.04
+    drawPointC Green (aniOffset + (getZMP cAniFrame)) 0.04
     -- COM
 --    drawPointC Yellow com 0.04
     -- COM floor
@@ -191,7 +193,8 @@ drawFrame offset' j = treeMapM_ drawBone' (set ((view j){offset = (offset $- j) 
 drawSkeleton :: [Bone] -> IO ()
 drawSkeleton = mapM_ drawBone' where
      drawBone' :: Bone -> IO ()
-     drawBone' (start,end) = drawBoneC (RedA 0.5) start end boneRadiusDisplay
+     drawBone' (Long start end) = drawBoneC (RedA 0.5) start end boneRadiusDisplay
+     drawBone' (Box lengths center rot) = drawBoxC (RedA 0.5) lengths center rot
 
 
                 

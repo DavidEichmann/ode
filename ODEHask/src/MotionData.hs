@@ -365,7 +365,10 @@ getInterpolatedFrame t md = f where
                             angularVel = ((1 - interp) *^ (angularVel $- af)) + (interp *^ (angularVel $- bf))
                         }
     
-    
+
+isFootJoint :: JointF -> Bool
+isFootJoint jf = (name $- jf) `elem` footJoints || (name $- (justParent jf)) `elem` footJoints where
+    footJoints = ["LeftFoot", "LeftToe", "RightFoot", "RightToe"]
     
 -- Parsing code
 

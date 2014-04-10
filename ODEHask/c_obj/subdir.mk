@@ -6,6 +6,7 @@
 CPP_SRCS += \
 ../ODE_01/src/DynamicsMotionData.cpp \
 ../ODE_01/src/Human.cpp \
+../ODE_01/src/Interface.cpp \
 ../ODE_01/src/MotionData.cpp \
 ../ODE_01/src/ODE_01.cpp \
 ../ODE_01/src/OgreCanvas.cpp \
@@ -16,6 +17,7 @@ CPP_SRCS += \
 OBJS += \
 ./ODE_01/src/DynamicsMotionData.o \
 ./ODE_01/src/Human.o \
+./ODE_01/src/Interface.o \
 ./ODE_01/src/MotionData.o \
 ./ODE_01/src/ODE_01.o \
 ./ODE_01/src/OgreCanvas.o \
@@ -26,6 +28,7 @@ OBJS += \
 CPP_DEPS += \
 ./ODE_01/src/DynamicsMotionData.d \
 ./ODE_01/src/Human.d \
+./ODE_01/src/Interface.d \
 ./ODE_01/src/MotionData.d \
 ./ODE_01/src/ODE_01.d \
 ./ODE_01/src/OgreCanvas.d \

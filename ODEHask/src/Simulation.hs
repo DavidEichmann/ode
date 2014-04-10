@@ -1,6 +1,6 @@
 module Simulation (
     Sim(..),
-    Bone,
+    Bone(..),
     startSim,
     step,
     getSimSkel
@@ -14,6 +14,7 @@ import MotionData
 import Data.Maybe
 import Data.TreeF
 import Data.Color
+import Data.Bone
 import Control.Applicative
 import Math.Tau
 
@@ -36,6 +37,7 @@ startSim :: MotionData -> IO Sim
 startSim md = do
     newWid <- initODE
     bodies <- realizeBodies
+    moveToFrame0 bodies
     aMotors <- realizeAMotors bodies
     putStrLn $ "ode world id = " ++ (show $ newWid)
     return Sim {
@@ -48,7 +50,8 @@ startSim md = do
         timeDelta       = defaultTimeStep } 
     
     where
-        skel = frames md !! 0
+        skel = baseSkeleton md
+        frame0 = head $ frames md
         realizeAMotors bodies = treeMapM maybeCreateAMotor bodies
         maybeCreateAMotor :: TreeF DBodyID -> IO (Maybe DJointID)
         maybeCreateAMotor jf
@@ -63,18 +66,32 @@ startSim md = do
         createBody :: JointF -> IO DBodyID
         createBody jf
             | hasParent jf = do
-                let (m, mIM) = massInertiaM jf
-                appendCapsuleBody
-                     -- position CoM
-                    (getPosCom jf)
-                    -- local rotation for the bone from Z aligned to offset orientation
-                    (zToDirQuat (offset $- jf))
-                    -- global quaternion rotation
-                    (getRot $ justParent jf)
-                    -- dimensions, mass
-                    boneRadius (norm (offset $- jf)) m
-                    -- Inertia matrix (about CoM)
-                    mIM
+                let
+                    (m, mIM) = massInertiaM jf
+                    boxSize = let (V3 _ y z) = fmap abs ((getPosStart jf) - (getPosEnd jf )) in (V3 footWidth y z);
+                if isFootJoint jf
+                    then
+                        appendFootBody
+                             -- position CoM
+                            (getPosCom jf)
+                            -- global quaternion rotation
+                            (getRot $ justParent jf)
+                            -- dimensions
+                            boxSize
+                            -- mass and Inertia matrix (about CoM)
+                            m mIM
+                    else
+                        appendCapsuleBody
+                             -- position CoM
+                            (getPosCom jf)
+                            -- local rotation for the bone from Z aligned to offset orientation
+                            (zToDirQuat (offset $- jf))
+                            -- global quaternion rotation
+                            (getRot $ justParent jf)
+                            -- dimensions, mass
+                            boneRadius (norm (offset $- jf)) m
+                            -- Inertia matrix (about CoM)
+                            mIM
             | otherwise     =
                 appendCapsuleBody
                      -- position CoM
@@ -85,6 +102,11 @@ startSim md = do
                     boneRadius 0 0.01
                     -- Inertia matrix (about CoM)
                     (eye3 !!* 0.01)
+
+        moveToFrame0 :: TreeF DBodyID -> IO ()
+        moveToFrame0 bidf = treeSequence_ $ treeZipWith moveBody bidf frame0
+        
+        moveBody bidF jf = setBodyPosRot (view bidF) (getPosCom jf) (maybe identity getRot (parent jf))
 
         createJoint jf bf
             | hasParent jf  = createBallJoint (view $ fromJust $ parent bf) (view bf) (getPosStart jf)
@@ -141,8 +163,8 @@ matchMotionData sim dt = do
 --    tMapM_ (maybe (return ()) (\jid -> setAMotorVelocity jid (V3 0 0 (2*pi)))) (odeMotors sim)
     
 
-type Bone = (Vec3, Vec3) -- start and end in global coordinates 
 getSimSkel :: Sim -> IO [Bone]
 getSimSkel sim = fmap allButRoot frame where
     allButRoot = tail . flatten
-    frame = tMapM getBodyStartEnd (odeBodies sim)
+    frame = tMapM getBodyBone (odeBodies sim)
+    

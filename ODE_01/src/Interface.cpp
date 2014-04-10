@@ -9,6 +9,9 @@
 OgreCanvas oc;
 
 void initOgre() { oc.initOgre(); }
+void drawBox(double r,double g,double b,double a,   double sx,double sy,double sz, double cx,double cy,double cz,  double w,double x,double y, double z) {
+	oc.drawBox(Ogre::ColourValue(r,g,b,a), Vec3(sx,sy,sz), Vec3(cx,cy,cz), Quat(w,x,y,z));
+}
 void drawBone(double r,double g,double b,double a,   double startX,double startY,double startZ,double endX,double endY,double endZ, double radius) {
 	oc.drawBone(Ogre::ColourValue(r,g,b,a), Vec3(startX, startY, startZ), Vec3(endX, endY, endZ), radius);
 }
@@ -28,15 +31,15 @@ dWorldID wid;
 dSpaceID sid;
 dJointGroupID jointGroupid;
 dJointGroupID contactGroupid;
-double * bodyPosRot = new double[3+4]; // pos + rot
+double * buf = new double[20]; // pos + rot
 
 
 double * getBodyPosRot(dBodyID bid) {
 	const dReal * pos = dBodyGetPosition(bid);
 	const dReal * rot = dBodyGetQuaternion(bid);
-	memcpy(bodyPosRot,		pos,	3 * sizeof(double));
-	memcpy(bodyPosRot + 3,	rot,	4 * sizeof(double));
-	return bodyPosRot;
+	memcpy(buf,		pos,	3 * sizeof(double));
+	memcpy(buf + 3,	rot,	4 * sizeof(double));
+	return buf;
 }
 
 void setBodyPosRot(dBodyID bid, double x, double y, double z, double qw, double qx, double qy, double qz) {
@@ -45,7 +48,21 @@ void setBodyPosRot(dBodyID bid, double x, double y, double z, double qw, double 
 	dBodySetQuaternion(bid,q);
 }
 
-double* getBodyStartEnd(dBodyID bid) {
+double* getBodyGeom(dBodyID bid) {
+	const int cls = dGeomGetClass(dBodyGetFirstGeom(bid));
+	buf[0] = cls;
+	buf++; // leave a space at the head of the buffer and get the geom info
+	if(cls == dBoxClass) {
+		getBodyGeomBox(bid);
+	}
+	else if(cls == dCapsuleClass) {
+		getBodyGeomStartEnd(bid);
+	}
+	buf--; // reset buffer head
+	return buf;
+}
+
+double* getBodyGeomStartEnd(dBodyID bid) {
 
 	dGeomID g = dBodyGetFirstGeom(bid);
 	const dReal * dq = dBodyGetQuaternion(bid);
@@ -62,13 +79,38 @@ double* getBodyStartEnd(dBodyID bid) {
 	Vec3 start = pos + boneVec;
 	Vec3 end   = pos - boneVec;
 
-	bodyPosRot[0] = start[0];
-	bodyPosRot[1] = start[1];
-	bodyPosRot[2] = start[2];
-	bodyPosRot[3] = end[0];
-	bodyPosRot[4] = end[1];
-	bodyPosRot[5] = end[2];
-	return bodyPosRot;
+	buf[0] = start[0];
+	buf[1] = start[1];
+	buf[2] = start[2];
+	buf[3] = end[0];
+	buf[4] = end[1];
+	buf[5] = end[2];
+	return buf;
+}
+
+double* getBodyGeomBox(dBodyID bid) {
+
+	dGeomID g = dBodyGetFirstGeom(bid);
+
+	dReal lengths[4]; dGeomBoxGetLengths(g, lengths);
+
+	Vec3 pos = eigVec3(dBodyGetPosition(bid));
+
+	dReal doq[4]; dGeomGetOffsetQuaternion(g,doq);
+	const dReal * dq = dBodyGetQuaternion(bid);
+	Quat rot = eigQuat(dq) * eigQuat(doq);
+
+	buf[0] = lengths[0];
+	buf[1] = lengths[1];
+	buf[2] = lengths[2];
+	buf[3] = pos[0];
+	buf[4] = pos[1];
+	buf[5] = pos[2];
+	buf[6] = rot.w();
+	buf[7] = rot.x();
+	buf[8] = rot.y();
+	buf[9] = rot.z();
+	return buf;
 }
 
 dWorldID initODE() {
@@ -126,7 +168,53 @@ dBodyID appendCapsuleBody(
 	dQuaternion q{qw,qx,qy,qz};
 	dGeomSetOffsetQuaternion(bGeom, q);
 
-	// add mass to the parent
+	// add mass to the body
+	dMass pMass;
+	dBodyGetMass(bid, &pMass);
+	dMassSetParameters (&pMass, mass,
+							 0,0,0,
+							 i11, i22, i33,
+							 i12, i13, i23);
+	dBodySetMass(bid, &pMass);
+
+	// set the position and orientation of the body
+	Vec3 gPos(x,y,z);
+	dQuaternion gRot{rqw,rqx,rqy,rqz};
+	dBodySetPosition(bid,(dReal)gPos[0],(dReal)gPos[1],(dReal)gPos[2]);
+	dBodySetQuaternion(bid, gRot);
+
+
+	return bid;
+}
+
+dBodyID appendFootBody(
+
+	// position CoM
+	double x, double y, double z,
+
+	// global quaternion rotation
+	double rqw, double rqx, double rqy, double rqz,
+
+	// box size
+	double sx, double sy, double sz,
+
+	// mass
+	double mass,
+
+	// Inertia matrix (about CoM)
+	double i11, double i12, double i13,
+				double i22, double i23,
+							double i33
+) {
+
+	// create a body for this bone
+	dBodyID bid = dBodyCreate(wid);
+
+	// NOTE that capsules are aligned along the Z axis
+	dGeomID bGeom = dCreateBox(sid, sx,sy,sz);
+	dGeomSetBody(bGeom, bid);
+
+	// add mass to the body
 	dMass pMass;
 	dBodyGetMass(bid, &pMass);
 	dMassSetParameters (&pMass, mass,

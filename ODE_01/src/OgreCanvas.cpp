@@ -217,6 +217,17 @@ void OgreCanvas::drawPoint(Ogre::ColourValue c, Vec3 p, double radius) {
 	draw(se, p);
 }
 
+void OgreCanvas::drawBox(Ogre::ColourValue c, Vec3 size, Vec3 center, Quat rotation) {
+	// generate a mesh
+	Procedural::BoxGenerator gen = Procedural::BoxGenerator();
+	gen.setSize(ogreConv(size));
+
+	// create an entity
+	Ogre::Entity * se = mSceneMgr->createEntity(gen.realizeMesh());
+	se->setMaterial(createMaterial(c));
+	draw(se, center, rotation);
+}
+
 void OgreCanvas::drawBone(Vec3 start, Vec3 end, double radius) { drawBone(Ogre::ColourValue::White, start, end, radius); }
 void OgreCanvas::drawVec3(Vec3 origin, Vec3 vec, double radius) { drawVec3(Ogre::ColourValue::White, origin, vec, radius); }
 void OgreCanvas::drawPoint(Vec3 p, double radius) { drawPoint(Ogre::ColourValue::White, p, radius); }

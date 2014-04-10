@@ -14,6 +14,13 @@
   (major1) == 4 && (major2) <  6 || \
   (major1) == 4 && (major2) == 6 && (minor) <= 0)
 
+/* package deepseq-1.3.0.1 */
+#define VERSION_deepseq "1.3.0.1"
+#define MIN_VERSION_deepseq(major1,major2,minor) (\
+  (major1) <  1 || \
+  (major1) == 1 && (major2) <  3 || \
+  (major1) == 1 && (major2) == 3 && (minor) <= 0)
+
 /* package linear-1.6 */
 #define VERSION_linear "1.6"
 #define MIN_VERSION_linear(major1,major2,minor) (\
@@ -27,6 +34,13 @@
   (major1) <  3 || \
   (major1) == 3 && (major2) <  1 || \
   (major1) == 3 && (major2) == 1 && (minor) <= 5)
+
+/* package tau-6.2831 */
+#define VERSION_tau "6.2831"
+#define MIN_VERSION_tau(major1,major2,minor) (\
+  (major1) <  6 || \
+  (major1) == 6 && (major2) <  2831 || \
+  (major1) == 6 && (major2) == 2831 && (minor) <= 0)
 
 /* package time-1.4.0.1 */
 #define VERSION_time "1.4.0.1"

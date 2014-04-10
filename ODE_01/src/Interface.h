@@ -10,8 +10,9 @@ extern "C" {
 
 	void initOgre();
 
-	void drawBone(double r,double g,double b,double a,   double startX,double startY,double startZ,double endX,double endY,double endZ, double radius);
-	void drawVec3(double r,double g,double b,double a,   double originX,double originY,double originZ,double X,double Y,double Z, double radius);
+	void drawBox  (double r,double g,double b,double a,   double sx,double sy,double sz, double cx,double cy,double cz,  double w,double x,double y, double z);
+	void drawBone (double r,double g,double b,double a,   double startX,double startY,double startZ,double endX,double endY,double endZ, double radius);
+	void drawVec3 (double r,double g,double b,double a,   double originX,double originY,double originZ,double X,double Y,double Z, double radius);
 	void drawPoint(double r,double g,double b,double a,   double X,double Y,double Z, double radius);
 	bool doRender();
 
@@ -22,6 +23,9 @@ extern "C" {
 
 	dWorldID initODE();
 
+	double* getBodyGeomStartEnd(dBodyID bid);
+	double* getBodyGeomBox(dBodyID bid);
+	double* getBodyGeom(dBodyID bid);
 	double* getBodyPosRot(dBodyID bid);
 	void setBodyPosRot(dBodyID bid, double x, double y, double z, double qw, double qx, double qy, double qz);
 	double* getBodyStartEnd(dBodyID bid);
@@ -38,6 +42,25 @@ extern "C" {
 		// dimensions
 		double radius,
 		double length,
+
+		// mass
+		double mass,
+
+		// Inertia matrix (about CoM)
+		double i11, double i12, double i13,
+					double i22, double i23,
+								double i33
+	);
+	dBodyID appendFootBody(
+
+		// position CoM
+		double x, double y, double z,
+
+		// global quaternion rotation
+		double rqw, double rqx, double rqy, double rqz,
+
+		// box size
+		double sx, double sy, double sz,
 
 		// mass
 		double mass,

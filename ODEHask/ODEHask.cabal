@@ -21,5 +21,6 @@ executable ODEHask
   other-modules:   
                    MotionData,
                    Util,
-                   FFI
+                   FFI,
+                   Data.Bone
 

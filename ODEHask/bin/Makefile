@@ -5,7 +5,7 @@ HSSRC = ../src
 COBJ = ${CSRC}/*.o ${CSRC}/OgreProcedural/src/*.o
 LIBS = -lstdc++ -lOgreMain -lOIS -lboost_system -lboost_chrono -lode
 
-GHCOPTS = -O2
+GHCOPTS = -O2 -XBangPatterns
 
 all:
 	ghc ${GHCOPTS} -outputdir . -o Main -i${HSSRC} ${HSSRC}/Main.hs ${COBJ} ${LIBS}
