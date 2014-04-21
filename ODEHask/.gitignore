@@ -1,1 +1,4 @@
 /bin
+/dist
+/.settings
+/.dist-buildwrapper
