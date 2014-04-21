@@ -88,7 +88,9 @@ type DJointID = Ptr ()
 type DWorldID = Ptr ()
 cdPeekArray n = (fmap (map (fromRational . realToFrac))) . (peekArray n)
 foreign import ccall unsafe "Interface.h initODE"
-        initODE :: IO DWorldID
+        initODE_c :: CDouble -> IO DWorldID
+initODE :: Double -> IO DWorldID
+initODE timeStep = (applyDouble timeStep) initODE_c
 
 foreign import ccall unsafe "Interface.h getBodyPosRot"
         getBodyPosRot_c :: DBodyID -> IO (Ptr CDouble)
@@ -189,9 +191,7 @@ applyQuat2 a b = (applyQuat a) >>> (applyQuat b)
 applyColor c = let (r, g, b, a) = toRGBA c in applyDouble4 r g b a
 
 foreign import ccall unsafe "Interface.h step"
- step_c :: DWorldID -> CDouble -> IO ()
-stepODE :: DWorldID -> Double -> IO ()
-stepODE wid dt = applyDouble dt (step_c wid)
+ stepODE :: DWorldID -> IO ()
 
 --foreign import ccall unsafe "Interface.h stressTest"
 -- stressTest :: IO ()

@@ -147,7 +147,7 @@ mainLoop sim t dt = do
     drawSkeleton $ cSimFrame
     
     -- Annimation
-    let aniOffset =   V3 (-2) 0 0
+    let aniOffset =   zero --V3 (-2) 0 0
     drawFrame aniOffset cAniFrame
     -- ZMP
     drawPointC Green (aniOffset + (getZMP cAniFrame)) 0.04

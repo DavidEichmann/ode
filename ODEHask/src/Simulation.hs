@@ -35,7 +35,7 @@ data Sim = Sim {
 
 startSim :: MotionData -> IO Sim
 startSim md = do
-    newWid <- initODE
+    newWid <- initODE defaultTimeStep
     bodies <- realizeBodies
     moveToFrame0 bodies
     aMotors <- realizeAMotors bodies
@@ -119,7 +119,7 @@ step isim idt = step' isim{simTimeExtra = 0} (idt + (simTimeExtra isim)) where
     w = wid isim
     step' sim dt
         | dt >= ddt     = do
-                            stepODE w ddt
+                            stepODE w
                             
                             -- per step instructions go here
                             matchMotionData sim ddt
