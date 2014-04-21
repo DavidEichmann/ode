@@ -21,7 +21,7 @@ extern "C" {
 	// ODE
 	//
 
-	dWorldID initODE();
+	dWorldID initODE(double dt);
 
 	double* getBodyGeomStartEnd(dBodyID bid);
 	double* getBodyGeomBox(dBodyID bid);
@@ -70,7 +70,7 @@ extern "C" {
 					double i22, double i23,
 								double i33
 	);
-	void step(dWorldID wid, double dt);
+	void step(dWorldID wid);
 	void createBallJoint(dBodyID a, dBodyID b, double x, double y, double z);
 	dJointID createAMotor(dBodyID a, dBodyID b);
 	void setAMotorVelocity(dJointID jid, double x, double y, double z);

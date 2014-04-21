@@ -27,6 +27,9 @@ bool doRender() {
 
 
 
+double timeStep;
+double contactERP;
+double contactCFM;
 dWorldID wid;
 dSpaceID sid;
 dJointGroupID jointGroupid;
@@ -113,7 +116,10 @@ double* getBodyGeomBox(dBodyID bid) {
 	return buf;
 }
 
-dWorldID initODE() {
+dWorldID initODE(double dt) {
+	timeStep = dt;
+	contactERP = 75.0 / ((75 * timeStep) + 2);
+	contactCFM = 1.0 / ((75000 * timeStep) + 2000);
 	dInitODE();
 	//	Create a dynamics world.
 	wid = dWorldCreate();
@@ -325,8 +331,6 @@ void collisionCallback(void * sim, dGeomID o1, dGeomID o2) {
 			dc.surface.soft_erp = 0.1;
 			dc.surface.soft_cfm = 0.00007;
 			dc.surface.mu = dInfinity;
-//			dc.surface.bounce = 0;
-//			dc.surface.bounce_vel = 0.1;
 			dc.geom = contact[i];
 
 			dJointID cj = dJointCreateContact(wid, contactGroupid, &dc);
@@ -335,9 +339,9 @@ void collisionCallback(void * sim, dGeomID o1, dGeomID o2) {
 	}
 }
 
-void step(dWorldID, double dt) {
+void step(dWorldID) {
 	dSpaceCollide(sid, nullptr, &collisionCallback);
-	dWorldStep(wid,dt);
+	dWorldStep(wid,timeStep);
 	// Remove all joints in the contact joint group.
 	dJointGroupEmpty(contactGroupid);
 }
