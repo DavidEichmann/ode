@@ -7,6 +7,7 @@ import Control.Applicative (liftA2)
 import Data.List
 import Data.Char
 import Data.TreeF
+import qualified Data.MotionData as DMD
 import Text.Parsec
 import Text.Parsec.Token
 import Text.Parsec.Language

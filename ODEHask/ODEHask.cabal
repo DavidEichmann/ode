@@ -14,7 +14,8 @@ executable ODEHask
                    time >=1.4.0 && <1.5,
                    HTF >=0.11.2 && <0.12,
                    deepseq >=1.3.0 && <1.4,
-                   tau >=6.2831 && <6.2832
+                   tau >=6.2831 && <6.2832,
+                   array >=0.4.0 && <0.5
   ghc-options:     -Wall /home/david/git/ode/Debug/ODE_01/src/*.o /home/david/git/ode/Debug/ODE_01/src/OgreProcedural/src/*.o
   extensions:      ForeignFunctionInterface
   extra-libraries: stdc++ OgreMain OIS boost_system boost_chrono glut GL GLU ode
