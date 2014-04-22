@@ -1,5 +1,8 @@
 module Constants where
 
+boneDensity :: Double
+boneDensity = 350
+
 boneRadius :: Double
 boneRadius = 0.1
 

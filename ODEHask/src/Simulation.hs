@@ -12,6 +12,7 @@ import Linear
 import Constants
 import MotionData
 import Data.Maybe
+import Data.Array
 import Data.TreeF
 import Data.Color
 import Data.Bone
@@ -51,7 +52,7 @@ startSim md = do
     
     where
         skel = baseSkeleton md
-        frame0 = head $ frames md
+        frame0 = frames md ! 1
         realizeAMotors bodies = treeMapM maybeCreateAMotor bodies
         maybeCreateAMotor :: TreeF DBodyID -> IO (Maybe DJointID)
         maybeCreateAMotor jf

@@ -2,6 +2,7 @@ module Util where
 
 import Linear hiding (slerp)
 import Linear.Matrix
+import Data.Array
 
 type Vec3 = V3 Double
 type M3 = M33 Double
@@ -63,3 +64,6 @@ slerp q p t
     (cosphi, f) = if dqp < 0 then (-dqp, negate) else (dqp, id)
     phi = acos cosphi
 
+
+arraySize :: (Ix i) => Array i e -> Int
+arraySize = rangeSize . bounds

@@ -7,6 +7,7 @@ import Constants
 import Data.Maybe
 import Data.List
 import Data.TreeF
+import Data.Array
 import Data.Color
 import Simulation
 import FFI
@@ -28,27 +29,15 @@ doDebug md = do
     --print $ treeMap' (name $-) testF
     
     
-    let
-        printDynamics tf = do
-            putStrLn "----------"
-            print $ view tf
-            putStrLn ""
-            mapM_ (\f -> print $ f $ tf) [
---                --getTotalMass,
-                getPosTotalCom,
-                getLinearVel,
-                getLinearAcc,
-                getAngularVel,
-                getAngularAcc,
-                getLinearMomentum,
-                getTotalLinearMomentum,
-                getTotalLinearMomentum',
-                getAngularMomentum,
-                getAngularMomentum',
-                getTotalAngularMomentum,
-                getTotalAngularMomentum'
-                ,getZMP
-               ]
+--    let
+--        printDynamics tf = do
+--            putStrLn "----------"
+--            print $ view tf
+--            putStrLn ""
+--            mapM_ (\f -> print $ f $ tf) [
+----                --getTotalMass,
+--
+--               ]
 --    print $ getTotalMass (baseSkeleton md)
 --    treeMapM_ printDynamics (frames md !! 10)
 --    mapM_ (printDynamics) (take 30 (map (fromJust . child0) (frames md)))
@@ -60,17 +49,13 @@ getArguments :: IO (String, Integer)
 getArguments = do
     ws <- getArgs
     return (getPath ws, getPP ws) where
-        getPath (('-':_):_:ws) = getPath ws
-        getPath (path:_)
-                | elem '/' path  = path
-                | otherwise      = "/home/david/git/ode/ODE_01/Data/Animation/" ++ path
-        getPath [] = "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-004_David.bvh"
-        
-        getPP ("-pp":nStr:_)
-                | all (flip elem ['0'..'9']) nStr  = read nStr
-                | otherwise                        = 0
-        getPP (_:ws) = getPP ws
-        getPP [] = 0
+        getPath ws = case find (not . (isPrefixOf "-")) ws of
+                Just path   -> if elem '/' path then path else "/home/david/git/ode/ODE_01/Data/Animation/" ++ path
+                Nothing     -> "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-004_David.bvh"
+            
+        getPP ws = case find (isPrefixOf "-pp") ws of
+                Just w      -> read (drop 3 w)
+                Nothing      -> 0 
 
 
 main :: IO ()
@@ -105,22 +90,24 @@ mainLoopOut :: Sim -> IO ()
 mainLoopOut sim = do
     ti <- getCurrentTime
     loop sim ti ti where
+        mdv = getMotionDataVariables $ targetMotion sim
         loop sim ti tl = do
             tc <- getCurrentTime
-            sim' <- mainLoop sim (realToFrac $ diffUTCTime tc ti) (realToFrac $ diffUTCTime tc tl)
+            sim' <- mainLoop sim mdv (realToFrac $ diffUTCTime tc ti) (realToFrac $ diffUTCTime tc tl)
             loop sim' ti tc
 
-mainLoop :: Sim -> Double -> Double -> IO Sim
-mainLoop sim t dt = do
-    sim' <- step sim dt
---    let sim' = sim
+mainLoop :: Sim -> MotionDataVars -> Double -> Double -> IO Sim
+mainLoop sim MotionDataVars{dt=dt,fs=fs,bs=bs,zmp=zmp} t simdt = do
+    sim' <- step sim simdt
     cSimFrame <- getSimSkel sim'
     let
         md = targetMotion sim
         ft = frameTime md
-        fLength = length $ frames md
+        
+        fLength = arraySize $ frames md
         maxFIndex = fLength -1
-        cAniFrame = (frames md) !! (min maxFIndex ((floor $ t / ft) `mod` maxFIndex))
+        frameIx = (min maxFIndex (1 + ((floor $ t / ft) `mod` maxFIndex)))
+        cAniFrame = (frames md) ! frameIx
         
 --        endSite0 = des cFrame where
 --            des f = maybe f right (child0 f)
@@ -150,7 +137,7 @@ mainLoop sim t dt = do
     let aniOffset =   zero --V3 (-2) 0 0
     drawFrame aniOffset cAniFrame
     -- ZMP
-    drawPointC Green (aniOffset + (getZMP cAniFrame)) 0.04
+    drawPointC Green (aniOffset + (zmp (fs !! frameIx))) 0.04
     -- COM
 --    drawPointC Yellow com 0.04
     -- COM floor

@@ -40,6 +40,7 @@ newtype JointIx = J Int
 newtype BoneIx = B Int
 
 data MotionDataVars = MotionDataVars {
+    dt     :: Double,
     fN     :: Int,
     jN     :: Int,
     bN     :: Int,
@@ -79,6 +80,7 @@ data MotionDataVars = MotionDataVars {
 
 getMotionDataVariables :: MotionData -> MotionDataVars
 getMotionDataVariables md = MotionDataVars {
+    dt     = dt,
     fN     = fN,
     jN     = jN,
     bN     = bN,
@@ -167,7 +169,7 @@ getMotionDataVariables md = MotionDataVars {
     jb (J a) = B (a-1)
     
     -- frame count
-    fN = uncurry (flip (-)) $ bounds $ frames md
+    fN = arraySize $ frames md
     
     -- joint count
     jN = length $ flatten $ baseSkeleton md
@@ -214,7 +216,7 @@ getMotionDataVariables md = MotionDataVars {
     
     -- bone density
     d :: BoneIx -> Double
-    d _ = 350
+    d _ = boneDensity
     
     -- bone mass and local Inertia Matrix
     m :: BoneIx -> Double
@@ -412,10 +414,24 @@ toAngularVel qi qf dt = if angleHalf == 0 then zero else ((2 * angleHalf) *^ rot
                         angleHalf = acos $ max (-1) (min qlnW 1)
                         rotAxis = qlnV ^/ (sin angleHalf)
 
+   
+   
+   
+   
+-- Legacy code                        
+-- inertia matrix is computed as that of a capsule represented by the offset vector
+-- as the root joint does not represent a bone, it has no valid inertia matrix, so zero is used  
+massInertiaM :: JointF -> (Double, M3)
+massInertiaM jF
+        | hasParent jF   = getCapsulMassInertiaM (density jF) boneRadius (offset $- jF)
+        | otherwise     = (0,zero)
                         
-                        
-                        
-                        
+
+-- legacy code
+density :: JointF -> Double
+density jF
+        | hasParent jF   = boneDensity
+        | otherwise     = 0                     
                         
                         
                         
@@ -497,8 +513,9 @@ parseBVH filePath ppFilterWindow = do
 preProcess :: Integer -> MotionData -> MotionData
 preProcess windowSize md = mdF where
     n = fromInteger windowSize
+    newFrames = map avg (windows (elems $ frames md))
     mdF = md{
-             frames = listArray (bounds $ frames md) $ map avg (windows (elems $ frames md))
+             frames = listArray (1, length newFrames) newFrames 
         }
     windows fs
         | length lfsn == n  = lfsn : windows (tail fs)
@@ -563,24 +580,22 @@ scaleAndTranslate targetHeight sampleFrameIndex md = mdTS where
     mdTS = scale scaleFactor mdT
 
     
---getInterpolatedFrame :: Double -> MotionData -> Frame
---getInterpolatedFrame t md = f where
---    n = length $ frames md
---    i = doMod (t / (frameTime md)) where
---        nd = fromIntegral $ n
---        doMod x
---            | x <= nd = x
---            | otherwise = doMod (x - nd)
---    
---    a = (frames md) !! (floor i)
---    b = (frames md) !! if ceiling i > n then 0 else (ceiling i)
---    f = treeZipWith interpJoint a b
---    interp = i - (fromIntegral (floor i))
---    interpJoint af bf = (view af){
---                            rotationL  = Util.slerp (rotationL $- af) (rotationL $- bf) interp,
---                            linearVel  = ((1 - interp) *^ (linearVel $- af))  + (interp *^ (linearVel $- bf)),
---                            angularVel = ((1 - interp) *^ (angularVel $- af)) + (interp *^ (angularVel $- bf))
---                        }
+getInterpolatedFrame :: Double -> MotionData -> Frame
+getInterpolatedFrame t md = f where
+    n = arraySize $ frames md
+    i = doMod (t / (frameTime md)) + 1 where
+        nd = fromIntegral $ n
+        doMod x
+            | x <= nd = x
+            | otherwise = doMod (x - nd)
+    
+    a = (frames md) ! (floor i)
+    b = (frames md) ! if ceiling i > n then 0 else (ceiling i)
+    f = treeZipWith interpJoint a b
+    interp = i - (fromIntegral (floor i))
+    interpJoint af bf = (view af){
+                            rotationL  = Util.slerp (rotationL $- af) (rotationL $- bf) interp
+                        }
     
 
 isFootJoint :: JointF -> Bool
