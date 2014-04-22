@@ -601,6 +601,9 @@ getInterpolatedFrame t md = f where
 isFootJoint :: JointF -> Bool
 isFootJoint jf = (name $- jf) `elem` footJoints || (name $- (justParent jf)) `elem` footJoints where
     footJoints = ["LeftFoot", "LeftToe", "RightFoot", "RightToe"]
+isToeJoint :: JointF -> Bool
+isToeJoint jf = hasParent jf && (name $- (justParent jf)) `elem` footJoints where
+    footJoints = ["LeftToe", "RightToe"]
     
 -- Parsing code
 

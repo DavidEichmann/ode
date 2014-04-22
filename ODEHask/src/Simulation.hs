@@ -69,7 +69,10 @@ startSim md = do
             | hasParent jf = do
                 let
                     (m, mIM) = massInertiaM jf
-                    boxSize = let (V3 _ y z) = fmap abs ((getPosStart jf) - (getPosEnd jf )) in (V3 footWidth y z);
+                    footStart@(V3 _ fy1 fz1) = getPosStart (if isToeJoint jf then justParent jf else jf)
+                    footEnd@  (V3 _ fy2 fz2)  = getPosEnd (if isToeJoint jf then jf else fromJust (child0 jf))
+                    (V3 _ _ boxZSize) = fmap abs ((getPosEnd jf) - (getPosStart jf))
+                    boxYSize = let (V3 _ comY _) = getPosCom jf in 2 * (abs $ comY - fy2)
                 if isFootJoint jf
                     then
                         appendFootBody
@@ -78,7 +81,7 @@ startSim md = do
                             -- global quaternion rotation
                             (getRot $ justParent jf)
                             -- dimensions
-                            boxSize
+                            (V3 footWidth boxYSize boxZSize)
                             -- mass and Inertia matrix (about CoM)
                             m mIM
                     else
