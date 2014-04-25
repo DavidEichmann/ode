@@ -44,8 +44,8 @@ dirToDirQuat a b
                                     bU = normalize b
                                     axis = normalize $ aU `cross` bU
                                     angle = acos (bU `dot` aU)
-    
--- average a number of rotations, this is done by repeated application of Slerp 
+
+-- average a number of rotations, this is done by repeated application of Slerp
 avgRot :: [Quat] -> Quat
 avgRot [] = identity
 avgRot qs = fst . head . avgRot' $ map (flip (,) 1) qs where
@@ -54,7 +54,7 @@ avgRot qs = fst . head . avgRot' $ map (flip (,) 1) qs where
     avgRot' (qw:[]) = [qw]
     avgRot' (qw1:qw2:qws) = avgRot' $ (merge qw1 qw2) : (avgRot' qws)
     merge (q1,w1) (q2,w2) = (slerp q1 q2 (fromInteger w2 / fromInteger (w1+w2)), w1+w2)
-    
+
 slerp :: RealFloat a => Quaternion a -> Quaternion a -> a -> Quaternion a
 slerp q p t
   | 1.0 - cosphi < 1e-8 = q
@@ -67,3 +67,16 @@ slerp q p t
 
 arraySize :: (Ix i) => Array i e -> Int
 arraySize = rangeSize . bounds
+
+memoize :: (Ix i) => (i,i) -> (i->b) -> (i->b)
+memoize bnd fn = (\a -> table ! a) where
+    table = (array bnd [ (u, fn u) | u <- range bnd ])
+
+vx :: V3 a -> a
+vx (V3 x _ _) = x
+
+vy :: V3 a -> a
+vy (V3 _ y _) = y
+
+vz :: V3 a -> a
+vz (V3 _ _ z) = z

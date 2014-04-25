@@ -1,10 +1,83 @@
 #include "OgreCanvas.h"
 #include <Eigen/Core>
+#include <Eigen/SparseLU>
 #include "Util.h"
 
 #include "Interface.h"
 
 // ffi functions
+
+
+/*
+ * Solve A x = b
+ *
+ * n	dimentionality of rhs vectors (also matrix is n x n)
+ * nnz	number of non-empty (non-zero) matrix elements
+ * mixs	array of matrix indexies  (in the form: [row1,col1,row2,col2 ... , row nz, col nz])
+ * r	number of rhs vectors
+ * vals	vals of non-empty matrix elements followed by rhs vectors
+ *
+ * returns r*n values representing solved vectors
+ */
+double* matrixSolveResults = new double[1];
+double* sparseMatrixSolve(const int n, const int nnz, int* const mixs, const int r, double* const vals) {
+	cout << "Sparse Matrix solve started..." << endl;
+	double* valsC = vals;
+	// prepare return buffer
+	delete[] matrixSolveResults;
+	matrixSolveResults = new double[n*r];
+	// fill matrix A
+	SparseMatrix<double,RowMajor> A(n,n);
+	std::vector< Eigen::Triplet<double> > entries;
+	int* mixsC = mixs;
+	for(int i = 0; i < nnz; i++) {
+		entries.push_back(Eigen::Triplet<double>(mixsC[0],mixsC[1],*valsC));
+		valsC++;
+		mixsC += 2;
+	}
+	A.setFromTriplets(entries.begin(),entries.end());
+	A.makeCompressed();
+	// fill b
+	MatrixXd b(n,r);
+	MatrixXd x(n,r);
+	for(int bc = 0; bc < r; bc++) {
+		for(int br = 0; br < n; br++) {
+			b(br,bc) = *valsC;
+			valsC++;
+		}
+	}
+
+//	cout << "vals\n";
+//	for(int i = 0; i < (nnz) + (r*n); i++) {
+//		cout << vals[i] << " ";
+//	}
+//	cout << "\nmixs\n";
+//	for(int i = 0; i < nnz*2; i++) {
+//		cout << mixs[i] << " ";
+//	}
+	// solve A x = b
+	SparseLU< SparseMatrix<double> > solver;
+	solver.compute(A);
+	if(solver.info()!=Success) {
+		// decomposition failed
+		cerr << "Matrix solver: failed in COMPUTE stage" << endl;
+		exit(1);
+	}
+	x = solver.solve(b);
+	if(solver.info()!=Success) {
+		// solving failed
+		cerr << "Matrix solver: failed in SOLVE stage" << endl;
+		exit(1);
+	}
+	// solve for another right hand side:
+	for(int bc = 0; bc < r; bc++) {
+		for(int br = 0; br < n; br++) {
+			matrixSolveResults[(n*bc)+br] = x(br,bc);
+		}
+	}
+	cout << "Sparse Matrix solve finished!" << endl;
+	return matrixSolveResults;
+}
 
 OgreCanvas oc;
 

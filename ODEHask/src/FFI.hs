@@ -1,6 +1,8 @@
 module FFI (
     c_main,
-    
+
+    sparseMatrixSolve,
+
     initOgre,
     drawBone,
     drawBoneC,
@@ -11,8 +13,8 @@ module FFI (
     drawPoint,
     drawPointC,
     doRender,
-    
-    
+
+
     DWorldID,
     DBodyID,
     DJointID,
@@ -30,21 +32,24 @@ module FFI (
 ) where
 
 
-import Foreign
+import Foreign hiding (unsafeLocalState)
 import Foreign.C
+import Foreign.Marshal.Unsafe
 import Linear
 import Util
 import Data.Color
 import Data.Maybe
 import Data.Bone
+import Data.Array
 import Control.Arrow
+import Control.Monad
 
 foreign import ccall unsafe "ODE_01.h"
         c_main :: IO()
 
 foreign import ccall unsafe "Interface.h"
         initOgre :: IO ()
-        
+
 foreign import ccall unsafe "Interface.h doRender"
         doRender_c :: IO (CInt)
 doRender :: IO (Bool)
@@ -56,21 +61,21 @@ drawBoxC :: Color -> Vec3 -> Vec3 -> Quat -> IO ()
 drawBoxC c size center rot = ((applyColor c) >>> (applyVec3 size) >>> (applyVec3 center) >>> (applyQuat rot)) drawBox_c
 drawBox :: Vec3 -> Vec3 -> Quat -> IO ()
 drawBox = drawBoxC White
-        
+
 foreign import ccall unsafe "Interface.h drawBone"
         drawBone_c :: CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()
 drawBoneC :: Color -> Vec3 -> Vec3 -> Double -> IO ()
 drawBoneC = fromFnCVec3Vec3D drawBone_c
 drawBone :: Vec3 -> Vec3 -> Double -> IO ()
 drawBone = drawBoneC White
-        
+
 foreign import ccall unsafe "Interface.h drawVec3"
         drawVec3_c :: CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()
 drawVec3C :: Color -> Vec3 -> Vec3 -> Double -> IO ()
 drawVec3C = fromFnCVec3Vec3D drawVec3_c
 drawVec3 :: Vec3 -> Vec3 -> Double -> IO ()
 drawVec3 = drawVec3C White
-        
+
 foreign import ccall unsafe "Interface.h drawPoint"
         drawPoint_c :: CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()
 drawPointC :: Color -> Vec3 -> Double -> IO ()
@@ -112,7 +117,7 @@ getBodyBone bid = do
     case round cls of
         1   -> return (Box (V3 x1 y1 z1) (V3 x2 y2 z2) (Quaternion qw (V3 qx qy qz)))
         2   -> return (Long (V3 x1 y1 z1) (V3 x2 y2 z2))
-        
+
 
 foreign import ccall unsafe "Interface.h appendCapsuleBody"
         appendCapsuleBody_c :: CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble
@@ -131,7 +136,7 @@ appendCapsuleBody
     (V3     (V3 i11 i12 i13)
             (V3  _  i22 i23)
             (V3  _   _  i33))
-            
+
         =  apps appendCapsuleBody_c where
                 apps =  (applyVec3 com) >>>
                         (applyQuat2 lRotZ gRot) >>>
@@ -157,23 +162,23 @@ appendFootBody
             (applyQuat rot) >>>
             (applyVec3 boxSize) >>>
             (applyDouble7 mass i11 i12 i13 i22 i23 i33)) appendFootBody_c
-                        
+
 foreign import ccall unsafe "Interface.h createBallJoint"
     createBallJoint_c :: DBodyID -> DBodyID -> CDouble -> CDouble -> CDouble -> IO ()
 createBallJoint :: DBodyID -> DBodyID -> Vec3 -> IO ()
 createBallJoint a b pos = applyVec3 pos (createBallJoint_c a b)
-                        
+
 foreign import ccall unsafe "Interface.h createAMotor"
     createAMotor :: DBodyID -> DBodyID -> IO (DJointID)
-                        
+
 foreign import ccall unsafe "Interface.h setAMotorVelocity"
     setAMotorVelocity_c :: DJointID -> CDouble -> CDouble -> CDouble -> IO ()
 setAMotorVelocity :: DJointID -> Vec3 -> IO ()
 setAMotorVelocity jid aVel = ((apply jid) >>> (applyVec3 aVel)) setAMotorVelocity_c
-                        
+
 foreign import ccall unsafe "Interface.h createFixedJoint"
     createFixedJoint :: DBodyID -> DBodyID -> IO ()
-    
+
 apply a f = f a
 applyBool b = apply (CInt (if b then 1 else 0))
 applyDouble v = apply (CDouble v)
@@ -197,12 +202,12 @@ foreign import ccall unsafe "Interface.h step"
 -- stressTest :: IO ()
 --foreign import ccall unsafe "Interface.h stressTestUnit"
 -- stressTestUnit_c :: CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()
--- 
+--
 --stressTestUnit :: Double -> Double -> Double -> Double -> Double -> Double -> Double -> IO ()
 --stressTestUnit a b c d e f g = stressTestUnit_c (CDouble a) (CDouble b) (CDouble c) (CDouble d) (CDouble e) (CDouble f) (CDouble g)
 
 
-        
+
 fromFnCVec3Vec3D :: (CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()) ->  Color -> Vec3 -> Vec3 -> Double -> IO ()
 fromFnCVec3Vec3D fn a b c d = ((applyColor a) >>> (applyVec3 b) >>> (applyVec3 c) >>> (applyDouble d)) fn
 {-fromFnCVec3Vec3D fn color (V3 x1 y1 z1) (V3 x2 y2 z2) d = let (r, g, b, a) = toRGBA color in
@@ -218,7 +223,7 @@ fromFnCVec3Vec3D fn a b c d = ((applyColor a) >>> (applyVec3 b) >>> (applyVec3 c
         (CDouble y2)
         (CDouble z2)
         (CDouble d)-}
-        
+
 fromFnCVec3D :: (CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()) -> Color -> Vec3 -> Double -> IO ()
 fromFnCVec3D fn a b c = ((applyColor a) >>> (applyVec3 b) >>> (applyDouble c)) fn
 {-fromFnCVec3D fn color (V3 x y z) d =  let (r, g, b, a) = toRGBA color in
@@ -231,5 +236,39 @@ fromFnCVec3D fn a b c = ((applyColor a) >>> (applyVec3 b) >>> (applyDouble c)) f
         (CDouble y)
         (CDouble z)
         (CDouble d)-}
+
+
+foreign import ccall unsafe "Interface.h sparseMatrixSolve"
+    sparseMatrixSolve_c :: CInt -> CInt -> Ptr CInt -> CInt -> Ptr CDouble -> Ptr CDouble
+sparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
+sparseMatrixSolve matrix rhs = unsafeLocalState (do
+    let
+        n = arraySize $ head rhs   -- size of rhs vectors (also matrix is n x n)
+        r = length rhs          -- number of rhs vectors
+
+        mNZ = length matrix         -- number of nonempty (non-zero) matix elements
+        arrMIxsSize = 2 * mNZ       -- size of matrix index array
+        arrSize = (mNZ) + (n * r)   -- size of dataArray
+
+        breakSized :: Int -> [a] -> [[a]]
+        breakSized s [] = []
+        breakSized s a = let (b, rem) = splitAt s a in b : (breakSized s rem)
+
+    allocaArray arrMIxsSize (\arrMIxs -> do
+        allocaArray arrSize (\arr -> do
+            -- fill matrix index array (in the form: [row1,col1,row2,col2 ... , row mNZ, col mNZ])
+            pokeArray arrMIxs (map fromIntegral (concat $ map (\((r,c),_) -> [r,c]) matrix))
+            -- fill array with matrix values then rhs vectors
+            pokeArray arr (map CDouble ((map snd matrix) ++ (concat $ map elems rhs)))
+            results <- cdPeekArray (r*n) $ sparseMatrixSolve_c (fromIntegral n) (fromIntegral mNZ) arrMIxs (fromIntegral r) arr
+            return $ map (listArray (0,n-1)) (breakSized n results)
+         )
+     )
+ )
+
+
+
+
+
 
 

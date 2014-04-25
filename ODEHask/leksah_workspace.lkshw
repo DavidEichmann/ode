@@ -1,0 +1,10 @@
+Version of workspace file format:
+               1
+Time of storage:
+               "Thu Apr 24 15:39:18 BST 2014"
+Name of the workspace:
+               "leksah_workspace"
+File paths of contained packages:
+               ["ODEHask.cabal"]
+Maybe file path of an active package:
+               Just "ODEHask.cabal"
