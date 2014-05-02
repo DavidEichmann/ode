@@ -5,6 +5,10 @@ import Data.List
 import Data.Array
 import Data.TreeF as T
 import Linear hiding (_i,_j,_k,_w)
+import Data.Geometry.Line
+import Data.Geometry.Point
+import Data.Geometry.Polygon
+import Data.Geometry.SetOperations
 import Util
 import Constants
 import FFI
@@ -570,6 +574,68 @@ preProcess windowSize md = mdF where
         avgPos = (foldl1 (+) (map offset js)) ^/ (fromIntegral n)
         avgRotL = avgRot (map rotationL js)
 
+
+-- addapted from "Online Generation of Humanoid Walking Motion based on a Fast Generation Method of Motion Pattern that Follows Desired ZMP"
+-- attempts to move zmp of each frame such that it is in the support polygon
+fitMottionDataToSP :: MotionDataVars -> MotionDataVars
+fitMottionDataToSP mdvOrig@MotionDataVars{_g=g,_dt=dt,_bs=bs} = newMDV where
+
+    newMDV = undefined -- shift frames by the calculated amounts (eFinal)
+
+    eFinal :: Array Int (Double,Double)  -- offset map by frame (x^e,z^e)
+    eFinal = snd $ calculateOffsetMap mdvOrig (map (\_ -> (0,0)) (_fs mdvOrig)) -> 1
+
+    -- TODO move isInSP and sp (support polygon) into MotionDataVars
+    -- TODO actually implement correct sp functions
+    isInSp :: MotionDataVars -> FrameIx -> Vec3 -> Bool
+    isInSp MotionDataVars{_com=_com} fi p = mx <= 0.5 && mz <= 0.5
+        where
+            (V3 mx _ mz) = fmap abs ((_com fi) - p)
+
+    -- currently a square meter box around the CoM
+    sp :: MotionDataVars -> FrameIx -> SimplePolygon'
+    sp MotionDataVars{_com=_com} fi = map (com +)[
+            V3 hw 0 hw
+            V3 nhw 0 hw
+            V3 nhw 0 nhw
+            V3 hw 0 nhw
+        ]
+            where
+                hw = 0.5
+                nhw = negate hw
+                com = _com fi
+
+
+    -- take:    current mdv, current offset map, current frame index
+    -- return:  (new frame index, new offsetMap)
+    calculateOffsetMap :: MotionDataVars -> Array Int (Double,Double) -> Int -> (Int, Array Int (Double,Double))
+    calculateOffsetMap (mdv@MotionDataVars{_m=m,_xb=xb,_l'=l',_com=com,_zmp=zmp}) e fi = (fi+1, e') where
+
+        e'
+            | isInSP (zmp fi) || fi > (snd $ bounds e)  = e
+            | otherwise                                 = calculateOffsetMap shiftedMdv
+
+        -- MDV with frame fi shifted by the new shift for the current frame (ce)
+        shiftedMdv
+
+        -- target ZMP position offset: via projection of zmp onto the SP towards the CoM
+        -- TODO handle case where number of intersection points is 0 or more than 1 (take closest point to zmp)
+        Point2 (zmpex,zmpez) = head $ intersectionPoints (sp mdv)
+
+        -- current shift to get to the target ZMP
+        ce = (
+            (zmpex - (b*(xe_2 - (2*xe_1)))) / (b+1), -- x
+            (zmpez - (b*(ze_2 - (2*ze_1)))) / (b+1)  -- z
+        )
+        -- TODO handle fi-2 out of bounds
+        (xe_2,ze_2) = e!(fi-2)
+        (xe_1,ze_1) = e!(fi-1)
+
+        b = negate $ sum [(m bi) * (vy (xb fi bi)) | bi <- bs]
+                                    /
+                 (sum [(m bi) * (vy (l' fi bi) + g) | bi <- bs] * dt2)
+
+    dt2 = dt*dt
 
 -- based off of "Online Generation of Humanoid Walking Motion based on a Fast Generation Method of Motion Pattern that Follows Desired ZMP"
 fitMottionDataToZmp :: MotionDataVars -> Array Int Vec3 -> MotionDataVars

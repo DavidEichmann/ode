@@ -94,9 +94,10 @@ mainLoopOut sim = do
     ti <- getCurrentTime
     loop sim ti ti where
         (mdvActual@MotionDataVars{_fN=fN,_fs=fs,_comT=com,_zmp=zmp}) = getMotionDataVariablesFromMotionData $ targetMotion sim
-        mdvMod = fitMottionDataToZmp mdvActual (listArray (0,fN-1) (map (\fI -> (V3 0 0 0) + (zmp fI)) fs)) -- zmp of orig data
---        mdvMod = fitMottionDataToZmp mdvActual (listArray (0,fN-1) (map ((\(V3 x _ z) -> V3 x 0 z) . com) fs)) -- com of orig data
---        mdvMod = fitMottionDataToZmp mdvActual (listArray (0,fN-1) (map ((\(V3 x _ z) -> V3 1 0 0) . com) fs))
+        mdvMod = fitMottionDataToSP mdvActual
+--        mdvMod = fitMottionDataToZmp mdvActual (listArray (0,fN-1) (map (\fI -> (V3 0 0 0) + (zmp fI)) fs)) -- zmp of orig data
+----        mdvMod = fitMottionDataToZmp mdvActual (listArray (0,fN-1) (map ((\(V3 x _ z) -> V3 x 0 z) . com) fs)) -- com of orig data
+----        mdvMod = fitMottionDataToZmp mdvActual (listArray (0,fN-1) (map ((\(V3 x _ z) -> V3 1 0 0) . com) fs))
         loop sim ti tl = do
             tc <- getCurrentTime
             sim' <- mainLoop sim mdvActual mdvMod (realToFrac $ diffUTCTime tc ti) (realToFrac $ diffUTCTime tc tl)
