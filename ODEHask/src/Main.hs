@@ -93,7 +93,7 @@ mainLoopOut :: Sim -> IO ()
 mainLoopOut sim = do
     ti <- getCurrentTime
     loop sim ti ti where
-        (mdvActual@MotionDataVars{_fN=fN,_fs=fs,_comT=com,_zmp=zmp}) = getMotionDataVariablesFromMotionData $ targetMotion sim
+        (mdvActual@MotionDataVars{_fN=fN,_fs=fs,_com=com,_zmp=zmp}) = getMotionDataVariablesFromMotionData $ targetMotion sim
         mdvMod = fitMottionDataToSP mdvActual
 --        mdvMod = fitMottionDataToZmp mdvActual (listArray (0,fN-1) (map (\fI -> (V3 0 0 0) + (zmp fI)) fs)) -- zmp of orig data
 ----        mdvMod = fitMottionDataToZmp mdvActual (listArray (0,fN-1) (map ((\(V3 x _ z) -> V3 x 0 z) . com) fs)) -- com of orig data
@@ -104,8 +104,9 @@ mainLoopOut sim = do
             loop sim' ti tc
 
 mainLoop :: Sim -> MotionDataVars -> MotionDataVars -> Double -> Double -> IO Sim
-mainLoop sim mvdOrig@MotionDataVars{_comT=targetZmp'} mdv@MotionDataVars{_dt=dt,_fs=fs,_fN=fN,_bs=bs,_zmp=zmp} t simdt = do
-    sim' <- step sim simdt
+mainLoop sim mvdOrig@MotionDataVars{_com=targetZmp',_zmp=aniZmp,_zmpIsInSp=aniZmpIsInSp} mdv@MotionDataVars{_zmpIsInSp=zmpIsInSp,_dt=dt,_fs=fs,_fN=fN,_bs=bs,_zmp=zmp} t simdt = do
+    --sim' <- step sim simdt
+    let sim' = sim
     cSimFrame <- getSimSkel sim'
     let
         targetZmp = (\(V3 x _ z) -> V3 x 0 z) . targetZmp'
@@ -113,8 +114,8 @@ mainLoop sim mvdOrig@MotionDataVars{_comT=targetZmp'} mdv@MotionDataVars{_dt=dt,
 --        ft = frameTime md
 
 --        fLength = arraySize $ frames md
-        maxFIndex = fN -1
-        frameIx = F (min maxFIndex (1 + ((floor $ t / dt) `mod` maxFIndex)))
+        maxFIndex = fN - 1
+        frameIx = F (1 + ((floor $ t / dt) `mod` maxFIndex))
 --        cAniFrame = (frames md) ! frameIx
 
 --        endSite0 = des cFrame where
@@ -140,14 +141,14 @@ mainLoop sim mvdOrig@MotionDataVars{_comT=targetZmp'} mdv@MotionDataVars{_dt=dt,
                     return ()
     -- sim visualization
 --    drawSkeleton $ cSimFrame
-
     -- Annimation
     let aniOffset =   zero --V3 (-2) 0 0
-    drawFrameIx (OrangeA 0.5) aniOffset mdv frameIx
-    drawFrameIx (RedA 0.25) aniOffset mvdOrig frameIx
+    drawFrameIx White aniOffset mdv frameIx
+    drawFrameIx (BlackA 0.25) aniOffset mvdOrig frameIx
     -- ZMP
-    drawPointC Green (aniOffset + (zmp frameIx)) 0.04
-    drawPointC Red (aniOffset + (targetZmp frameIx)) 0.04
+    --drawPointC (if zmpIsInSp frameIx then White else Red) (aniOffset + (zmp frameIx)) 0.04
+    drawPointC (if aniZmpIsInSp frameIx then White else Red) (aniOffset + (aniZmp frameIx)) 0.04
+--    drawPointC Red (aniOffset + (targetZmp frameIx)) 0.04
     -- COM
 --    drawPointC Yellow com 0.04
     -- COM floor

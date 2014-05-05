@@ -16,10 +16,11 @@ extern "C" {
 
 	void initOgre();
 
-	void drawBox  (double r,double g,double b,double a,   double sx,double sy,double sz, double cx,double cy,double cz,  double w,double x,double y, double z);
-	void drawBone (double r,double g,double b,double a,   double startX,double startY,double startZ,double endX,double endY,double endZ, double radius);
-	void drawVec3 (double r,double g,double b,double a,   double originX,double originY,double originZ,double X,double Y,double Z, double radius);
-	void drawPoint(double r,double g,double b,double a,   double X,double Y,double Z, double radius);
+	void drawPolygon(double r,double g,double b,double a,   int n, double* const vals);
+	void drawBox    (double r,double g,double b,double a,   double sx,double sy,double sz, double cx,double cy,double cz,  double w,double x,double y, double z);
+	void drawBone   (double r,double g,double b,double a,   double startX,double startY,double startZ,double endX,double endY,double endZ, double radius);
+	void drawVec3   (double r,double g,double b,double a,   double originX,double originY,double originZ,double X,double Y,double Z, double radius);
+	void drawPoint  (double r,double g,double b,double a,   double X,double Y,double Z, double radius);
 	bool doRender();
 
 

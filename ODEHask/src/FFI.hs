@@ -55,6 +55,35 @@ foreign import ccall unsafe "Interface.h doRender"
 doRender :: IO (Bool)
 doRender = fmap ((/=0) . fromIntegral) doRender_c
 
+
+foreign import ccall unsafe "Interface.h drawPolygon"
+    drawPolygon_c :: Double -> CDouble -> CDouble -> CDouble -> CInt -> Ptr CDouble -> IO ()
+drawPolygon :: Color -> [Vec3] -> IO ()
+drawPolygon matrix rhs = ???draw polygon???? unsafeLocalState (do
+    let
+        n = arraySize $ head rhs   -- size of rhs vectors (also matrix is n x n)
+        r = length rhs          -- number of rhs vectors
+
+        mNZ = length matrix         -- number of nonempty (non-zero) matix elements
+        arrMIxsSize = 2 * mNZ       -- size of matrix index array
+        arrSize = (mNZ) + (n * r)   -- size of dataArray
+
+        breakSized :: Int -> [a] -> [[a]]
+        breakSized s [] = []
+        breakSized s a = let (b, rem) = splitAt s a in b : (breakSized s rem)
+
+    allocaArray arrMIxsSize (\arrMIxs -> do
+        allocaArray arrSize (\arr -> do
+            -- fill matrix index array (in the form: [row1,col1,row2,col2 ... , row mNZ, col mNZ])
+            pokeArray arrMIxs (map fromIntegral (concat $ map (\((r,c),_) -> [r,c]) matrix))
+            -- fill array with matrix values then rhs vectors
+            pokeArray arr (map CDouble ((map snd matrix) ++ (concat $ map elems rhs)))
+            results <- cdPeekArray (r*n) $ sparseMatrixSolve_c (fromIntegral n) (fromIntegral mNZ) arrMIxs (fromIntegral r) arr
+            return $ map (listArray (0,n-1)) (breakSized n results)
+         )
+     )
+ )
+
 foreign import ccall unsafe "Interface.h drawBox"
     drawBox_c :: CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()
 drawBoxC :: Color -> Vec3 -> Vec3 -> Quat -> IO ()

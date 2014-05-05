@@ -21,3 +21,6 @@ defaultTimeStep = 1/600
 
 footWidth :: Double
 footWidth = 0.08
+
+floorContactThreshold :: Double
+floorContactThreshold = 0.05

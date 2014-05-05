@@ -158,7 +158,6 @@ void OgreCanvas::initOgre() {
 	mRoot->addFrameListener(frameListener);
 }
 
-
 void OgreCanvas::draw(Ogre::Entity * e, Vec3 pos, Quat rot) {
 	Ogre::SceneNode * node = mSceneMgr->getRootSceneNode()->createChildSceneNode();
 	node->setPosition(ogreConv(pos));
@@ -175,6 +174,36 @@ bool OgreCanvas::doRender() {
 	mSceneMgr->getRootSceneNode()->removeAndDestroyAllChildren();
 
 	return ! mWindow->isActive();
+}
+
+void OgreCanvas::drawPolygon(Ogre::ColourValue c, const int n, double* const vals) {
+	Ogre::ManualObject manual("ManualOutline");
+
+	manual.begin("BaseWhiteNoLighting", Ogre::RenderOperation::OT_LINE_STRIP);
+
+	for (int j = 0; j < n; j++)
+	{
+	  double posAX = vals[(j*3)];
+	  double posAY = vals[(j*3)+1];
+	  double posAZ = vals[(j*3)+2];
+	  manual.position(posAX, posAY, posAZ);
+	}
+
+	for (int j = 0; j < n - 1; j++)
+	{
+	  manual.index(j);
+	}
+
+	manual.end();
+
+	Ogre::MeshPtr ptr = manual.convertToMesh("ManualOutline");
+
+	Ogre::Entity* myEntity = mSceneMgr->createEntity("EntityOutline", "ManualOutline");
+	Ogre::StaticGeometry* sg = mSceneMgr->createStaticGeometry("StaticOutline");
+
+	myEntity->setMaterial(createMaterial(c));
+
+	draw(myEntity, Vec3(0,0,0), Quaterniond::Identity());
 }
 
 void OgreCanvas::drawBone(Ogre::ColourValue c, Vec3 start, Vec3 end, double radius) {

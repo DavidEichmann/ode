@@ -26,14 +26,14 @@ data TreeF a  = TreeF (Tree a) [TreeFC a] deriving Show
 
 
 instance Functor Tree where
-    fmap fn (Tree el cs) = Tree (fn el) (map (fmap fn) cs) 
+    fmap fn (Tree el cs) = Tree (fn el) (map (fmap fn) cs)
 
 instance Functor TreeFC where
-    fmap fn (TreeFC p l r) = TreeFC (fn p) (map (fmap fn) l) (map (fmap fn) r) 
+    fmap fn (TreeFC p l r) = TreeFC (fn p) (map (fmap fn) l) (map (fmap fn) r)
 
 instance Functor TreeF where
     fmap fn (TreeF tree tfcs) = TreeF (fmap fn tree) (map (fmap fn) tfcs)
-    
+
 instance Applicative TreeF where
     pure a = toFocus (Tree a [])
     a <*> b = treeZipWith (\fnF argF -> (view fnF) (view argF)) a b
@@ -41,22 +41,32 @@ instance Applicative TreeF where
 tMap :: (a -> b) -> TreeF a -> TreeF b
 tMap fn (TreeF t _) = toFocus $ tMap' t where
     tMap' (Tree x xc) = Tree (fn x) (map tMap' xc)
-    
+
 tMapM :: Monad m => (a -> m b) -> TreeF a -> m (TreeF b)
 tMapM fn (TreeF t _) = do
     t' <- tMapM' t
-    return (toFocus t') 
+    return (toFocus t')
     where
         tMapM' (Tree x xc) = do
             el <- fn x
             children <- mapM tMapM' xc
             return (Tree el children)
-    
+
 tMapM_ :: (Functor m, Monad m) => (a -> m b) -> TreeF a -> m ()
 tMapM_ fn t = void $ tMapM fn t
 
+---- changes to focus
+--find :: (TreeF a -> Bool) -> TreeF a -> Maybe (TreeF a)
+--find fn tf
+--    | fn tf         = Just tf
+--    | otherwise     = case maybe Nothing (find fn) (child0 tf) of
+--                        Nothing -> maybe Nothing (find fn) (rightSib c)
+--                        Just c  -> c
+
+
+
 -- the function is given tree in version a and version b. ensure that only parent elements are accesed in the b
--- version and only child elements are accesed in the a version (else an error will occur) 
+-- version and only child elements are accesed in the a version (else an error will occur)
 treeMap' :: (TreeF a -> b) -> TreeF a -> TreeF b
 treeMap' fn tf = snd $ applyToChildren (tf, newRoot) where
         moveUp (af, bf)  = (fromJust $ parent af, fromJust $ parent bf)
@@ -69,7 +79,7 @@ treeMap' fn tf = snd $ applyToChildren (tf, newRoot) where
                 Just raf' -> applyToRight (raf', appendChildAndFocus (fn raf') (fromJust $ parent bf'))
               where
                 (af',bf') = applyToChildren (af,bf)
-       
+
 
 treeMap :: (TreeF a -> TreeF a) -> TreeF a -> TreeF a
 treeMap fn = treeMapCon_ fn' () where
@@ -80,7 +90,7 @@ treeMap fn = treeMapCon_ fn' () where
 treeZip :: TreeF a -> TreeF b -> TreeF (a,b)
 treeZip (TreeF t1 _) (TreeF t2 _) = toFocus $ treeZip' t1 t2 where
     treeZip' (Tree a ac) (Tree b bc) = Tree (a,b) (zipWith treeZip' ac bc)
-    
+
 treeZipWith :: (TreeF a -> TreeF b -> c) -> TreeF a -> TreeF b -> TreeF c
 treeZipWith fn af bf = cf where
     abf = treeZip af bf
@@ -88,13 +98,13 @@ treeZipWith fn af bf = cf where
     fn' abf' = fn af' bf' where
         af' = fmap fst abf'
         bf' = fmap snd abf'
-        
-    
+
+
 toFocus :: Tree a -> TreeF a
 toFocus r = TreeF r []
 
 parent :: TreeF a -> Maybe (TreeF a)
-parent (TreeF _ []) = Nothing 
+parent (TreeF _ []) = Nothing
 parent (TreeF s ((TreeFC pj l r):ps)) =  Just $ TreeF (Tree pj (l ++ [s] ++ r)) ps
 
 justParent :: TreeF a -> TreeF a
@@ -107,7 +117,7 @@ root :: TreeF a -> TreeF a
 root j = maybe j root (parent j)
 
 child0 :: TreeF a -> Maybe (TreeF a)
-child0 (TreeF (Tree _ []) _) = Nothing 
+child0 (TreeF (Tree _ []) _) = Nothing
 child0 (TreeF (Tree j (c:cs)) ps) =  Just $ TreeF c (TreeFC j [] cs : ps)
 
 getChildFs :: TreeF a -> [TreeF a]
@@ -134,18 +144,18 @@ hasRightSib = isJust . rightSib
 
 treeMapCon_ :: (d -> TreeF a -> (d,TreeF a)) -> d -> TreeF a -> TreeF a
 treeMapCon_ fn d0 r =  snd $ treeMapCon fn d0 r
-                
+
 treeFold :: (d -> TreeF a -> d) -> d -> TreeF a -> d
 treeFold fn d0 r =  fst $ treeMapCon fn' d0 r where
-        fn' d j = (fn d j, j) 
-        
+        fn' d j = (fn d j, j)
+
 -- like fold but skipping the root
 treeFoldNR :: (d -> TreeF a -> d) -> d -> TreeF a -> d
 treeFoldNR fn = treeFold fn' where
     fn' d jf
         | hasParent jf  = fn d jf
         | otherwise     = d
-             
+
 treeMapCon :: (d -> TreeF a -> (d,TreeF a)) -> d -> TreeF a -> (d, TreeF a)
 treeMapCon fnC d f = applyToChildren $ applyToSelf (d,f) where
         fn = uncurry fnC
@@ -159,7 +169,7 @@ treeMapCon fnC d f = applyToChildren $ applyToSelf (d,f) where
                 Just r's  -> applyToRight (d',r's)
               where
                 dr'@(d',r') = treeMapCon fnC d r
-                
+
 treeSequence :: Monad m => TreeF (m a) -> m (TreeF a)
 treeSequence t = do
     d <- sequence $ flatten t
@@ -169,7 +179,7 @@ treeSequence t = do
         unflatten d = toRights $ snd $ treeMapCon (\d' tfab' -> (tail d', set (Right (head d')) tfab')) d tfab
         toRights = tMap $ either (\_ -> error "[TreeF.treeMapM] Impossible Left value!") id
         tfab = tMap Left t
-        
+
 treeSequence_ :: (Functor m, Monad m) => TreeF (m a) -> m ()
 treeSequence_ = void . treeSequence
 
@@ -185,7 +195,7 @@ depth f = maybe 0 ((+1) . depth) (parent f)
 flatten :: TreeF a -> [a]
 flatten t =  reverse $ treeFold (\d tf -> view tf : d) [] t
 
-    
+
 -- Apply a function to the currently focused element
 map1 :: (a -> a) -> TreeF a -> TreeF a
 map1 fn focus = set (fn $- focus) focus
@@ -197,6 +207,6 @@ view (TreeF (Tree el _) _) = el
 -- Set (replace) the currently focused element
 set :: a -> TreeF a -> TreeF a
 set newEl (TreeF (Tree _ cs) fcs) = (TreeF (Tree newEl cs) fcs)
-    
+
 ($-) :: (a -> b) -> TreeF a -> b
 fn $- focus = fn $ view focus

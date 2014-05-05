@@ -21,6 +21,7 @@ public:
 	Ogre::RenderWindow * mWindow;
 
 	void draw(Ogre::Entity * e, Vec3 pos = Vec3::Zero(), Quat rot = Quat::Identity());
+	virtual void drawPolygon(Ogre::ColourValue c, const int n, double* const vals);
 	virtual void drawBox(Ogre::ColourValue c, Vec3 size, Vec3 center, Quat rotation);
 	virtual void drawBone(Ogre::ColourValue c, Vec3 start, Vec3 end, double radius = BONE_RADIUS);
 	virtual void drawVec3(Ogre::ColourValue c, Vec3 origin, Vec3 vec, double radius = 0.05);

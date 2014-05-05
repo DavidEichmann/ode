@@ -3,15 +3,16 @@ module MotionData where
 import Control.Applicative (liftA2)
 import Data.List
 import Data.Array
+import Data.Maybe
 import Data.TreeF as T
-import Linear hiding (_i,_j,_k,_w)
-import Data.Geometry.Line
 import Data.Geometry.Point
 import Data.Geometry.Polygon
-import Data.Geometry.SetOperations
+import Linear hiding (_i,_j,_k,_w)
 import Util
 import Constants
 import FFI
+
+import Debug.Trace
 
 import Data.Char
 import Text.Parsec
@@ -50,6 +51,7 @@ data MotionDataVars = MotionDataVars {
     -- raw data
     _dt     :: Double,
     _j      :: FJIndexedFrames,
+    _jBase  :: JointIx -> Joint,
     _baseSkeleton :: Frame,
 
     -- derived data
@@ -80,12 +82,14 @@ data MotionDataVars = MotionDataVars {
     _p'     :: FrameIx -> BoneIx -> Vec3,
     _h'     :: FrameIx -> BoneIx -> Vec3,
     _mT     :: Double,
-    _comT   :: FrameIx -> Vec3,
+    _com    :: FrameIx -> Vec3,
     _pT     :: FrameIx -> Vec3,
     _hT     :: FrameIx -> Vec3,
     _pT'    :: FrameIx -> Vec3,
     _hT'    :: FrameIx -> Vec3,
     _zmp    :: FrameIx -> Vec3,
+    _sp     :: FrameIx -> [Vec2],
+    _zmpIsInSp :: FrameIx -> Bool,
 
     _isFootBone  :: BoneIx -> Bool
 };
@@ -115,6 +119,7 @@ getMotionDataVariables dt j bskel
  | otherwise = MotionDataVars {
     _dt     = dt,
     _j      = j,
+    _jBase  = jBase,
     _baseSkeleton = bskel,
 
     _g      = g,
@@ -144,12 +149,14 @@ getMotionDataVariables dt j bskel
     _p'     = p',
     _h'     = h',
     _mT     = mT,
-    _comT   = comT,
+    _com   = com,
     _pT     = pT,
     _hT     = hT,
     _pT'    = pT',
     _hT'    = hT',
     _zmp    = zmp,
+    _sp     = sp,
+    _zmpIsInSp = zmpIsInSp,
 
     _isFootBone = isFootBone
  } where
@@ -360,8 +367,8 @@ getMotionDataVariables dt j bskel
     --
 
     -- total center of mass
-    comT = memoizeF comT_ where
-        comT_ fI = (sum (map weightedCom bs)) ^/ mT where
+    com = memoizeF com_ where
+        com_ fI = (sum (map weightedCom bs)) ^/ mT where
             weightedCom bI = (m bI) *^ (xb fI bI)
 
     -- total linear momentum
@@ -400,13 +407,88 @@ getMotionDataVariables dt j bskel
             0
             (((mT * g * comZ) - h'X) / ((mT * g) + p'Y))
             where
-                (V3 comX _ comZ) = comT fI
+                (V3 comX _ comZ) = com fI
                 (V3 _ p'Y _) = pT' fI
                 (V3 h'X _ h'Z) = hT' fI
 
     isFootBone :: BoneIx -> Bool
-    isFootBone bI = ((name . jBase . pj . bj) bI) `elem` footJoints where
+    isFootBone bI = (bName bI) `elem` footJoints where
         footJoints = ["LeftFoot", "LeftToe", "RightFoot", "RightToe"]
+
+    footBs :: [BoneIx]
+    footBs = filter isFootBone bs
+
+    bName :: BoneIx -> String
+    bName = name . jBase . pj . bj
+
+    bByName :: String -> BoneIx
+    bByName bn = fromMaybe (error $ "Bone with name\"" ++ bn ++ "\" could not be found") (lookup bn (zip (map bName bs) bs))
+
+    soleCorners :: FrameIx -> [Vec3]
+    soleCorners fI = corners where
+        -- hack to convert base skeleton to motiondatavars (use only one frame consisting of the base skeleton)
+        MotionDataVars{_xb=base_xb',_xsb=base_xsb',_xeb=base_xeb'} = getMotionDataVariablesFromMotionData (MotionData {
+                    frames = listArray (0,0) [bskel],
+                    frameTime = dt,
+                    baseSkeleton = bskel
+            })
+        f0 = F 0
+        base_xb  = base_xb'  f0
+        base_xsb = base_xsb' f0
+        base_xeb = base_xeb' f0
+        -- base measurements off of left base foot (assume it it pointing towards +Z and that offsets are the same for the right foot)
+        ti = bByName "LeftToe"
+        fi = pb ti
+        halfFootWidth = footWidth / 2
+        -- floor is at tip of toe
+        (V3 _ floorY _) = base_xeb ti
+        -- main foot sole corners
+        (V3 _ _ fHalfLength) = (fmap abs ((base_xeb fi) - (base_xsb fi))) ^/ 2
+        fSoleYOffset = abs ((vy (base_xb fi)) - floorY)
+        footCorners = [
+                V3   halfFootWidth  fSoleYOffset fHalfLength,
+                V3 (-halfFootWidth) fSoleYOffset fHalfLength,
+                V3   halfFootWidth  fSoleYOffset (-fHalfLength),
+                V3 (-halfFootWidth) fSoleYOffset (-fHalfLength)
+            ]
+        -- toe corners
+        (V3 _ _ tHalfLength) = (fmap abs ((base_xeb ti) - (base_xsb ti))) ^/ 2
+        tSoleYOffset = abs ((vy (base_xb ti)) - floorY)
+        toeCorners = [
+                V3   halfFootWidth  tSoleYOffset tHalfLength,
+                V3 (-halfFootWidth) tSoleYOffset tHalfLength,
+                V3   halfFootWidth  tSoleYOffset (-tHalfLength),
+                V3 (-halfFootWidth) tSoleYOffset (-tHalfLength)
+            ]
+
+        -- get all corners
+        lfI = bByName "LeftAnkle"
+        ltI = bByName "LeftToe"
+        rfI = bByName "RightAnkle"
+        rtI = bByName "RightToe"
+        corners =
+            (map (l2g lfI) footCorners) ++
+            (map (l2g ltI) toeCorners)  ++
+            (map (l2g rfI) footCorners) ++
+            (map (l2g rtI) toeCorners)
+
+        l2g :: BoneIx -> Vec3 -> Vec3
+        l2g bI offset = (xb fI bI) + (rb fI bI `rotate` offset)
+
+    -- support Polygon (must be touching the ground else Nothing)
+    sp :: FrameIx -> [Vec2]
+    sp fI
+        | length contactPoints == 1 = error "only 1 contact point"
+        | null contactPoints    = []
+        | otherwise             = hull
+        where
+            hull = convexHull contactPoints
+            contactPoints = map (\(V3 x _ z) -> V2 x z) (filter (\(V3 _ y _) -> y <= floorContactThreshold) (soleCorners fI))
+
+    zmpIsInSp :: FrameIx -> Bool
+    zmpIsInSp fi' = polyContainsPoint (sp fi') (toXZ (zmp fi'))
+
+
 
 
 
@@ -554,86 +636,73 @@ parseBVH filePath ppFilterWindow = do
 
 -- currently this just uses moving average for joint angles and positions
 preProcess :: Integer -> MotionData -> MotionData
-preProcess windowSize md = mdF where
-    n = fromInteger windowSize
-    newFrames = map avg (windows (elems $ frames md))
-    mdF = md{
-             frames = listArray (0, (length newFrames) - 1) newFrames
-        }
-    windows fs
-        | length lfsn == n  = lfsn : windows (tail fs)
-        | otherwise         = []
-        where
-            lfsn = take n fs
-    avg fs = fmap avgJ (foldl1 (treeZipWith (\a b -> (view a) ++ (view b))) (map (fmap (:[])) fs))
-    avgJ :: [Joint] -> Joint
-    avgJ js = (head js) {
-        offset   = avgPos,
-        rotationL = avgRotL
-    }  where
-        avgPos = (foldl1 (+) (map offset js)) ^/ (fromIntegral n)
-        avgRotL = avgRot (map rotationL js)
+preProcess windowSize md
+    | newBounds /= bounds (frames md)   = error "preprocessing: new bounds not equal to old bounds!!!"
+    | otherwise = mdF where
+        n = fromInteger windowSize
+        newFrames = map avg (windows (elems $ frames md))
+        newBounds = (0, (length newFrames) - 1)
+        mdF = md{
+                 frames = listArray newBounds newFrames
+            }
+        windows fs = lfsn : if length lfsn == 1 then [] else windows (tail fs)
+            where
+                lfsn = take n fs
+        avg fs = fmap avgJ (foldl1 (treeZipWith (\a b -> (view a) ++ (view b))) (map (fmap (:[])) fs))
+        avgJ :: [Joint] -> Joint
+        avgJ js = (head js) {
+            offset   = avgPos,
+            rotationL = avgRotL
+        }  where
+            avgPos = (foldl1 (+) (map offset js)) ^/ (fromIntegral (length js))
+            avgRotL = avgRot (map rotationL js)
 
 
 -- addapted from "Online Generation of Humanoid Walking Motion based on a Fast Generation Method of Motion Pattern that Follows Desired ZMP"
 -- attempts to move zmp of each frame such that it is in the support polygon
 fitMottionDataToSP :: MotionDataVars -> MotionDataVars
-fitMottionDataToSP mdvOrig@MotionDataVars{_g=g,_dt=dt,_bs=bs} = newMDV where
+fitMottionDataToSP mdvOrig@MotionDataVars{_fN=fN,_g=g,_dt=dt,_bs=bs,_fs=fs} = newMDV where
 
-    newMDV = undefined -- shift frames by the calculated amounts (eFinal)
-
-    eFinal :: Array Int (Double,Double)  -- offset map by frame (x^e,z^e)
-    eFinal = snd $ calculateOffsetMap mdvOrig (map (\_ -> (0,0)) (_fs mdvOrig)) -> 1
-
-    -- TODO move isInSP and sp (support polygon) into MotionDataVars
-    -- TODO actually implement correct sp functions
-    isInSp :: MotionDataVars -> FrameIx -> Vec3 -> Bool
-    isInSp MotionDataVars{_com=_com} fi p = mx <= 0.5 && mz <= 0.5
-        where
-            (V3 mx _ mz) = fmap abs ((_com fi) - p)
-
-    -- currently a square meter box around the CoM
-    sp :: MotionDataVars -> FrameIx -> SimplePolygon'
-    sp MotionDataVars{_com=_com} fi = map (com +)[
-            V3 hw 0 hw
-            V3 nhw 0 hw
-            V3 nhw 0 nhw
-            V3 hw 0 nhw
-        ]
-            where
-                hw = 0.5
-                nhw = negate hw
-                com = _com fi
-
+    newMDV = calculateOffsetMap mdvOrig (listArray (0,fN-1) (map (\_ -> (0,0)) fs)) 0
 
     -- take:    current mdv, current offset map, current frame index
-    -- return:  (new frame index, new offsetMap)
-    calculateOffsetMap :: MotionDataVars -> Array Int (Double,Double) -> Int -> (Int, Array Int (Double,Double))
-    calculateOffsetMap (mdv@MotionDataVars{_m=m,_xb=xb,_l'=l',_com=com,_zmp=zmp}) e fi = (fi+1, e') where
+    -- return:  new motion data vars
+    calculateOffsetMap :: MotionDataVars -> Array Int (Double,Double) -> Int -> MotionDataVars
+    calculateOffsetMap (mdv@MotionDataVars{_zmpIsInSp=zmpIsInSp,_j=j,_m=m,_xb=xb,_l'=l',_com=com,_zmp=zmp,_sp=sp}) e fi
+        -- end of Motion data.. then we are finished
+        | fi > (snd $ bounds e)     = mdv
+        -- ZMP already in the SP, move to the next frame
+        | zmpIsInSp (F fi)          = calculateOffsetMap mdv e (fi + 1)
+        -- ZMP outside of the SP, modify the frame and move to the next frame
+        | otherwise                 = calculateOffsetMap shiftedMdv e' (fi + 1)
+        where
+            fI = F fi
 
-        e'
-            | isInSP (zmp fi) || fi > (snd $ bounds e)  = e
-            | otherwise                                 = calculateOffsetMap shiftedMdv
+            -- MDV with frame fi shifted by the new shift for the current frame (ce)
+            shiftedMdv = modifyMotionDataVars mdvOrig
+                                (j // [((fi,0), (j!(fi,0)){offset = ((\(x,z) -> V3 x 0 z) (e'!fi)) + (offset (j!(fi,0)))}) | (F fi) <- fs, e'!fi /= (0,0)])
 
-        -- MDV with frame fi shifted by the new shift for the current frame (ce)
-        shiftedMdv
+            e' = e // [(fi,ce)]
 
-        -- target ZMP position offset: via projection of zmp onto the SP towards the CoM
-        -- TODO handle case where number of intersection points is 0 or more than 1 (take closest point to zmp)
-        Point2 (zmpex,zmpez) = head $ intersectionPoints (sp mdv)
+            -- target ZMP position offset: via projection of zmp onto the SP towards the CoM
+            -- TODO handle case where number of intersection points is 0 or more than 1 (take closest point to zmp)
+            (V2 zmpex zmpez)
+                | spis == []  = V2 0 0
+                | otherwise   = head spis
+            spis = map  (\x -> x-(toXZ (zmp fI))) (polyEdgeLineSegIntersect (sp fI) (toXZ (zmp fI), toXZ (com fI)))
 
-        -- current shift to get to the target ZMP
-        ce = (
-            (zmpex - (b*(xe_2 - (2*xe_1)))) / (b+1), -- x
-            (zmpez - (b*(ze_2 - (2*ze_1)))) / (b+1)  -- z
-        )
-        -- TODO handle fi-2 out of bounds
-        (xe_2,ze_2) = e!(fi-2)
-        (xe_1,ze_1) = e!(fi-1)
+            -- current shift to get to the target ZMP
+            ce = (
+                    (zmpex - (b*(xe_2 - (2*xe_1)))) / (b+1), -- x
+                    (zmpez - (b*(ze_2 - (2*ze_1)))) / (b+1)  -- z
+                )
+            (xe_2,ze_2) = if fi-2 >= fst (bounds e) then e!(fi-2) else (0,0)
+            (xe_1,ze_1) = if fi-1 >= fst (bounds e) then e!(fi-1) else (0,0)
 
-        b = negate $ sum [(m bi) * (vy (xb fi bi)) | bi <- bs]
-                                    /
-                 (sum [(m bi) * (vy (l' fi bi) + g) | bi <- bs] * dt2)
+            b = negate $ sum [(m bi) * (vy (xb fI bi)) | bi <- bs]
+                                        /
+                     (sum [(m bi) * (vy (l' fI bi) + g) | bi <- bs] * dt2)
+
 
     dt2 = dt*dt
 
@@ -749,21 +818,26 @@ scaleAndTranslate targetHeight sampleFrameIndex md = mdTS where
 
 
 getInterpolatedFrame :: Double -> MotionData -> Frame
-getInterpolatedFrame t md = f where
-    n = arraySize $ frames md
-    i = doMod (t / (frameTime md)) + 1 where
-        nd = fromIntegral $ n
-        doMod x
-            | x <= nd = x
-            | otherwise = doMod (x - nd)
-
-    a = (frames md) ! (floor i)
-    b = (frames md) ! if ceiling i > n then 0 else (ceiling i)
-    f = treeZipWith interpJoint a b
-    interp = i - (fromIntegral (floor i))
-    interpJoint af bf = (view af){
-                            rotationL  = Util.slerp (rotationL $- af) (rotationL $- bf) interp
-                        }
+getInterpolatedFrame t md
+    | i > snd (bounds (frames md))  = error "getInterpolatedFrame: i out of bounds"
+    | j > snd (bounds (frames md))  = error "getInterpolatedFrame: j out of bounds"
+    | otherwise = f where
+        n = arraySize $ frames md
+        i' = doMod (t / (frameTime md)) + 1 where
+            nd = fromIntegral $ n
+            doMod x
+                | x < nd = x
+                | otherwise = doMod (x - nd)
+        i = min (n-1) (floor i')
+        j = min (n-1) (i+1)
+        a = (frames md) ! i
+        b = (frames md) ! j
+        f = set ((view f'){offset = ((offset $- a) + (offset $- b)) ^/ 2}) f'
+        f' = treeZipWith interpJoint a b
+        interp = i' - (fromIntegral i)
+        interpJoint af bf = (view af){
+                                rotationL  = Util.slerp (rotationL $- af) (rotationL $- bf) interp
+                            }
 
 
 isFootJoint :: JointF -> Bool

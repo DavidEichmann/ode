@@ -82,6 +82,10 @@ double* sparseMatrixSolve(const int n, const int nnz, int* const mixs, const int
 OgreCanvas oc;
 
 void initOgre() { oc.initOgre(); }
+
+void drawPolygon(double r,double g,double b,double a, int n, double* const vals) {
+	oc.drawPolygon(Ogre::ColourValue(r,g,b,a), n, vals);
+}
 void drawBox(double r,double g,double b,double a,   double sx,double sy,double sz, double cx,double cy,double cz,  double w,double x,double y, double z) {
 	oc.drawBox(Ogre::ColourValue(r,g,b,a), Vec3(sx,sy,sz), Vec3(cx,cy,cz), Quat(w,x,y,z));
 }
