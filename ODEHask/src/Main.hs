@@ -54,16 +54,9 @@ getArguments = do
                 Just w      -> read (drop 3 w)
                 Nothing      -> 0
 
+
 main :: IO ()
 main = do
-    --sparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
-    -- [((i,i), fromIntegral i) | i <- [0..2]]
---    let x = head $ sparseMatrixSolve [((r,c), if (r,c) == (1,1) then 2 else 1) | (r,c) <- range ((0,0),(1,1))] [listArray (0,1) [1,1]]
---    putStrLn $ show $ elems x
-    _main
-
-_main :: IO ()
-_main = do
 
     (file, pp) <- getArguments
 
@@ -92,24 +85,29 @@ _main = do
 mainLoopOut :: Sim -> IO ()
 mainLoopOut sim = do
     ti <- getCurrentTime
-    mapM_ (putStrLn . show) (zip5 (repeat "zmpinsp xz^e zmpMod zmp") (map zmpIsInSp fs) (elems e) (map (vx . zmpMod) fs) (map (vx . zmp) fs))
-    mapM_ (putStrLn . show) (zip3 (repeat "comMod com") (map (vx . comMod) fs) (map (vx . com) fs))
+--    mapM_ (putStrLn . show) (zip5 (repeat "zmpinsp xz^e zmpMod zmp") (map zmpIsInSp fs) (elems e) (map (vx . zmpMod) fs) (map (vx . zmp) fs))
+--    mapM_ (putStrLn . show) (zip3 (repeat "comMod com") (map (vx . comMod) fs) (map (vx . com) fs))
     loop sim ti ti where
         (mdvActual@MotionDataVars{_fN=fN,_fs=fs,_pT=pT,_l=l,_com=com,_zmp=zmp,_sp=sp,_zmpIsInSp=zmpIsInSp}) = getMotionDataVariablesFromMotionData $ targetMotion sim
-        (e,mdvMod@MotionDataVars{_pT=pTMod,_com=comMod,_zmp=zmpMod}) = fitMottionDataToSP mdvActual
---        mdvMod = fitMottionDataToZmp mdvActual (listArray (0,fN-1) (map (\fI -> (V3 0 0 0) + (zmp fI)) fs)) -- zmp of orig data
-----        mdvMod = fitMottionDataToZmp mdvActual (listArray (0,fN-1) (map ((\(V3 x _ z) -> V3 x 0 z) . com) fs)) -- com of orig data
-----        mdvMod = fitMottionDataToZmp mdvActual (listArray (0,fN-1) (map ((\(V3 x _ z) -> V3 1 0 0) . com) fs))
+
+        comI = zmp (F 0)
+        comIF = (zmp (F (fN-1))) - comI
+        bnds = (0,fN-1)
+        targetZmp = array bnds [(i, let t = ((fromIntegral i) / (fromIntegral (fN-1))) in comI + (t*comIF) )  | i <- range bnds]
+
+        mdvMod = fitMottionDataToZmp mdvActual targetZmp
+
         loop sim ti tl = do
             tc <- getCurrentTime
-            sim' <- mainLoop sim mdvActual mdvMod (realToFrac $ diffUTCTime tc ti) (realToFrac $ diffUTCTime tc tl)
+            sim' <- mainLoop sim mdvActual mdvMod targetZmp (realToFrac $ diffUTCTime tc ti) (realToFrac $ diffUTCTime tc tl)
             loop sim' ti tc
 
-mainLoop :: Sim -> MotionDataVars -> MotionDataVars -> Double -> Double -> IO Sim
+mainLoop :: Sim -> MotionDataVars -> MotionDataVars -> Array Int Vec3 -> Double -> Double -> IO Sim
 mainLoop
   sim
   mvdOrig@MotionDataVars{_zmpIsInSp=aniZmpIsInSp,_com=targetZmp'@aniCom,_zmp=aniZmp,_sp=aniSp}
   mdv@MotionDataVars{_zmpIsInSp=zmpIsInSp,_dt=dt,_fs=fs,_fN=fN,_bs=bs,_zmp=zmp}
+  targetZmp
   t'
   simdt = do
     --sim' <- step sim simdt
@@ -118,38 +116,13 @@ mainLoop
         sim' = sim
     cSimFrame <- getSimSkel sim'
     let
-        targetZmp = (\(V3 x _ z) -> V3 x 0 z) . targetZmp'
---        md = targetMotion sim
---        ft = frameTime md
-
---        fLength = arraySize $ frames md
         maxFIndex = fN - 1
-        frameIx = F (1 + ((floor $ t / dt) `mod` maxFIndex))
---        cAniFrame = (frames md) ! frameIx
+        frameix = 1 + ((floor $ t / dt) `mod` maxFIndex)
+        frameIx = F frameix
 
---        endSite0 = des cFrame where
---            des f = maybe f right (child0 f)
---            right f = maybe (des f) right (rightSib f)
---        c0 = fromJust $ child0 cFrame
---
---        com = getPosTotalCom cFrame
-
-        drawLocalJointProps j = do
-            if hasParent j
-                then do
---                    drawVec3 (getPosCom j) ((getLinearVel j) ^* 0.5) 0.02
---                    drawVec3 (getPosCom j) ((getLinearAcc j) ^* 0.5) 0.02
---                    drawVec3 (getPosCom j) ((getAngularVel j) ^* 0.5) 0.05
---                    drawVec3 (getPosCom j) ((getAngularAcc j) ^* 0.5) 0.01
---                    drawVec3 (getPosCom j) ((getAngularMomentum j) ^* 10) 0.05
---                    drawVec3 (getPosCom j) ((getAngularMomentum j) ^* 1) 0.05
---                    print $ getAngularVel j
---                    print $ getAngularMomentum' j
-                    return ()
-                else
-                    return ()
     -- sim visualization
 --    drawSkeleton $ cSimFrame
+
     -- Annimation
     let aniOffset =   zero --V3 (-2) 0 0
     drawFrameIx White aniOffset mdv frameIx
@@ -160,26 +133,14 @@ mainLoop
     mapM_ ((\p -> drawPointC Blue p 0.02) . (\(V2 x z) ->V3 x 0 z)) (polyEdgeLineSegIntersect (aniSp frameIx) (toXZ (aniZmp frameIx), toXZ (aniCom frameIx)))
 
     -- ZMP
-    drawPointC (if zmpIsInSp frameIx then White else Red) (aniOffset + (zmp frameIx)) 0.02
-    drawPointC (if aniZmpIsInSp frameIx then (WhiteA 0.5) else (OrangeA 0.5)) (aniOffset + (aniZmp frameIx)) 0.04
+    putStrLn $ "zmp: " ++ (show $ zmp frameIx)
+    drawPointC (Red) (zmp frameIx) 0.02
+    drawPointC (WhiteA 0.4) (targetZmp!(frameix)) 0.04
+--    drawPointC (if zmpIsInSp frameIx then White else Red) (aniOffset + (zmp frameIx)) 0.02
+--    drawPointC (if aniZmpIsInSp frameIx then (WhiteA 0.5) else (OrangeA 0.5)) (aniOffset + (aniZmp frameIx)) 0.04
 --    drawPointC Red (aniOffset + (targetZmp frameIx)) 0.04
     -- COM
     drawPointC Yellow ((* (V3 1 0 1)) $ aniCom frameIx) 0.02
-    -- COM floor
---    let V3 x _ z = com in drawPointC Yellow (V3 x 0 z) 0.04
-
-    -- print output
---    putStrLn $ "tot lin momentum = " ++ (show $ norm $ getTotalLinearMomentum cFrame)
---    putStrLn $ "getTotalAngularMomentum' = " ++ (show $ getTotalAngularMomentum' cFrame)
-
-
-    -- local props for all joits (not root)
---    treeMapM_ drawLocalJointProps cFrame
-
---    drawVec3C Black com ((getTotalAngularMomentum' cFrame) ^* 0.1) 0.015
---    drawVec3C Green com ((getTotalLinearMomentum' cFrame) ^* 0.1) 0.015
-    --drawVec3 com ((getTotalLinearMomentum cFrame) ^* 0.2) 0.05
-    --drawVec3 (getPosTotalCom endSite0) ((getTotalLinearMomentum endSite0) ^* 1) 0.03
 
 
     -- do render, sleep, then loop
