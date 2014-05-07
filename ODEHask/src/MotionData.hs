@@ -317,13 +317,13 @@ getMotionDataVariables dt j bskel
         derive_ = memoizeFB derive__
         derive__ (fI@(F fi)) bI
             | fi > fst bndF     = ((fn fI bI) - (fn (F (fi-1)) bI)) ^/ dt
-            | otherwise         = derive_ (F (fi+1)) bI
+            | otherwise         = 0 --derive_ (F (fi+1)) bI
     deriveF :: (FrameIx -> Vec3) -> (FrameIx -> Vec3)
     deriveF fn = derive__ where
         derive_ = memoizeF derive__
         derive__ (fI@(F fi))
             | fi > fst bndF     = ((fn fI) - (fn (F (fi-1)))) ^/ dt
-            | otherwise         = derive_ (F (fi+1))
+            | otherwise         = 0 --derive_ (F (fi+1))
 
     -- bone linear velocity
     l :: FrameIx -> BoneIx -> Vec3
@@ -743,16 +743,28 @@ fitMottionDataToZmp mdv zmpX = modifiedMdv where
 
     -- generate the matrix M (list of position and values... sparse matrix)
     _M :: [((Int,Int),Double)]
---    _M = ((0,0), 1) : ((fN-1,fN-1), 1) : concat [[((r,r-1), f r), ((r,r),diag r), ((r,r+1), f r)] | r <- [1..fN-2]] where
-    _M = ((0,0), 1) : ((1,0), negate (f 1)) : ((1,1), 1 + (f 1)) : concat [[((r,r-2), f r), ((r,r-1), (-2)*(f r)), ((r,r), 1 + (f r))] | r <- [2..fN-1]] where
-        dt2         = dt ** 2
-        f :: Int -> Double
-        f           = memoize (0,fN-1) f' where
-                        f' :: Int -> Double
-                        f' r =  (negate (sum (map (\bI -> (m bI) * (y r bI)) bs))) /
-                                    (dt2 * (sum (fmap (\bI -> (m bI) * ((vy $ l' fI bI) + g)) bs))) where
-                                   fI = F r
-        diag r = 1 - (2 * (f r))
+    _M = ((0,0), 1) : ((fN-1,fN-1), 1) : concat [[((r,r-1), f r), ((r,r),diag r), ((r,r+1), f r)] | r <- [1..fN-2]] where
+--    _M =
+--         ((0,0), 1) :
+--         ((1,0), negate (f 1)) :
+--         ((1,1), 1 + (f 1)) :
+--         concat [
+--            [
+--
+--                ((r,r-2), f r),
+--                ((r,r-1), (-2)*(f r)),
+--                ((r,r),   1 + (f r))
+--
+--            ] | r <- [2..fN-1]
+--        ] where
+            dt2         = dt ** 2
+            f :: Int -> Double
+            f           = memoize (0,fN-1) f' where
+                            f' :: Int -> Double
+                            f' r =  (negate (sum (map (\bI -> (m bI) * (y r bI)) bs))) /
+                                        (dt2 * (sum (fmap (\bI -> (m bI) * ((vy $ l' fI bI) + g)) bs))) where
+                                       fI = F r
+            diag r = 1 - (2 * (f r))
 
     -- ep
     ep :: Array Int Vec3
