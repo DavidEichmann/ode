@@ -93,6 +93,9 @@ v2tov3 (V2 x y) = V3 x y 0
 v3tov2 :: V3 a -> V2 a
 v3tov2 (V3 x y _) = V2 x y
 
+norm2 :: (Num a, Metric f) => f a -> a
+norm2 x = dot x x
+
 
 -- point intersects simple polygon
 -- http://en.wikipedia.org/wiki/Point_in_polygon   Ray casting algorithm
@@ -115,21 +118,20 @@ polyEdgeLineSegIntersect poly ls = catMaybes $ map (intersectLineSegs ls) edges 
 
 -- linesegment intersects linesegment
 -- find intersect.... A solution is only returned if there is exactly 1 intersection point
--- http://stackoverflow.com/questions/563198/how-do-you-detect-where-two-line-segments-intersect
 intersectLineSegs ::  (Vec2, Vec2) -> (Vec2, Vec2) -> Maybe Vec2
 intersectLineSegs (p',pr') (q',qs')
     | rxs /= 0 &&
-        (-0.000001) <= t && t <= 1.000001 &&
-        (-0.000001) <= u && u <= 1.000001       = Just (v3tov2 (p + (t *^ r)))
+        0 <= t && t <= 1 &&
+        0 <= u && u <= 1       = Just (v3tov2 (p + (t *^ r)))
     | otherwise = Nothing
     where
         p:pr:q:qs:_ = map v2tov3 [p',pr',q',qs']
         r = pr - p
         s = qs - q
         rxs = r `cross` s
-        rxsN = norm rxs
-        t = (norm ((q - p) `cross` s)) / rxsN
-        u = (norm ((q - p) `cross` r)) / rxsN
+        rxsZ = vz rxs
+        t = (vz ((q - p) `cross` s)) / rxsZ
+        u = (vz ((q - p) `cross` r)) / rxsZ
 
 -- sort/filter an array of points into convex hull order (first and last elements are NOT the same) copied from wikibooks
 --  http://en.wikibooks.org/wiki/Algorithm_Implementation/Geometry/Convex_hull/Monotone_chain

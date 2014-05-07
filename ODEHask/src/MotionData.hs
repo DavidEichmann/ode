@@ -7,7 +7,7 @@ import Data.Maybe
 import Data.TreeF as T
 import Data.Geometry.Point
 import Data.Geometry.Polygon
-import Linear hiding (_i,_j,_k,_w)
+import Linear hiding (_i,_j,_k,_w,trace)
 import Util
 import Constants
 import FFI
@@ -16,7 +16,7 @@ import Debug.Trace
 
 import Data.Char
 import Text.Parsec
-import Text.Parsec.Token
+import Text.Parsec.Token hiding (dot)
 import Text.Parsec.Language
 
 
@@ -317,13 +317,13 @@ getMotionDataVariables dt j bskel
         derive_ = memoizeFB derive__
         derive__ (fI@(F fi)) bI
             | fi > fst bndF     = ((fn fI bI) - (fn (F (fi-1)) bI)) ^/ dt
-            | otherwise         = 0 --derive_ (F (fi+1)) bI
+            | otherwise         = derive_ (F (fi+1)) bI
     deriveF :: (FrameIx -> Vec3) -> (FrameIx -> Vec3)
     deriveF fn = derive__ where
         derive_ = memoizeF derive__
         derive__ (fI@(F fi))
             | fi > fst bndF     = ((fn fI) - (fn (F (fi-1)))) ^/ dt
-            | otherwise         = 0 --derive_ (F (fi+1))
+            | otherwise         = derive_ (F (fi+1))
 
     -- bone linear velocity
     l :: FrameIx -> BoneIx -> Vec3
@@ -444,7 +444,7 @@ getMotionDataVariables dt j bskel
         (V3 _ floorY _) = base_xeb ti
         -- main foot sole corners
         (V3 _ _ fHalfLength) = (fmap abs ((base_xeb fi) - (base_xsb fi))) ^/ 2
-        fSoleYOffset = abs ((vy (base_xb fi)) - floorY)
+        fSoleYOffset = floorY - (vy (base_xb fi))
         footCorners = [
                 V3   halfFootWidth  fSoleYOffset fHalfLength,
                 V3 (-halfFootWidth) fSoleYOffset fHalfLength,
@@ -453,7 +453,7 @@ getMotionDataVariables dt j bskel
             ]
         -- toe corners
         (V3 _ _ tHalfLength) = (fmap abs ((base_xeb ti) - (base_xsb ti))) ^/ 2
-        tSoleYOffset = abs ((vy (base_xb ti)) - floorY)
+        tSoleYOffset = floorY - (vy (base_xb ti))
         toeCorners = [
                 V3   halfFootWidth  tSoleYOffset tHalfLength,
                 V3 (-halfFootWidth) tSoleYOffset tHalfLength,
@@ -478,8 +478,7 @@ getMotionDataVariables dt j bskel
     -- support Polygon (must be touching the ground else Nothing)
     sp :: FrameIx -> [Vec2]
     sp fI
-        | length contactPoints == 1 = error "only 1 contact point"
-        | null contactPoints    = []
+        | length contactPoints <= 1 = []
         | otherwise             = hull
         where
             hull = convexHull contactPoints
@@ -660,17 +659,17 @@ preProcess windowSize md
 
 -- addapted from "Online Generation of Humanoid Walking Motion based on a Fast Generation Method of Motion Pattern that Follows Desired ZMP"
 -- attempts to move zmp of each frame such that it is in the support polygon
-fitMottionDataToSP :: MotionDataVars -> MotionDataVars
-fitMottionDataToSP mdvOrig@MotionDataVars{_fN=fN,_g=g,_dt=dt,_bs=bs,_fs=fs} = newMDV where
+fitMottionDataToSP :: MotionDataVars -> (Array Int (Double, Double),MotionDataVars)
+fitMottionDataToSP mdvOrig@MotionDataVars{_fN=fN,_g=g,_dt=dt,_bs=bs,_fs=fs,_zmp=zmpO,_sp=spO} = newMDV where
 
     newMDV = calculateOffsetMap mdvOrig (listArray (0,fN-1) (map (\_ -> (0,0)) fs)) 0
 
     -- take:    current mdv, current offset map, current frame index
     -- return:  new motion data vars
-    calculateOffsetMap :: MotionDataVars -> Array Int (Double,Double) -> Int -> MotionDataVars
+    calculateOffsetMap :: MotionDataVars -> Array Int (Double,Double) -> Int -> (Array Int (Double, Double),MotionDataVars)
     calculateOffsetMap (mdv@MotionDataVars{_zmpIsInSp=zmpIsInSp,_j=j,_m=m,_xb=xb,_l'=l',_com=com,_zmp=zmp,_sp=sp}) e fi
         -- end of Motion data.. then we are finished
-        | fi > (snd $ bounds e)     = mdv
+        | fi > (snd $ bounds e)     = (e,mdv)
         -- ZMP already in the SP, move to the next frame
         | zmpIsInSp (F fi)          = calculateOffsetMap mdv e (fi + 1)
         -- ZMP outside of the SP, modify the frame and move to the next frame
@@ -679,22 +678,30 @@ fitMottionDataToSP mdvOrig@MotionDataVars{_fN=fN,_g=g,_dt=dt,_bs=bs,_fs=fs} = ne
             fI = F fi
 
             -- MDV with frame fi shifted by the new shift for the current frame (ce)
-            shiftedMdv = modifyMotionDataVars mdvOrig
-                                (j // [((fi,0), (j!(fi,0)){offset = ((\(x,z) -> V3 x 0 z) (e'!fi)) + (offset (j!(fi,0)))}) | (F fi) <- fs, e'!fi /= (0,0)])
+            shiftedMdv = modifyMotionDataVars mdvOrig (j // [(fiRootJIx, fiRootJ{offset = (offset fiRootJ) + (V3 cex 0 cez)})])
+            fiRootJIx = (fi,0)
+            fiRootJ = j!fiRootJIx
 
             e' = e // [(fi,ce)]
 
+
             -- target ZMP position offset: via projection of zmp onto the SP towards the CoM
-            -- TODO handle case where number of intersection points is 0 or more than 1 (take closest point to zmp)
+            -- TODO handle case where number of intersection points is 0 or more than 1 (take closest point to zmp -> smallest offset)
             (V2 zmpex zmpez)
                 | spis == []  = V2 0 0
-                | otherwise   = head spis
-            spis = map  (\x -> x-(toXZ (zmp fI))) (polyEdgeLineSegIntersect (sp fI) (toXZ (zmp fI), toXZ (com fI)))
+                | otherwise   = let zmpe = head $ sortBy (\a b -> compare (dot a a) (dot b b)) spis in trace ((show fi ++ " : zmpe : " ++ (show zmpe))) zmpe
+            spis = map  (\x -> x-(toXZ (zmpO fI))) (polyEdgeLineSegIntersect poly (let zmp2Com = (toXZ (zmp fI), toXZ (com fI)) in trace (show $ zmp2Com) zmp2Com))
+
+            poly = sp fI
+--            poly = spO fI
+--            expandFactor = 2
+--            expandedSPO = map (\v -> ((v-centroidSPO)^*expandFactor) + centroidSPO ) poly
+--            centroidSPO = (foldr1 (+) poly) ^/ (fromIntegral (length poly))
 
             -- current shift to get to the target ZMP
-            ce = (
-                    (zmpex - (b*(xe_2 - (2*xe_1)))) / (b+1), -- x
-                    (zmpez - (b*(ze_2 - (2*ze_1)))) / (b+1)  -- z
+            ce@(cex,cez) = (
+                    (zmpex - (b*(xe_2 - (2*xe_1)))) / (b), -- x
+                    (zmpez - (b*(ze_2 - (2*ze_1)))) / (b)  -- z
                 )
             (xe_2,ze_2) = if fi-2 >= fst (bounds e) then e!(fi-2) else (0,0)
             (xe_1,ze_1) = if fi-1 >= fst (bounds e) then e!(fi-1) else (0,0)

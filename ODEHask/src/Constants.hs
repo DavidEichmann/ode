@@ -23,4 +23,4 @@ footWidth :: Double
 footWidth = 0.08
 
 floorContactThreshold :: Double
-floorContactThreshold = 0.05
+floorContactThreshold = 0.01

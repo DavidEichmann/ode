@@ -92,9 +92,11 @@ _main = do
 mainLoopOut :: Sim -> IO ()
 mainLoopOut sim = do
     ti <- getCurrentTime
+    mapM_ (putStrLn . show) (zip5 (repeat "zmpinsp xz^e zmpMod zmp") (map zmpIsInSp fs) (elems e) (map (vx . zmpMod) fs) (map (vx . zmp) fs))
+    mapM_ (putStrLn . show) (zip3 (repeat "comMod com") (map (vx . comMod) fs) (map (vx . com) fs))
     loop sim ti ti where
-        (mdvActual@MotionDataVars{_fN=fN,_fs=fs,_com=com,_zmp=zmp}) = getMotionDataVariablesFromMotionData $ targetMotion sim
-        mdvMod = fitMottionDataToSP mdvActual
+        (mdvActual@MotionDataVars{_fN=fN,_fs=fs,_pT=pT,_l=l,_com=com,_zmp=zmp,_sp=sp,_zmpIsInSp=zmpIsInSp}) = getMotionDataVariablesFromMotionData $ targetMotion sim
+        (e,mdvMod@MotionDataVars{_pT=pTMod,_com=comMod,_zmp=zmpMod}) = fitMottionDataToSP mdvActual
 --        mdvMod = fitMottionDataToZmp mdvActual (listArray (0,fN-1) (map (\fI -> (V3 0 0 0) + (zmp fI)) fs)) -- zmp of orig data
 ----        mdvMod = fitMottionDataToZmp mdvActual (listArray (0,fN-1) (map ((\(V3 x _ z) -> V3 x 0 z) . com) fs)) -- com of orig data
 ----        mdvMod = fitMottionDataToZmp mdvActual (listArray (0,fN-1) (map ((\(V3 x _ z) -> V3 1 0 0) . com) fs))
@@ -104,9 +106,16 @@ mainLoopOut sim = do
             loop sim' ti tc
 
 mainLoop :: Sim -> MotionDataVars -> MotionDataVars -> Double -> Double -> IO Sim
-mainLoop sim mvdOrig@MotionDataVars{_com=targetZmp',_zmp=aniZmp,_zmpIsInSp=aniZmpIsInSp} mdv@MotionDataVars{_zmpIsInSp=zmpIsInSp,_dt=dt,_fs=fs,_fN=fN,_bs=bs,_zmp=zmp} t simdt = do
+mainLoop
+  sim
+  mvdOrig@MotionDataVars{_zmpIsInSp=aniZmpIsInSp,_com=targetZmp'@aniCom,_zmp=aniZmp,_sp=aniSp}
+  mdv@MotionDataVars{_zmpIsInSp=zmpIsInSp,_dt=dt,_fs=fs,_fN=fN,_bs=bs,_zmp=zmp}
+  t'
+  simdt = do
     --sim' <- step sim simdt
-    let sim' = sim
+    let
+        t = t'
+        sim' = sim
     cSimFrame <- getSimSkel sim'
     let
         targetZmp = (\(V3 x _ z) -> V3 x 0 z) . targetZmp'
@@ -145,12 +154,17 @@ mainLoop sim mvdOrig@MotionDataVars{_com=targetZmp',_zmp=aniZmp,_zmpIsInSp=aniZm
     let aniOffset =   zero --V3 (-2) 0 0
     drawFrameIx White aniOffset mdv frameIx
     drawFrameIx (BlackA 0.25) aniOffset mvdOrig frameIx
+    -- SP
+--    drawPolygonC (OrangeA 0.3) (map (\(V2 x z) -> V3 x 0 z) (aniSp frameIx))
+    drawPolygonEdgesC Black (map (\(V2 x z) -> V3 x 0 z) (aniSp frameIx))
+    mapM_ ((\p -> drawPointC Blue p 0.02) . (\(V2 x z) ->V3 x 0 z)) (polyEdgeLineSegIntersect (aniSp frameIx) (toXZ (aniZmp frameIx), toXZ (aniCom frameIx)))
+
     -- ZMP
-    --drawPointC (if zmpIsInSp frameIx then White else Red) (aniOffset + (zmp frameIx)) 0.04
-    drawPointC (if aniZmpIsInSp frameIx then White else Red) (aniOffset + (aniZmp frameIx)) 0.04
+    drawPointC (if zmpIsInSp frameIx then White else Red) (aniOffset + (zmp frameIx)) 0.02
+    drawPointC (if aniZmpIsInSp frameIx then (WhiteA 0.5) else (OrangeA 0.5)) (aniOffset + (aniZmp frameIx)) 0.04
 --    drawPointC Red (aniOffset + (targetZmp frameIx)) 0.04
     -- COM
---    drawPointC Yellow com 0.04
+    drawPointC Yellow ((* (V3 1 0 1)) $ aniCom frameIx) 0.02
     -- COM floor
 --    let V3 x _ z = com in drawPointC Yellow (V3 x 0 z) 0.04
 
@@ -179,6 +193,9 @@ mainLoop sim mvdOrig@MotionDataVars{_com=targetZmp',_zmp=aniZmp,_zmpIsInSp=aniZm
 --        else return ()
     return sim'
 
+drawPolygonEdgesC :: Color -> [Vec3] -> IO ()
+drawPolygonEdgesC _ [] = return ()
+drawPolygonEdgesC c poly = mapM_ (\(a,b) -> drawBoneC c a b 0.005) (zip poly ((tail poly) ++ [head poly]))
 
 drawFrameIx ::  Color -> Vec3 -> MotionDataVars -> FrameIx -> IO ()
 drawFrameIx c offset' MotionDataVars{_bs=bs,_xsb=xsb,_xeb=xeb} fi = mapM_ drawBone' bs where

@@ -4,6 +4,7 @@ module FFI (
     sparseMatrixSolve,
 
     initOgre,
+    drawPolygonC,
     drawBone,
     drawBoneC,
     drawBox,
@@ -57,32 +58,18 @@ doRender = fmap ((/=0) . fromIntegral) doRender_c
 
 
 foreign import ccall unsafe "Interface.h drawPolygon"
-    drawPolygon_c :: Double -> CDouble -> CDouble -> CDouble -> CInt -> Ptr CDouble -> IO ()
-drawPolygon :: Color -> [Vec3] -> IO ()
-drawPolygon matrix rhs = ???draw polygon???? unsafeLocalState (do
-    let
-        n = arraySize $ head rhs   -- size of rhs vectors (also matrix is n x n)
-        r = length rhs          -- number of rhs vectors
-
-        mNZ = length matrix         -- number of nonempty (non-zero) matix elements
-        arrMIxsSize = 2 * mNZ       -- size of matrix index array
-        arrSize = (mNZ) + (n * r)   -- size of dataArray
-
-        breakSized :: Int -> [a] -> [[a]]
-        breakSized s [] = []
-        breakSized s a = let (b, rem) = splitAt s a in b : (breakSized s rem)
-
-    allocaArray arrMIxsSize (\arrMIxs -> do
-        allocaArray arrSize (\arr -> do
-            -- fill matrix index array (in the form: [row1,col1,row2,col2 ... , row mNZ, col mNZ])
-            pokeArray arrMIxs (map fromIntegral (concat $ map (\((r,c),_) -> [r,c]) matrix))
-            -- fill array with matrix values then rhs vectors
-            pokeArray arr (map CDouble ((map snd matrix) ++ (concat $ map elems rhs)))
-            results <- cdPeekArray (r*n) $ sparseMatrixSolve_c (fromIntegral n) (fromIntegral mNZ) arrMIxs (fromIntegral r) arr
-            return $ map (listArray (0,n-1)) (breakSized n results)
-         )
+    drawPolygon_c :: CDouble -> CDouble -> CDouble -> CDouble -> CInt -> Ptr CDouble -> IO ()
+drawPolygonC :: Color -> [Vec3] -> IO ()
+drawPolygonC c poly = do
+    let n = length poly
+    allocaArray (3*n) (\arrVals -> do
+        -- fill array with Vec3 values
+        pokeArray arrVals (map CDouble $ concat $ map (\(V3 x y z) -> [x,y,z]) poly)
+        -- draw
+        ((applyColor c) >>> (apply (fromIntegral n)) >>> (apply arrVals)) drawPolygon_c
      )
- )
+drawPolygon :: [Vec3] -> IO ()
+drawPolygon = drawPolygonC White
 
 foreign import ccall unsafe "Interface.h drawBox"
     drawBox_c :: CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()
