@@ -37,6 +37,7 @@ double* sparseMatrixSolve(const int n, const int nnz, int* const mixs, const int
 	}
 	A.setFromTriplets(entries.begin(),entries.end());
 	A.makeCompressed();
+	//cout << "Matrix determinant: " << A.toDense().determinant() << endl;
 	// fill b
 	MatrixXd b(n,r);
 	MatrixXd x(n,r);
@@ -69,7 +70,7 @@ double* sparseMatrixSolve(const int n, const int nnz, int* const mixs, const int
 		cerr << "Matrix solver: failed in SOLVE stage" << endl;
 		exit(1);
 	}
-	// solve for another right hand side:
+	// copy results into array
 	for(int bc = 0; bc < r; bc++) {
 		for(int br = 0; br < n; br++) {
 			matrixSolveResults[(n*bc)+br] = x(br,bc);
@@ -77,6 +78,40 @@ double* sparseMatrixSolve(const int n, const int nnz, int* const mixs, const int
 	}
 	cout << "Sparse Matrix solve finished!" << endl;
 	return matrixSolveResults;
+}
+
+double* matrixInverseResults = new double[1];
+double* inverseMatrix(const int r, const int c, double* vals) {
+	// prepare return buffer
+	delete[] matrixInverseResults;
+	matrixInverseResults = new double[r*c];
+	MatrixXd m(r,c);
+	MatrixXd mInv(r,c);
+	for(int ri = 0; ri < r; ri++) {
+		for(int ci = 0; ci < c; ci++) {
+			m(ri,ci) = vals[(ri*c) + ci];
+		}
+	}
+	FullPivLU<MatrixXd> lu(m);
+	if(!lu.isInvertible()) {
+		cout << "Matrix is NOT INVERTABLE!!! det: " << lu.determinant() << endl;
+		cout << "Matrix: " << endl;
+		for(int ri = 0; ri < r; ri++) {
+			for(int ci = 0; ci < c; ci++) {
+				cout << m(ri,ci) << "\t";
+			}
+			cout << endl;
+		}
+		exit(1);
+	}
+	mInv = lu.inverse();
+
+	for(int ri = 0; ri < r; ri++) {
+		for(int ci = 0; ci < c; ci++) {
+			matrixInverseResults[(ri*c) + ci] = mInv(ri,ci);
+		}
+	}
+	return matrixInverseResults;
 }
 
 OgreCanvas oc;

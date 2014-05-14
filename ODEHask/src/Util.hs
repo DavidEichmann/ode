@@ -1,10 +1,12 @@
 module Util where
 
-import Linear hiding (slerp)
-import Linear.Matrix
+import Linear hiding (slerp,trace)
+import Linear.Matrix hiding (trace)
 import Data.Array
 import Data.Maybe
 import Data.List (sort)
+
+import Debug.Trace
 
 type Vec2 = V2 Double
 type Vec3 = V3 Double
@@ -86,6 +88,9 @@ vz (V3 _ _ z) = z
 
 toXZ :: Vec3 -> Vec2
 toXZ (V3 x _ z) =  V2 x z
+
+xz2x0z :: Vec2 -> Vec3
+xz2x0z (V2 x z) = V3 x 0 z
 
 v2tov3 :: Num a => V2 a -> V3 a
 v2tov3 (V2 x y) = V3 x y 0
@@ -173,4 +178,55 @@ convexHull points = lower ++ upper where
         -- removing that and using (upper ++ lower) above will make it cw.
         go acc [] = reverse $ tail acc
 
+arrayEl :: Ix a => (a,a) -> (a -> b) -> Array a b
+arrayEl bnd fn = array bnd [( ix,
+                fn ix
+            ) | ix <- range bnd]
+
+matrixMult :: Array (Int,Int) Double -> Array (Int,Int) Double -> Array (Int,Int) Double
+matrixMult a b
+    | m /= mb   = error ("Trying to multiply matriceis of incompatible sizes:" ++ (show $ bounds a) ++ (show $ bounds b))
+    | otherwise = ab
+    where
+        ((ari,aci),(arf,acf)) = bounds a
+        ((bri,bci),(brf,bcf)) = bounds b
+        n = 1 + (arf-ari)
+        m = 1 + (acf-aci)
+        mb = 1 + (brf-bri)
+        p = 1 + (bcf-bci)
+
+        ab = arrayEl ((0,0),(n-1,p-1)) (\(r,c) ->
+            sum [ (a!(r+ari,i+aci)) * (b!(i+bri,c+bci)) | i <- [0..m-1]]
+         )
+
+matrixTranspose ::  Array (Int,Int) a ->  Array (Int,Int) a
+matrixTranspose m = array newBnds [((r,c), m!(rI+c,cI+r))  | (r,c) <- range newBnds] where
+    newBnds = ((0,0),(cF-cI,rF-rI))
+    ((rI,cI),(rF,cF)) = bounds m
+
+matrixAddition ::  Num a => Array (Int,Int) a ->  Array (Int,Int) a ->  Array (Int,Int) a
+matrixAddition a b = array newBnds [((r,c), (a!(r,c)) + (b!(r,c))) | (r,c) <- range newBnds] where
+    newBnds = ((max rIa rIb, max cIa cIb),(min rFa rFb, min rFa rFb))
+    ((rIa,cIa),(rFa,cFa)) = bounds a
+    ((rIb,cIb),(rFb,cFb)) = bounds b
+
+matrix :: Int -> Int -> (Int -> Int -> a) -> Array (Int,Int) a
+matrix rs cs fn = listArray bnds [ fn r c | (r,c) <- range bnds] where
+    bnds = ((0,0),(rs-1,cs-1))
+
+showMatrix :: Show a => Array (Int, Int) a -> String
+showMatrix m = concat [(show $ m!(r,c)) ++ (if c == cF && r /= rF then "\n" else "  \t") | (r,c) <- range bnds] where
+    bnds@((_,_),(rF,cF)) = bounds m
+
+applyUntil :: (a -> a) -> (a -> Bool) -> a -> a
+applyUntil = applyUntilN (-1)
+
+applyUntilN ::  Int -> (a -> a) -> (a -> Bool)-> a -> a
+applyUntilN n fn ck val
+    | ck val                = val
+    | n == 0                = trace ("untill finished early") val
+    | otherwise             = applyUntilN (n-1) fn ck (fn val)
+
+traceShowV :: Show a => a -> a
+traceShowV v = traceShow v v
 

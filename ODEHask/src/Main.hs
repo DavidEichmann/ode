@@ -78,7 +78,6 @@ main = do
             doDebug md
         else do
             seq (foldl1' seq (show md)) (putStrLn "Done processing data.")
-            initOgre
             sim <- startSim md
             mainLoopOut sim
 
@@ -87,13 +86,16 @@ mainLoopOut sim = do
     ti <- getCurrentTime
 --    mapM_ (putStrLn . show) (zip5 (repeat "zmpinsp xz^e zmpMod zmp") (map zmpIsInSp fs) (elems e) (map (vx . zmpMod) fs) (map (vx . zmp) fs))
 --    mapM_ (putStrLn . show) (zip3 (repeat "comMod com") (map (vx . comMod) fs) (map (vx . com) fs))
+    print (com (F 0))
+    initOgre
     loop sim ti ti where
         (mdvActual@MotionDataVars{_fN=fN,_fs=fs,_pT=pT,_l=l,_com=com,_zmp=zmp,_sp=sp,_zmpIsInSp=zmpIsInSp}) = getMotionDataVariablesFromMotionData $ targetMotion sim
-
-        comI = zmp (F 0)
-        comIF = (zmp (F (fN-1))) - comI
+        comI  =  ((com (F 0)) * (V3 1 0 1)) + (V3 (-0.1) 0 0) --zmp (F 0)
+        comIF = (((com (F 0)) * (V3 1 0 1)) + (V3 (0.1) 0 0)) -comI --(zmp (F (fN-1))) - comI
         bnds = (0,fN-1)
-        targetZmp = array bnds [(i, let t = ((fromIntegral i) / (fromIntegral (fN-1))) in comI + (t*comIF) )  | i <- range bnds]
+--        targetZmp = array bnds [(i, let t = ((fromIntegral i) / (fromIntegral (fN-1))) in comI + ((fromIntegral (round t))*^comIF) )  | i <- range bnds]
+        -- target zmp as center of SP
+        targetZmp = array bnds [(i, xz2x0z (let poly = (sp (F i)) in sum poly ^/ (fromIntegral $ length poly)))  | i <- range bnds]
 
         mdvMod = fitMottionDataToZmp mdvActual targetZmp
 
@@ -112,12 +114,13 @@ mainLoop
   simdt = do
     --sim' <- step sim simdt
     let
-        t = t'
+        t = t'/5
         sim' = sim
     cSimFrame <- getSimSkel sim'
     let
+        loop = True
         maxFIndex = fN - 1
-        frameix = 1 + ((floor $ t / dt) `mod` maxFIndex)
+        frameix = if loop then (1 + ((floor $ t / dt))) `mod` maxFIndex else min (maxFIndex) (1 + ((floor $ t / dt)))
         frameIx = F frameix
 
     -- sim visualization
@@ -130,17 +133,18 @@ mainLoop
     -- SP
 --    drawPolygonC (OrangeA 0.3) (map (\(V2 x z) -> V3 x 0 z) (aniSp frameIx))
     drawPolygonEdgesC Black (map (\(V2 x z) -> V3 x 0 z) (aniSp frameIx))
-    mapM_ ((\p -> drawPointC Blue p 0.02) . (\(V2 x z) ->V3 x 0 z)) (polyEdgeLineSegIntersect (aniSp frameIx) (toXZ (aniZmp frameIx), toXZ (aniCom frameIx)))
+    --mapM_ ((\p -> drawPointC Blue p 0.02) . (\(V2 x z) ->V3 x 0 z)) (polyEdgeLineSegIntersect (aniSp frameIx) (toXZ (aniZmp frameIx), toXZ (aniCom frameIx)))
 
     -- ZMP
     putStrLn $ "zmp: " ++ (show $ zmp frameIx)
+    drawPointC (Green) (aniZmp frameIx) 0.02
     drawPointC (Red) (zmp frameIx) 0.02
-    drawPointC (WhiteA 0.4) (targetZmp!(frameix)) 0.04
+    drawPointC (WhiteA 0.4) (   targetZmp!(frameix)) 0.04
 --    drawPointC (if zmpIsInSp frameIx then White else Red) (aniOffset + (zmp frameIx)) 0.02
 --    drawPointC (if aniZmpIsInSp frameIx then (WhiteA 0.5) else (OrangeA 0.5)) (aniOffset + (aniZmp frameIx)) 0.04
 --    drawPointC Red (aniOffset + (targetZmp frameIx)) 0.04
     -- COM
-    drawPointC Yellow ((* (V3 1 0 1)) $ aniCom frameIx) 0.02
+    --drawPointC Yellow ((* (V3 1 0 1)) $ aniCom frameIx) 0.02
 
 
     -- do render, sleep, then loop

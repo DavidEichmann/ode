@@ -7,6 +7,7 @@ import Data.Maybe
 import Data.TreeF as T
 import Data.Geometry.Point
 import Data.Geometry.Polygon
+import Data.MemoTrie
 import Linear hiding (_i,_j,_k,_w,trace)
 import Util
 import Constants
@@ -47,6 +48,8 @@ newtype BoneIx = B Int
 
 
 
+
+
 data MotionDataVars = MotionDataVars {
     -- raw data
     _dt     :: Double,
@@ -62,6 +65,7 @@ data MotionDataVars = MotionDataVars {
     _js     :: [JointIx],
     _bs     :: [BoneIx],
     _fs     :: [FrameIx],
+    _bj     :: BoneIx -> JointIx,
     _pj     :: JointIx -> JointIx,
     _pb     :: BoneIx -> BoneIx,
     _d      :: BoneIx -> Double,
@@ -91,6 +95,9 @@ data MotionDataVars = MotionDataVars {
     _sp     :: FrameIx -> [Vec2],
     _zmpIsInSp :: FrameIx -> Bool,
 
+    _bByName :: String -> BoneIx,
+    _footBs :: ((BoneIx,BoneIx),(BoneIx,BoneIx)),
+    _footJs :: ((JointIx,JointIx,JointIx),(JointIx,JointIx,JointIx)),
     _isFootBone  :: BoneIx -> Bool
 };
 
@@ -129,6 +136,7 @@ getMotionDataVariables dt j bskel
     _js     = js,
     _bs     = bs,
     _fs     = fs,
+    _bj     = bj,
     _pj     = pj,
     _pb     = pb,
     _d      = d,
@@ -158,29 +166,32 @@ getMotionDataVariables dt j bskel
     _sp     = sp,
     _zmpIsInSp = zmpIsInSp,
 
+    _bByName = bByName,
+    _footBs = footBs,
+    _footJs = footJs,
     _isFootBone = isFootBone
  } where
 
 
     memoizeJ :: (JointIx->b) -> (JointIx->b)
-    memoizeJ fn = (\(J a) -> table ! a) where
-        table = (array bndJ [ (u, fn (J u)) | u <- range bndJ ])
+    memoizeJ fn = (\(J a) -> intMemo a) where
+        intMemo = memo (\a -> fn (J a))
 
     memoizeB :: (BoneIx->b) -> (BoneIx->b)
-    memoizeB fn = (\(B a) -> table ! a) where
-        table = (array bndB [ (u, fn (B u)) | u <- range bndB ])
+    memoizeB fn = (\(B a) -> intMemo a) where
+        intMemo = memo (\a -> fn (B a))
 
     memoizeF :: (FrameIx->b) -> (FrameIx->b)
-    memoizeF fn = (\(F a) -> table ! a) where
-        table = (array bndF [ (u, fn (F u)) | u <- range bndF ])
+    memoizeF fn = (\(F a) -> intMemo a) where
+        intMemo = memo (\a -> fn (F a))
 
     memoizeFJ :: (FrameIx->JointIx->b) -> (FrameIx->JointIx->b)
-    memoizeFJ fn = (\(F f) (J a) -> table ! (f,a)) where
-        table = (array bndFJ [ ((f,u), fn (F f) (J u)) | (f,u) <- range bndFJ ])
+    memoizeFJ fn = (\(F a) (J b) -> intMemo a b) where
+        intMemo = memo2 (\a b -> fn (F a) (J b))
 
     memoizeFB :: (FrameIx->BoneIx->b) -> (FrameIx->BoneIx->b)
-    memoizeFB fn = (\(F f) (B a) -> table ! (f,a)) where
-        table = (array bndFB [ ((f,u), fn (F f) (B u)) | (f,u) <- range bndFB ])
+    memoizeFB fn = (\(F a) (B b) -> intMemo a b) where
+        intMemo = memo2 (\a b -> fn (F a) (B b))
 
 
 
@@ -317,13 +328,19 @@ getMotionDataVariables dt j bskel
         derive_ = memoizeFB derive__
         derive__ (fI@(F fi)) bI
             | fi > fst bndF     = ((fn fI bI) - (fn (F (fi-1)) bI)) ^/ dt
-            | otherwise         = 0 --derive_ (F (fi+1)) bI
+            | otherwise         = derive_ (F (fi+1)) bI
+    derive2FB :: (FrameIx -> BoneIx -> Vec3) -> (FrameIx -> BoneIx -> Vec3)
+    derive2FB fn = derive__ where
+        derive_ = memoizeFB derive__
+        derive__ (fI@(F fi)) bI
+            | fi > fst bndF     = ((fn (F (fi-1)) bI) - (2 * (fn fI bI)) + (fn (F (fi+1)) bI)) ^/ (dt**2)
+            | otherwise         = derive_ (F (fi+1)) bI
     deriveF :: (FrameIx -> Vec3) -> (FrameIx -> Vec3)
     deriveF fn = derive__ where
         derive_ = memoizeF derive__
         derive__ (fI@(F fi))
             | fi > fst bndF     = ((fn fI) - (fn (F (fi-1)))) ^/ dt
-            | otherwise         = 0 --derive_ (F (fi+1))
+            | otherwise         = derive_ (F (fi+1))
 
     -- bone linear velocity
     l :: FrameIx -> BoneIx -> Vec3
@@ -338,11 +355,14 @@ getMotionDataVariables dt j bskel
 
     -- bone linear acc
     l' :: FrameIx -> BoneIx -> Vec3
-    l' = deriveFB l
+    l' = derive2FB xb
 
     -- bone angular acc
     w' :: FrameIx -> BoneIx -> Vec3
-    w' = deriveFB w
+    w' = memoizeFB w'_ where
+        w'_ (fI@(F fi)) bI
+            | fi > fst bndF     = ((toAngularVel (rb (F (fi-1)) bI) (rb fI bI)  dt) - (toAngularVel (rb fI bI) (rb (F (fi+1)) bI) dt)) ^/ dt
+            | otherwise         = w' (F (fi+1)) bI
 
     -- bone linear momentum
     p :: FrameIx -> BoneIx -> Vec3
@@ -356,11 +376,13 @@ getMotionDataVariables dt j bskel
 
     -- bone linear momentum rate
     p' :: FrameIx -> BoneIx -> Vec3
-    p' = deriveFB p
+    p' fI bI = (l' fI bI) ^* (m bI)
 
     -- bone angular momentum rate
     h' :: FrameIx -> BoneIx -> Vec3
-    h' = deriveFB h
+    h' fI bI = rot `rotate` ((i bI) !* (rotInv `rotate` (w' fI bI))) where
+        rot = rb fI bI
+        rotInv = conjugate rot
 
     --
     -- Frame
@@ -384,11 +406,14 @@ getMotionDataVariables dt j bskel
 
     -- total linear momentum
     pT' :: FrameIx -> Vec3
-    pT' = deriveF pT
+    pT' =  memoizeF pT'_ where
+        pT'_ fI = sum (map (p' fI) bs)
 
     -- total angular momentum about the origin
     hT' :: FrameIx -> Vec3
-    hT' = deriveF hT
+    hT' = memoizeF hT'_ where
+        hT'_ fI = sum (map hComp bs) where
+            hComp bI = ((l fI bI) `cross` (p fI bI)) + ((xb fI bI) `cross` (p' fI bI)) + (h' fI bI) + ((w fI bI) `cross` (h fI bI))
 
     -- ZMP
     -- assume that ZMP is on the floor (y component is 0)
@@ -396,27 +421,51 @@ getMotionDataVariables dt j bskel
     zmp :: FrameIx -> Vec3
     zmp = memoizeF zmp_ where
         zmp_ fI = V3
---            -- definition from "Online Generation of Humanoid Walking Motion based on a Fast Generation Method of Motion Pattern that Follows Desired ZMP"
---            ((sum $ map (\bI -> ((m bI) * (vy (xb fI bI)) * (vx (l' fI bI)) - ((m bI) * (vy (l' fI bI)) * (vx (xb fI bI))) + (vz (h fI bI))) ) bs) /
---                (negate $ sum $ map (\bI -> (m bI) * ((vy (l' fI bI)) + g)) bs))
---            0
---            ((sum $ map (\bI -> ((m bI) * (vy (xb fI bI)) * (vz (l' fI bI)) - ((m bI) * (vy (l' fI bI)) * (vz (xb fI bI))) + (vx (h fI bI))) ) bs) /
---                (negate $ sum $ map (\bI -> (m bI) * ((vy (l' fI bI)) + g)) bs))
-            -- definition from http://www.mate.tue.nl/mate/pdfs/10796.pdf
-            (((mT * g * comX) + h'Z) / ((mT * g) + p'Y))
+            -- definition from "Online Generation of Humanoid Walking Motion based on a Fast Generation Method of Motion Pattern that Follows Desired ZMP"
+            ((sum $ map (\bI -> ((m bI) * (vy (xb fI bI)) * (vx (l' fI bI)) - ((m bI) * (vy (l' fI bI) + g) * (vx (xb fI bI))) + (vz (h fI bI))) ) bs) /
+                (negate $ sum $ map (\bI -> (m bI) * ((vy (l' fI bI)) + g)) bs))
             0
-            (((mT * g * comZ) - h'X) / ((mT * g) + p'Y))
-            where
-                (V3 comX _ comZ) = com fI
-                (V3 _ p'Y _) = pT' fI
-                (V3 h'X _ h'Z) = hT' fI
+            ((sum $ map (\bI -> ((m bI) * (vy (xb fI bI)) * (vz (l' fI bI)) - ((m bI) * (vy (l' fI bI) + g) * (vz (xb fI bI))) + (vx (h fI bI))) ) bs) /
+                (negate $ sum $ map (\bI -> (m bI) * ((vy (l' fI bI)) + g)) bs))
+--            -- definition from http://www.mate.tue.nl/mate/pdfs/10796.pdf
+--            (((mT * g * comX) + h'Z) / ((mT * g) + p'Y))
+--            0
+--            (((mT * g * comZ) - h'X) / ((mT * g) + p'Y))
+--            where
+--                (V3 comX _ comZ) = com fI
+--                (V3 _ p'Y _) = pT' fI
+--                (V3 h'X _ h'Z) = hT' fI
 
     isFootBone :: BoneIx -> Bool
     isFootBone bI = (bName bI) `elem` footJoints where
         footJoints = ["LeftFoot", "LeftToe", "RightFoot", "RightToe"]
 
-    footBs :: [BoneIx]
-    footBs = filter isFootBone bs
+    footBs :: ((BoneIx,BoneIx),(BoneIx,BoneIx))
+    footBs = (
+            (
+                bByName "LeftAnkle",
+                bByName "LeftToe"
+            ),
+            (
+                bByName "RightAnkle",
+                bByName "RightToe"
+            )
+        )
+
+    footJs :: ((JointIx,JointIx,JointIx),(JointIx,JointIx,JointIx))
+    footJs = (
+            (
+                pj . bj $ lfI,
+                bj lfI,
+                bj ltI
+            ),
+            (
+                pj . bj $ rfI,
+                bj rfI,
+                bj rtI
+            )
+        ) where
+            ((lfI,ltI),(rfI,rtI)) = footBs
 
     bName :: BoneIx -> String
     bName = name . jBase . pj . bj
@@ -462,10 +511,7 @@ getMotionDataVariables dt j bskel
             ]
 
         -- get all corners
-        lfI = bByName "LeftAnkle"
-        ltI = bByName "LeftToe"
-        rfI = bByName "RightAnkle"
-        rtI = bByName "RightToe"
+        ((lfI,ltI),(rfI,rtI)) = footBs
         corners =
             (map (l2g lfI) footCorners) ++
             (map (l2g ltI) toeCorners)  ++
@@ -735,6 +781,8 @@ fitMottionDataToZmp mdv zmpX = modifiedMdv where
     z f i = vz (posb (F f) i)
 
 
+    constrainLast = True
+
     -- here we setup:    M xe = xep
     --           and:    M ze = zep
     -- M is a matrix
@@ -743,20 +791,23 @@ fitMottionDataToZmp mdv zmpX = modifiedMdv where
 
     -- generate the matrix M (list of position and values... sparse matrix)
     _M :: [((Int,Int),Double)]
-    _M = ((0,0), 1) : ((fN-1,fN-1), 1) : concat [[((r,r-1), f r), ((r,r),diag r), ((r,r+1), f r)] | r <- [1..fN-2]] where
---    _M =
---         ((0,0), 1) :
---         ((1,0), negate (f 1)) :
---         ((1,1), 1 + (f 1)) :
---         concat [
---            [
---
---                ((r,r-2), f r),
---                ((r,r-1), (-2)*(f r)),
---                ((r,r),   1 + (f r))
---
---            ] | r <- [2..fN-1]
---        ] where
+    _M = if constrainLast
+            then
+                ((0,0), 1) : ((fN-1,fN-1), 1) : concat [[((r,r-1), f r), ((r,r),diag r), ((r,r+1), f r)] | r <- [1..fN-2]]
+            else
+                 ((0,0), 1) :
+                 ((1,0), negate (f 1)) :
+                 ((1,1), 1 + (f 1)) :
+                 concat [
+                    [
+
+                        ((r,r-2), f r),
+                        ((r,r-1), (-2)*(f r)),
+                        ((r,r),   1 + (f r))
+
+                    ] | r <- [2..fN-1]
+                ]
+        where
             dt2         = dt ** 2
             f :: Int -> Double
             f           = memoize (0,fN-1) f' where
@@ -768,8 +819,11 @@ fitMottionDataToZmp mdv zmpX = modifiedMdv where
 
     -- ep
     ep :: Array Int Vec3
-    ep = array (0,fN-1) ((0,0) : [(fi, (zmpX!fi) - (zmp (F fi))) | fi <- range (1,fN-1)])
---    ep = array (0,fN-1) [(fi, (zmpX!fi) - (sum (map (h (F fi) bs)) )) | fi <- range (0,fN-1)]
+    ep = if constrainLast
+        then
+            array (0,fN-1) ((0,0) : (fN-1, 0) : [(fi, (zmpX!fi) - (zmp (F fi))) | fi <- range (1,fN-2)])
+        else
+            array (0,fN-1) ((0,0) :             [(fi, (zmpX!fi) - (zmp (F fi))) | fi <- range (1,fN-1)])
     -- xep
     xep = fmap vx ep
     --
@@ -786,7 +840,141 @@ fitMottionDataToZmp mdv zmpX = modifiedMdv where
                 | otherwise = joint
 
     --modifyMotionDataVars :: MotionDataVars -> FJIndexedFrames -> MotionDataVars
-    modifiedMdv = modifyMotionDataVars mdv shiftedFrames
+    modifiedMdv = correctFeet mdv $ modifyMotionDataVars mdv shiftedFrames
+
+    -- Move (via IK) feet in the second MDV argument to the position of the feet in the first
+    -- update the motion data. Each frame is updated independantly (individual updates are collected from "correctFrame")
+    correctFeet :: MotionDataVars -> MotionDataVars -> MotionDataVars
+    correctFeet target@MotionDataVars{_xj=xjT} md@MotionDataVars{_pj=pj,_bj=bj,_fN=fN,_fs=fs,_j=j,_rj=rj,_bByName=bByName,_footBs=((lfbI,_),(rfbI,_))} =
+        trace
+         "Done correction feet with IK"
+         (modifyMotionDataVars md (j // (concat [correctFrame fI | fI <- fs]))) where
+
+            maxIKItterations = 25
+            alpha = 0.4 -- portion of change to apply per IK step
+--            maxAngleDelta = pi/4
+            dampening = 0.2 ** 2 -- IK damping term
+
+            -- returns the updates to apply to a given frame
+            correctFrame :: FrameIx -> [((Int,Int), Joint)]
+            correctFrame fI@(F fi) = trace
+             ("Done correcting frame " ++ (show fi))
+             seq (frameUpdates==frameUpdates) frameUpdates where -- TODO include inverse rotation at the ankel
+                frameUpdates = rotsToUpdates rotations
+                lhR:lkR:rhR:rkR:_ = rotations -- TODO use to calculate ankel rotations
+
+                -- apply ikStep untill it converges
+                rotations :: [Quat] -- [left hip, left knee, right hip, right knee]
+                rotations = applyUntilN maxIKItterations ikStep converged (replicate 4 identity)
+
+                -- converged when ankles are close to target ankle positions
+                converged :: [Quat] -> Bool
+                converged rots =
+                    let n2l = norm2 (leC - leT) in {-trace ("left square dist to target: " ++ (show (leT - leC)))-} (n2l <= 0.001) &&
+                    let n2r = norm2 (reC - reT) in {-trace ("right square dist to target: " ++ (show n2r))-} (n2r <= 0.001) where
+                        MotionDataVars{_xj=xjCurrent} = rotsToMdv rots
+                        leC = xjCurrent fI lajI
+                        reC = xjCurrent fI rajI
+                leT = xjT fI lajI
+                reT = xjT fI rajI
+
+
+                -- use psudo inverse jacobian to find joint deltas to get to target position, but only move a portion of that.
+                ikStep :: [Quat] -> [Quat]
+                ikStep rots = zipWith (*) rots deltaRots where
+                    -- curent state of the modtion data
+                    MotionDataVars{_xj=xjC,_rb=rbC,_xsb=xsbC,_xeb=xebC} = rotsToMdv rots
+
+
+                    -- get the change in the joint rotations usign psudo inverse jacobian
+                    --      get vector from current ankle to target ankle position
+                    ldeltaEndeffector = let de@(V3 x y z) = (xjT fI lajI) - (xjC fI lajI) in
+                        --trace ("C -> T ankel (norm): " ++ (show de) ++ "(" ++ (show (norm de)) ++ ")")
+                        (listArray ((0,0),(2,0)) [x,y,z])
+                    ldeltaRots = ljPInv `matrixMult` ldeltaEndeffector
+                    lhdX:lhdY:lhdZ:lkdA:_ = elems ldeltaRots
+
+                    rdeltaEndeffector = let V3 x y z = (xjT fI rajI) - (xjC fI rajI) in listArray ((0,0),(2,0)) [x,y,z]
+                    rdeltaRots = rjPInv `matrixMult` rdeltaEndeffector
+                    rhdX:rhdY:rhdZ:rkdA:_ = elems rdeltaRots
+
+                    -- change in rotations
+                    deltaRots = [
+--                            let hd = (V3 lhdX 0 0) in  trace ("J:\n" ++ (showMatrix $ lj) ++ "\nJ+:\n" ++ (showMatrix $ ljPInv)) axisAngle (normalize hd) (alpha * (norm hd)),   -- Left Hip rot delta
+                            let hd = V3 lhdX lhdY lhdZ in
+                                --trace ("J:\n" ++ (showMatrix $ lj) ++ "\nJ+:\n" ++ (showMatrix $ ljPInv) ++ "\nJ+ de:\n" ++ (showMatrix ldeltaRots))
+                                (axisAngle (normalize hd) (alpha * (norm hd))),   -- Left Hip rot delta
+                            axisAngle kneeAxisL (alpha * lkdA),                                           -- Left Knee
+                            let hd = V3 rhdX rhdY rhdZ in axisAngle (normalize hd) (alpha * (norm hd)),   -- Right Hip rot delta
+                            axisAngle kneeAxisR (alpha * rkdA)                                            -- Right knee
+                        ]
+
+
+
+
+                    -- Calculate the psudo inverse jacobian (one for the left and one for the right leg)
+                    --    knee axis by cross product of forward thigh direction and thigh bone vector
+                    lhbI = bByName "LeftHip"
+                    rhbI = bByName "RightHip"
+                    kneeAxis hbI =  normalize $ (rbC fI hbI  `rotate` unitZ) `cross` ((xebC fI hbI) - (xsbC fI hbI))
+                    kneeAxisL = kneeAxis lhbI
+                    kneeAxisR = kneeAxis rhbI
+                    --    jacabian. element in form (de / du) = (change in parameter / change in end affector)
+                    --      u = [hipAngDelta_x,hipAngDelta_y,hipAngDelta_z,knee angDelta]^T
+                    --      e = [deltaAnkel_x,deltaAnkel_y,deltaAnkel_z]^T
+                    uLAxies = [unitX,unitY,unitZ,kneeAxisL]
+                    uLJointToE = map (\x -> (xsbC fI lfbI) - x) $ (replicate 3 (xsbC fI lhbI)) ++ [xebC fI lhbI]
+                    uRAxies = [unitX,unitY,unitZ,kneeAxisR]
+                    uRJointToE = map (\x -> (xsbC fI rfbI) - x) $ (replicate 3 (xsbC fI rhbI)) ++ [xebC fI rhbI]
+                    eFns = [vx,vy,vz]
+
+                    lj = matrix 3 4 (\ei ui ->
+                            (eFns!!ei) $ (uLAxies!!ui) `cross` (uLJointToE!!ui)
+                        )
+                    ljT = matrixTranspose lj
+                    ljPInv = (inverseMatrix ((ljT `matrixMult` lj) `matrixAddition` (matrix 4 4 (\r c -> if r == c then dampening else 0)))) `matrixMult` ljT
+
+                    rj = matrix 3 4 (\ei ui ->
+                            (eFns!!ei) $ (uRAxies!!ui) `cross` (uRJointToE!!ui)
+                        )
+                    rjT = matrixTranspose lj
+                    rjPInv = (inverseMatrix ((rjT `matrixMult` rj) `matrixAddition` (matrix 4 4 (\r c -> if r == c then dampening else 0)))) `matrixMult` rjT
+
+
+
+
+
+
+
+                -- joints involved in the IK
+                ikJoints :: [JointIx]
+                ikJoints = [lhjI,lkjI,rhjI,rkjI]
+                -- Converts IK joint rotations to updates for the MDV (md)
+                rotsToUpdates rots = zipWith (\jI@(J ji) rot -> let joint = j!(fi,ji) in ((fi,ji), joint{
+                        -- Note: rotations ("rot") must be converted to local coordinate system
+                        rotationL =
+                            (rotationL joint) * ((conjugate $ rj fI jI) * rot)
+                    })) ikJoints rots
+                -- Converts IK joint rotations to an updated MDV
+                rotsToMdv rots = modifyMotionDataVars md (j // (rotsToUpdates rots))
+
+
+
+
+            -- itterativelly move joints
+            lajI = pj . bj $ lfbI   -- left ankel joint
+            lkjI = pj lajI          -- left knee joint
+            lhjI = pj lkjI          -- left hip joint
+            rajI = pj . bj $ rfbI   -- right ankel joint
+            rkjI = pj rajI          -- right knee joint
+            rhjI = pj rkjI          -- right hip joint
+
+
+
+
+
+
+
 
 {-------------------------
 

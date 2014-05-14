@@ -8,6 +8,7 @@ extern "C" {
 	// Matrix solver
 	//
 	double* sparseMatrixSolve(int n, int nz, int* mixs, int r, double* vals);
+	double* inverseMatrix(int r, int c, double* vals);
 
 
 	//

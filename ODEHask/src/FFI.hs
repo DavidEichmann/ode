@@ -1,6 +1,7 @@
 module FFI (
     c_main,
 
+    inverseMatrix,
     sparseMatrixSolve,
 
     initOgre,
@@ -255,7 +256,7 @@ fromFnCVec3D fn a b c = ((applyColor a) >>> (applyVec3 b) >>> (applyDouble c)) f
 
 
 foreign import ccall unsafe "Interface.h sparseMatrixSolve"
-    sparseMatrixSolve_c :: CInt -> CInt -> Ptr CInt -> CInt -> Ptr CDouble -> Ptr CDouble
+    sparseMatrixSolve_c :: CInt -> CInt -> Ptr CInt -> CInt -> Ptr CDouble -> IO (Ptr CDouble)
 sparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
 sparseMatrixSolve matrix rhs = unsafeLocalState (do
     let
@@ -276,14 +277,27 @@ sparseMatrixSolve matrix rhs = unsafeLocalState (do
             pokeArray arrMIxs (map fromIntegral (concat $ map (\((r,c),_) -> [r,c]) matrix))
             -- fill array with matrix values then rhs vectors
             pokeArray arr (map CDouble ((map snd matrix) ++ (concat $ map elems rhs)))
-            results <- cdPeekArray (r*n) $ sparseMatrixSolve_c (fromIntegral n) (fromIntegral mNZ) arrMIxs (fromIntegral r) arr
+            results <- cdPeekArray (r*n) =<< sparseMatrixSolve_c (fromIntegral n) (fromIntegral mNZ) arrMIxs (fromIntegral r) arr
             return $ map (listArray (0,n-1)) (breakSized n results)
          )
      )
  )
 
 
-
+foreign import ccall unsafe "Interface.h inverseMatrix"
+    inverseMatrix_c :: CInt -> CInt -> Ptr CDouble -> IO (Ptr CDouble)
+inverseMatrix :: Array (Int,Int) Double -> Array (Int,Int) Double
+inverseMatrix m = unsafeLocalState (do
+        let
+            ((ri,ci),(rf,cf)) = bounds m
+            r = 1 + (rf - ri)
+            c = 1 + (cf - ci)
+        allocaArray (r*c) (\arr -> do
+            pokeArray arr (map CDouble $ elems m)
+            inv <- cdPeekArray (c*r)  =<< inverseMatrix_c (fromIntegral r) (fromIntegral c) arr
+            return (listArray ((ci,ri),(cf,rf)) inv)
+         )
+    )
 
 
 
