@@ -14,6 +14,7 @@ import Constants
 import FFI
 
 import Debug.Trace
+import Math.Tau
 
 import Data.Char
 import Text.Parsec
@@ -40,7 +41,7 @@ data MotionData = MotionData {
         baseSkeleton  :: JointF
 } deriving Show
 
-type FJIndexedFrames = Array (Int, Int) Joint
+type FJIndexedFrames = Int -> Int -> Joint
 
 newtype FrameIx = F Int
 newtype JointIx = J Int
@@ -102,28 +103,28 @@ data MotionDataVars = MotionDataVars {
 };
 
 getMotionDataVariablesFromMotionData :: MotionData -> MotionDataVars
-getMotionDataVariablesFromMotionData md = getMotionDataVariables (frameTime md) j (baseSkeleton md) where
+getMotionDataVariablesFromMotionData md = getMotionDataVariables (frameTime md) j (baseSkeleton md) fN where
 
     fN = arraySize $ frames md
     jN = length $ flatten $ baseSkeleton md
-    bndJ = (0,jN-1)
-    bndFJ = ((0,0),(fN-1,jN-1))
---    bndFJIx = ((F 0,J 0),(F (fN-1), J (jN-1)))
 
     -- joints organized by frame
     j :: FJIndexedFrames
-    j = array bndFJ [ ((f, u), (flatten $ (frames md) ! f) !! (u - (fst bndJ))) | (f,u) <- range bndFJ ]
+    j = (\ f j -> (flatten $ (frames md) ! f) !! j) where
+        jArr = array bnd [((fi,ji), (flatten $ (frames md) ! fi) !! ji) | (fi,ji) <- range bnd]
+        bnd = ((0,0),(fN-1,jN-1))
 
-modifyMotionDataVars :: MotionDataVars -> FJIndexedFrames -> MotionDataVars
-modifyMotionDataVars (MotionDataVars{_dt=dt,_baseSkeleton=bSkel}) j = getMotionDataVariables dt j bSkel
+
+modifyMotionDataVars :: MotionDataVars -> [((Int,Int), Joint)] -> MotionDataVars
+modifyMotionDataVars (MotionDataVars{_dt=dt,_baseSkeleton=bSkel,_fN=fN,_j=jOrig}) jUpdates = getMotionDataVariables dt jNew bSkel fN where
+    jNew ji fi = fromMaybe (jOrig ji fi) (jUpdatesMaybe ji fi)
+    jUpdatesMaybe = memo2 (\ j f -> lookup (j,f) jUpdates)
+
 
 -- arguments: frameTimeDelta  (motion data by FrameIx and JointIx) (base skeletion)
 -- Note that Joint index is from 0 and coresponds to flettening the base skeletoin
-getMotionDataVariables :: Double -> FJIndexedFrames -> Frame -> MotionDataVars
-getMotionDataVariables dt j bskel
- | fst (bounds j) /= (0,0)          = error "frame data array idexies must start from 0"
- | (snd.snd) (bounds j) + 1 /= jN   = error "frame data joint quantity does not match base skeleton"
- | otherwise = MotionDataVars {
+getMotionDataVariables :: Double -> FJIndexedFrames -> Frame -> Int -> MotionDataVars
+getMotionDataVariables dt j bskel fN = MotionDataVars {
     _dt     = dt,
     _j      = j,
     _jBase  = jBase,
@@ -199,16 +200,12 @@ getMotionDataVariables dt j bskel
     -- Data
     --
 
-    -- frame count
-    fN = let ((fi,_),(ff,_)) = bndFJ in 1 + (ff - fi) -- arraySize j
-
     -- joint count
     jN = length $ flatten $ bskel
 
     -- bone count
     bN = jN - 1
 
-    bndFJ = bounds j --((0,0),(fN-1,jN-1))
     bndFB = ((0,0),(fN-1,bN-1))
     bndF = (0,fN-1)
     bndJ = (0,jN-1)
@@ -287,17 +284,17 @@ getMotionDataVariables dt j bskel
     -- joint global rotation
     rj :: FrameIx -> JointIx -> Quat
     rj = memoizeFJ rj_ where
-        rj_ fI jI
+        rj_ fI@(F fi) jI@(J ji)
             | jHasParent jI = (rj fI (pj jI)) * rotL
             | otherwise     = rotL
             where
-                rotL = rotationL $ j ! toJIx (fI, jI)
+                rotL = rotationL $ j fi ji
 
     xj :: FrameIx -> JointIx -> Vec3
     xj = memoizeFJ xj_ where
-        xj_ fI jI
+        xj_ fI@(F fi) jI@(J ji)
             | jHasParent jI = (xj fI $ pj jI) + ((rj fI $ pj jI) `rotate` (offset $ jBase jI))
-            | otherwise     = offset $ j ! toJIx (fI, jI)
+            | otherwise     = offset $ j fi ji
 
     --
     -- Frame Bone
@@ -702,7 +699,6 @@ preProcess windowSize md
             avgPos = (foldl1 (+) (map offset js)) ^/ (fromIntegral (length js))
             avgRotL = avgRot (map rotationL js)
 
-
 -- addapted from "Online Generation of Humanoid Walking Motion based on a Fast Generation Method of Motion Pattern that Follows Desired ZMP"
 -- attempts to move zmp of each frame such that it is in the support polygon
 fitMottionDataToSP :: MotionDataVars -> (Array Int (Double, Double),MotionDataVars)
@@ -724,9 +720,8 @@ fitMottionDataToSP mdvOrig@MotionDataVars{_fN=fN,_g=g,_dt=dt,_bs=bs,_fs=fs,_zmp=
             fI = F fi
 
             -- MDV with frame fi shifted by the new shift for the current frame (ce)
-            shiftedMdv = modifyMotionDataVars mdvOrig (j // [(fiRootJIx, fiRootJ{offset = (offset fiRootJ) + (V3 cex 0 cez)})])
-            fiRootJIx = (fi,0)
-            fiRootJ = j!fiRootJIx
+            shiftedMdv = modifyMotionDataVars mdvOrig ([((fi,0), fiRootJ{offset = (offset fiRootJ) + (V3 cex 0 cez)})])
+            fiRootJ = j fi 0
 
             e' = e // [(fi,ce)]
 
@@ -833,11 +828,7 @@ fitMottionDataToZmp mdv zmpX = modifiedMdv where
     --  sparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
     (xe:ze:_) = sparseMatrixSolve _M  [xep,zep]
 
-    shiftedFrames = array bnd [ ((fi,ji), doTranslate fi ji (j!(fi,ji)))  | (fi,ji) <- range bnd ] where
-            bnd = bounds j
-            doTranslate fi ji (joint@Joint{offset=offset})
-                | ji == 0   = joint{ offset = offset + (V3 (xe!fi) 0 (ze!fi)) }
-                | otherwise = joint
+    shiftedFrames = [ let joint@Joint{offset=offset} = j fi 0 in ((fi, 0), joint{ offset = offset + (V3 (xe!fi) 0 (ze!fi)) })  | fi <- [0..fN-1] ]
 
     --modifyMotionDataVars :: MotionDataVars -> FJIndexedFrames -> MotionDataVars
     modifiedMdv = correctFeet mdv $ modifyMotionDataVars mdv shiftedFrames
@@ -848,12 +839,12 @@ fitMottionDataToZmp mdv zmpX = modifiedMdv where
     correctFeet target@MotionDataVars{_xj=xjT} md@MotionDataVars{_pj=pj,_bj=bj,_fN=fN,_fs=fs,_j=j,_rj=rj,_bByName=bByName,_footBs=((lfbI,_),(rfbI,_))} =
         trace
          "Done correction feet with IK"
-         (modifyMotionDataVars md (j // (concat [correctFrame fI | fI <- fs]))) where
+         (modifyMotionDataVars md (concat [correctFrame fI | fI <- fs])) where
 
             maxIKItterations = 25
             alpha = 0.4 -- portion of change to apply per IK step
 --            maxAngleDelta = pi/4
-            dampening = 0.2 ** 2 -- IK damping term
+            dampening = 0.02 ** 2 -- IK damping term
 
             -- returns the updates to apply to a given frame
             correctFrame :: FrameIx -> [((Int,Int), Joint)]
@@ -883,7 +874,7 @@ fitMottionDataToZmp mdv zmpX = modifiedMdv where
                 ikStep :: [Quat] -> [Quat]
                 ikStep rots = zipWith (*) rots deltaRots where
                     -- curent state of the modtion data
-                    MotionDataVars{_xj=xjC,_rb=rbC,_xsb=xsbC,_xeb=xebC} = rotsToMdv rots
+                    mdIK@MotionDataVars{_j=jC,_rj=rjC,_xj=xjC,_rb=rbC,_xsb=xsbC,_xeb=xebC} = rotsToMdv rots
 
 
                     -- get the change in the joint rotations usign psudo inverse jacobian
@@ -928,12 +919,28 @@ fitMottionDataToZmp mdv zmpX = modifiedMdv where
                     uRJointToE = map (\x -> (xsbC fI rfbI) - x) $ (replicate 3 (xsbC fI rhbI)) ++ [xebC fI rhbI]
                     eFns = [vx,vy,vz]
 
+                    angleDelta = tau / 400
+                    -- dE_dU = change in edafector given change in joint
+                    --      params: endaffector jointToRotate AxisOfRotationGlobal
+                    --      returns: change in edaffector / change in joint angle around the axis given
+                    dE_dU :: JointIx -> JointIx -> Vec3 -> Vec3
+                    dE_dU ejI jI@(J ji) axis = ((xjC' fI ejI) - (xjC fI ejI)) ^/ angleDelta where
+                        MotionDataVars{_xj=xjC'} = modifyMotionDataVars mdIK [((fi,ji),joint{rotationL = (rotationL joint) * (axisAngle axisL angleDelta)})] where
+                        joint = (jC fi ji)
+                        axisL = (conjugate (rjC fI jI)) `rotate` axis
+
+--                    lj = matrix 3 4 (\ei ui ->
+--                            (eFns!!ei) $ dE_dU lajI ([lhjI,lhjI,lhjI,lkjI]!!ui) (uLAxies!!ui)
+--                        )
                     lj = matrix 3 4 (\ei ui ->
                             (eFns!!ei) $ (uLAxies!!ui) `cross` (uLJointToE!!ui)
                         )
                     ljT = matrixTranspose lj
                     ljPInv = (inverseMatrix ((ljT `matrixMult` lj) `matrixAddition` (matrix 4 4 (\r c -> if r == c then dampening else 0)))) `matrixMult` ljT
 
+--                    rj = matrix 3 4 (\ei ui ->
+--                            (eFns!!ei) $ dE_dU rajI ([rhjI,rhjI,rhjI,rkjI]!!ui) (uRAxies!!ui)
+--                        )
                     rj = matrix 3 4 (\ei ui ->
                             (eFns!!ei) $ (uRAxies!!ui) `cross` (uRJointToE!!ui)
                         )
@@ -950,13 +957,13 @@ fitMottionDataToZmp mdv zmpX = modifiedMdv where
                 ikJoints :: [JointIx]
                 ikJoints = [lhjI,lkjI,rhjI,rkjI]
                 -- Converts IK joint rotations to updates for the MDV (md)
-                rotsToUpdates rots = zipWith (\jI@(J ji) rot -> let joint = j!(fi,ji) in ((fi,ji), joint{
+                rotsToUpdates rots = zipWith (\jI@(J ji) rot -> let joint = j fi ji in ((fi,ji), joint{
                         -- Note: rotations ("rot") must be converted to local coordinate system
                         rotationL =
                             (rotationL joint) * ((conjugate $ rj fI jI) * rot)
                     })) ikJoints rots
                 -- Converts IK joint rotations to an updated MDV
-                rotsToMdv rots = modifyMotionDataVars md (j // (rotsToUpdates rots))
+                rotsToMdv rots = modifyMotionDataVars md (rotsToUpdates rots)
 
 
 

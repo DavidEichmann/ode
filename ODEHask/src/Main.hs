@@ -94,8 +94,13 @@ mainLoopOut sim = do
         comIF = (((com (F 0)) * (V3 1 0 1)) + (V3 (0.1) 0 0)) -comI --(zmp (F (fN-1))) - comI
         bnds = (0,fN-1)
 --        targetZmp = array bnds [(i, let t = ((fromIntegral i) / (fromIntegral (fN-1))) in comI + ((fromIntegral (round t))*^comIF) )  | i <- range bnds]
-        -- target zmp as center of SP
-        targetZmp = array bnds [(i, xz2x0z (let poly = (sp (F i)) in sum poly ^/ (fromIntegral $ length poly)))  | i <- range bnds]
+        centerOfSp = [let poly = (sp fI) in sum poly ^/ (fromIntegral $ length poly)  | fI <- fs]
+        targetZmp = listArray bnds $
+            -- target zmp as center of SP
+            -- map xz2x0z centerOfSp
+            -- target zmp as origional zmp projeted onto SP
+            zipWith (\ proj zmp -> if null proj then zmp else xz2x0z . head $ proj) [polyEdgeLineSegIntersect (sp fI) (toXZ (zmp fI), spC) | (fI,spC) <- zip fs centerOfSp] (map zmp fs)
+
 
         mdvMod = fitMottionDataToZmp mdvActual targetZmp
 
