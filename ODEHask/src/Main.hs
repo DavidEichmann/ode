@@ -102,7 +102,7 @@ mainLoopOut sim = do
             zipWith (\ proj zmp -> if null proj then zmp else xz2x0z . head $ proj) [polyEdgeLineSegIntersect (sp fI) (toXZ (zmp fI), spC) | (fI,spC) <- zip fs centerOfSp] (map zmp fs)
 
 
-        mdvMod = fitMottionDataToZmp mdvActual targetZmp
+        mdvMod = iterate (flip fitMottionDataToZmp targetZmp) mdvActual !! 3
 
         loop sim ti tl = do
             tc <- getCurrentTime
@@ -119,7 +119,7 @@ mainLoop
   simdt = do
     --sim' <- step sim simdt
     let
-        t = t'/5
+        t = t'/3
         sim' = sim
     cSimFrame <- getSimSkel sim'
     let
