@@ -461,11 +461,19 @@ void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 }
 
 double * stepArgs = new double[3];
+double atanBary(Vector2d a, Vector2d b, Vector2d c) {
+	Vector3d ba;
+	ba << (a - b), 0;
+	Vector3d bc;
+	bc << (c - b), 0;
+
+	return (bc.dot(ba) / bc.cross(ba).norm());
+}
 void doCollisions() {
 	// clear vectors to store contact points
 	contacts.clear();
 	contactBodies.clear();
-
+	// do collision detection (filling contacts and contactBodies)
 	dSpaceCollide(sid, stepArgs, &collisionCallback);
 
 	double zmpX = stepArgs[0];
@@ -475,6 +483,36 @@ void doCollisions() {
 	// calculate the y forces to apply to each contact point
 	// this method is described in http://davideichmann.com/wiki/Enforcing_CoP
 
+	// using generalised barycentric coordinates
+	Vector2d p{zmpX,zmpZ};
+	int n = contacts.size();
+	double weightSum = 0;
+	double w[n];
+	for(int j = 0; j < n; j++) {
+
+		int prev = (j + n - 1) % n;
+		int next = (j + 1) % n;
+
+		Vector2d qprev{contacts[prev].geom.pos[0],contacts[prev].geom.pos[2]};
+		Vector2d qj{contacts[j].geom.pos[0],contacts[j].geom.pos[2]};
+		Vector2d qnext{contacts[next].geom.pos[0],contacts[next].geom.pos[2]};
+
+		w[j] = (atanBary(p,qj,qprev) + atanBary(p,qj,qnext)) / pow((p-qj).norm(),2);
+		weightSum += w[j];
+	}
+	for(int j = 0; j < n; j++) {
+		w[j] /= weightSum;
+		double fj = w[j] * fy;
+		cout << "y force on contact point " << j << ": " << fj << endl;
+		dBodyAddForceAtPos(
+				contactBodies[j],
+				0, fj, 0,	// force to add
+				contacts[j].geom.pos[0],
+				contacts[j].geom.pos[1],
+				contacts[j].geom.pos[2]);
+	}
+
+	/* Using psudo invers is no longer used
 	//   create matrix
 	int cn = contacts.size();
 	MatrixXd matrix(3,cn);
@@ -506,6 +544,7 @@ void doCollisions() {
 		cout << "y force on contact point " << i << ": " << y(i) << endl;
 		dBodyAddForceAtPos(contactBodies[i],0, (double) y(i) ,0,contacts[i].geom.pos[0],contacts[i].geom.pos[1],contacts[i].geom.pos[2]);
 	}
+	 */
 }
 void step(dWorldID, double zmpX, double zmpZ, double fy) {
 	stepArgs[0] = zmpX;
