@@ -207,13 +207,17 @@ applyDouble6 a b c d e f = (applyDouble5 a b c d e) >>> (applyDouble f)
 applyDouble7 a b c d e f g = (applyDouble6 a b c d e f) >>> (applyDouble g)
 applyDouble8 a b c d e f g h = (applyDouble7 a b c d e f g) >>> (applyDouble h)
 applyDouble9 a b c d e f g h i = (applyDouble8 a b c d e f g h) >>> (applyDouble i)
+applyVec2 (V2 a b) = applyDouble2 a b
 applyVec3 (V3 x y z) = applyDouble3 x y z
 applyQuat (Quaternion w vec) = (applyDouble w) >>> (applyVec3 vec)
 applyQuat2 a b = (applyQuat a) >>> (applyQuat b)
 applyColor c = let (r, g, b, a) = toRGBA c in applyDouble4 r g b a
 
 foreign import ccall unsafe "Interface.h step"
- stepODE :: DWorldID -> IO ()
+    stepODE_c :: DWorldID -> CDouble -> CDouble -> CDouble -> IO ()
+-- stepODE (ode world ID) (target ZMP xz coordinates) (net y component of ground reaction forces)
+stepODE :: DWorldID -> Vec2 -> Double -> IO ()
+stepODE wid zmp fy = ((apply wid) >>> (applyVec2 zmp) >>> (applyDouble fy)) stepODE_c
 
 --foreign import ccall unsafe "Interface.h stressTest"
 -- stressTest :: IO ()

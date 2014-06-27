@@ -409,7 +409,9 @@ void createFixedJoint(dBodyID a, dBodyID b) {
 	dJointSetFixed(jid);
 }
 
-void collisionCallback(void * sim, dGeomID o1, dGeomID o2) {
+vector<dContact> contacts;
+vector<dBodyID> contactBodies;
+void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 
 	// ignore collisions with spaces
 	if (dGeomIsSpace(o1) || dGeomIsSpace(o2)) {
@@ -428,6 +430,8 @@ void collisionCallback(void * sim, dGeomID o1, dGeomID o2) {
 	if(dGeomGetClass(o1) != dPlaneClass && dGeomGetClass(o2) != dPlaneClass) {
 		return;
 	}
+	// find the body that is not the floor
+	dBodyID bb = (dGeomGetClass(o1) != dPlaneClass) ? b1 : b2;
 
 	// collect collision info
 	const int maxC = 10;
@@ -439,21 +443,77 @@ void collisionCallback(void * sim, dGeomID o1, dGeomID o2) {
 		if(contact[i].depth != 0) {
 			dContact dc;
 
-			dc.surface.mode = dContactSoftERP | dContactSoftCFM;
+			dc.surface.mode = dContactRolling; // | dContactSoftERP | dContactSoftCFM;
 			dc.surface.soft_erp = 0.1;
 			dc.surface.soft_cfm = 0.00007;
 			dc.surface.mu = dInfinity;
+			dc.surface.rhoN = 1;
 			dc.geom = contact[i];
 
 			dJointID cj = dJointCreateContact(wid, contactGroupid, &dc);
-			dJointAttach(cj, b1, b2);
+			//dJointAttach(cj, b1, b2);
+
+			// add point to vector
+			contacts.push_back(dc);
+			contactBodies.push_back(bb);
 		}
 	}
 }
 
-void step(dWorldID) {
-	dSpaceCollide(sid, nullptr, &collisionCallback);
+double * stepArgs = new double[3];
+void doCollisions() {
+	// clear vectors to store contact points
+	contacts.clear();
+	contactBodies.clear();
+
+	dSpaceCollide(sid, stepArgs, &collisionCallback);
+
+	double zmpX = stepArgs[0];
+	double zmpZ = stepArgs[1];
+	double fy   = stepArgs[2];
+
+	// calculate the y forces to apply to each contact point
+	// this method is described in http://davideichmann.com/wiki/Enforcing_CoP
+
+	//   create matrix
+	int cn = contacts.size();
+	MatrixXd matrix(3,cn);
+	//matrix.resize(NoChange, cn);
+	for(int c = 0; c < cn; c++) {
+		matrix(0,c) = contacts[c].geom.pos[0] / fy;
+		matrix(1,c) = contacts[c].geom.pos[2] / fy;
+		matrix(2,c) = 1;
+	}
+
+	//   create RHS vector
+	Vector3d rhs;
+	rhs(0) = zmpX;
+	rhs(1) = zmpZ;
+	rhs(2) = fy;
+
+	//   solve for x in  M y = RHS  using psudoinverse: (M^T (M M^T)^-1) RHS = y
+	MatrixXd matrixT = matrix.transpose();
+	MatrixXd mmT = matrix * matrixT;
+	//      find x in  mmt x = RHS
+	VectorXd x = mmT.colPivHouseholderQr().solve(rhs);
+	//      find the final answer for y
+	MatrixXd y = matrixT * x;
+
+
+	// apply the y forces
+	cout << "applying forces" << endl;
+	for(int i = 0; i < cn; i++) {
+		cout << "y force on contact point " << i << ": " << y(i) << endl;
+		dBodyAddForceAtPos(contactBodies[i],0, (double) y(i) ,0,contacts[i].geom.pos[0],contacts[i].geom.pos[1],contacts[i].geom.pos[2]);
+	}
+}
+void step(dWorldID, double zmpX, double zmpZ, double fy) {
+	stepArgs[0] = zmpX;
+	stepArgs[1] = zmpZ;
+	stepArgs[2] = fy;
+	doCollisions();
 	dWorldStep(wid,timeStep);
 	// Remove all joints in the contact joint group.
 	dJointGroupEmpty(contactGroupid);
 }
+

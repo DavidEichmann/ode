@@ -14,6 +14,7 @@ import Linear
 import Util
 import Data.Time.Clock
 import System.Environment
+import Control.DeepSeq
 
 
 debug =
@@ -47,8 +48,8 @@ getArguments = do
     ws <- getArgs
     return (getPath ws, getPP ws) where
         getPath ws = case find (not . (isPrefixOf "-")) ws of
-                Just path   -> if elem '/' path then path else "/home/david/git/ode/ODE_01/Data/Animation/" ++ path
-                Nothing     -> "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-004_David.bvh"
+                Just path   -> if elem '/' path then path else "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/" ++ path
+                Nothing     -> "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/david-1-martialarts-004_David.bvh"
 
         getPP ws = case find (isPrefixOf "-pp") ws of
                 Just w      -> read (drop 3 w)
@@ -61,35 +62,28 @@ main = do
     (file, pp) <- getArguments
 
     md <- fmap (scaleAndTranslate 2 0) $ parseBVH file pp
---    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-025_David.bvh" pp
---    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/david-1-martialarts-011_David.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/david-1-martialarts-025_David.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 10) $ parseBVH "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/david-1-martialarts-011_David.bvh" pp
 
---    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/testDrop.bvh" pp
---    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test.bvh" pp
---    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_sin.bvh" pp
---    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_sinZ.bvh" pp
---    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_spin.bvh" pp
---    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_spin_acc.bvh" pp
---    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_spinZ_acc.bvh" pp
---    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/git/ode/ODE_01/Data/Animation/test_arm_spin.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/testDrop.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/test.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/test_sin.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/test_sinZ.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/test_spin.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/test_spin_acc.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/test_spinZ_acc.bvh" pp
+--    md <- fmap (scaleAndTranslate 2 0) $ parseBVH "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/test_arm_spin.bvh" pp
 
     if debug
         then
             doDebug md
         else do
-            seq (foldl1' seq (show md)) (putStrLn "Done processing data.")
-            sim <- startSim md
-            mainLoopOut sim
+            mainLoopOut md
 
-mainLoopOut :: Sim -> IO ()
-mainLoopOut sim = do
-    ti <- getCurrentTime
---    mapM_ (putStrLn . show) (zip5 (repeat "zmpinsp xz^e zmpMod zmp") (map zmpIsInSp fs) (elems e) (map (vx . zmpMod) fs) (map (vx . zmp) fs))
---    mapM_ (putStrLn . show) (zip3 (repeat "comMod com") (map (vx . comMod) fs) (map (vx . com) fs))
-    print (com (F 0))
-    initOgre
-    loop sim ti ti where
-        (mdvActual@MotionDataVars{_fN=fN,_fs=fs,_pT=pT,_l=l,_com=com,_zmp=zmp,_sp=sp,_zmpIsInSp=zmpIsInSp}) = getMotionDataVariablesFromMotionData $ targetMotion sim
+mainLoopOut :: MotionData -> IO ()
+mainLoopOut md = do
+    let
+        (mdvActual@MotionDataVars{_fN=fN,_fs=fs,_js=js,_pT=pT,_l=l,_com=com,_zmp=zmp,_sp=sp,_zmpIsInSp=zmpIsInSp}) = getMotionDataVariablesFromMotionData md
         comI  =  ((com (F 0)) * (V3 1 0 1)) + (V3 (-0.1) 0 0) --zmp (F 0)
         comIF = (((com (F 0)) * (V3 1 0 1)) + (V3 (0.1) 0 0)) -comI --(zmp (F (fN-1))) - comI
         bnds = (0,fN-1)
@@ -102,12 +96,18 @@ mainLoopOut sim = do
             zipWith (\ proj zmp -> if null proj then zmp else xz2x0z . head $ proj) [polyEdgeLineSegIntersect (sp fI) (toXZ (zmp fI), spC) | (fI,spC) <- zip fs centerOfSp] (map zmp fs)
 
 
-        mdvMod = iterate (flip fitMottionDataToZmp targetZmp) mdvActual !! 3
+        mdvMod@MotionDataVars{_zmp=zmpMod,_fs=fsMod} = iterate (flip fitMottionDataToZmp targetZmp) mdvActual !! 1
 
         loop sim ti tl = do
             tc <- getCurrentTime
             sim' <- mainLoop sim mdvActual mdvMod targetZmp (realToFrac $ diffUTCTime tc ti) (realToFrac $ diffUTCTime tc tl)
             loop sim' ti tc
+
+    seq (foldl1' seqMDV [mdvActual,mdvMod]) (return ())
+    sim <- startSim mdvMod
+    initOgre
+    ti <- getCurrentTime
+    loop sim ti ti
 
 mainLoop :: Sim -> MotionDataVars -> MotionDataVars -> Array Int Vec3 -> Double -> Double -> IO Sim
 mainLoop
@@ -116,35 +116,40 @@ mainLoop
   mdv@MotionDataVars{_zmpIsInSp=zmpIsInSp,_dt=dt,_fs=fs,_fN=fN,_bs=bs,_zmp=zmp}
   targetZmp
   t'
-  simdt = do
-    --sim' <- step sim simdt
+  simdt' = do
     let
-        t = t'/3
-        sim' = sim
-    cSimFrame <- getSimSkel sim'
-    let
+        --sim' = sim
+        speed = 1/5
+        t = t' * speed
+        simdt = simdt' * speed
+        -- sim' = sim
         loop = True
         maxFIndex = fN - 1
         frameix = if loop then (1 + ((floor $ t / dt))) `mod` maxFIndex else min (maxFIndex) (1 + ((floor $ t / dt)))
         frameIx = F frameix
 
+        yGRF = 700
+
+    sim' <- step sim simdt (toXZ $ targetZmp!frameix) yGRF
+    cSimFrame <- getSimSkel sim'
+
     -- sim visualization
---    drawSkeleton $ cSimFrame
+    drawSkeleton $ cSimFrame
 
     -- Annimation
     let aniOffset =   zero --V3 (-2) 0 0
     drawFrameIx White aniOffset mdv frameIx
     drawFrameIx (BlackA 0.25) aniOffset mvdOrig frameIx
+
     -- SP
 --    drawPolygonC (OrangeA 0.3) (map (\(V2 x z) -> V3 x 0 z) (aniSp frameIx))
     drawPolygonEdgesC Black (map (\(V2 x z) -> V3 x 0 z) (aniSp frameIx))
     --mapM_ ((\p -> drawPointC Blue p 0.02) . (\(V2 x z) ->V3 x 0 z)) (polyEdgeLineSegIntersect (aniSp frameIx) (toXZ (aniZmp frameIx), toXZ (aniCom frameIx)))
 
     -- ZMP
-    putStrLn $ "zmp: " ++ (show $ zmp frameIx)
     drawPointC (Green) (aniZmp frameIx) 0.02
     drawPointC (Red) (zmp frameIx) 0.02
-    drawPointC (WhiteA 0.4) (   targetZmp!(frameix)) 0.04
+    drawPointC (WhiteA 0.4) (targetZmp!(frameix)) 0.04
 --    drawPointC (if zmpIsInSp frameIx then White else Red) (aniOffset + (zmp frameIx)) 0.02
 --    drawPointC (if aniZmpIsInSp frameIx then (WhiteA 0.5) else (OrangeA 0.5)) (aniOffset + (aniZmp frameIx)) 0.04
 --    drawPointC Red (aniOffset + (targetZmp frameIx)) 0.04

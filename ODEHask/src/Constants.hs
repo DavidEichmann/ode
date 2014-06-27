@@ -17,7 +17,7 @@ defaultColorAlpha :: Double
 defaultColorAlpha = 1
 
 defaultTimeStep :: Double
-defaultTimeStep = 1/600
+defaultTimeStep = 1/1000
 
 footWidth :: Double
 footWidth = 0.08

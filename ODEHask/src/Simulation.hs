@@ -8,7 +8,7 @@ module Simulation (
 
 import FFI
 import Util
-import Linear
+import Linear hiding (slerp)
 import Constants
 import MotionData
 import Data.Maybe
@@ -28,14 +28,14 @@ data Sim = Sim {
     odeBodies       :: TreeF DBodyID,
     -- Each motor corresponds to a motor controlling the PARENT joint (if one exists and is not the root).
     odeMotors       :: TreeF (Maybe DJointID),
-    targetMotion    :: MotionData,
+    targetMotion    :: MotionDataVars,
     simTime         :: Double,
     simTimeExtra    :: Double,
     timeDelta       :: Double
 }
 
-startSim :: MotionData -> IO Sim
-startSim md = do
+startSim :: MotionDataVars -> IO Sim
+startSim md@MotionDataVars{_baseSkeleton=skel,_js=js,_jb=jb,_xj=xj,_xb=xb,_rj=rj,_pj=pj,_jHasParent=jHasParent} = do
     newWid <- initODE defaultTimeStep
     bodies <- realizeBodies
     moveToFrame0 bodies
@@ -48,22 +48,20 @@ startSim md = do
         targetMotion    = md,
         simTime         = 0,
         simTimeExtra    = 0,
-        timeDelta       = defaultTimeStep } 
-    
+        timeDelta       = defaultTimeStep }
+
     where
-        skel = baseSkeleton md
-        frame0 = frames md ! 1
         realizeAMotors bodies = treeMapM maybeCreateAMotor bodies
         maybeCreateAMotor :: TreeF DBodyID -> IO (Maybe DJointID)
         maybeCreateAMotor jf
                     | hasParent jf && (hasParent (justParent jf))  = fmap Just (createAMotor (view jf) (view (justParent jf)))
-                    | otherwise  = return Nothing
-                            
+                    | otherwise = return Nothing
+
         realizeBodies = do
             bodyTree <- treeMapM createBody skel
             treeMapM_ view (treeZipWith createJoint skel bodyTree)
             return bodyTree
-            
+
         createBody :: JointF -> IO DBodyID
         createBody jf
             | hasParent jf = do
@@ -107,68 +105,81 @@ startSim md = do
                     -- Inertia matrix (about CoM)
                     (eye3 !!* 0.01)
 
+        f0I = F 0
         moveToFrame0 :: TreeF DBodyID -> IO ()
-        moveToFrame0 bidf = treeSequence_ $ treeZipWith moveBody bidf frame0
-        
-        moveBody bidF jf = setBodyPosRot (view bidF) (getPosCom jf) (maybe identity getRot (parent jf))
+        moveToFrame0 bidf = sequence_ $ zipWith moveBody (flatten bidf) js
+
+        moveBody :: DBodyID -> JointIx -> IO ()
+        moveBody bid jI
+            | jHasParent jI  = setBodyPosRot bid (xb f0I $ jb jI) (rj f0I $ pj jI)
+            | otherwise     = setBodyPosRot bid (xj f0I jI) identity
 
         createJoint jf bf
             | hasParent jf  = createBallJoint (view $ fromJust $ parent bf) (view bf) (getPosStart jf)
             | otherwise     = mapM_ (createFixedJoint (view bf)) (map view (getChildFs bf))
-                                    
 
-step :: Sim -> Double -> IO Sim
-step isim idt = step' isim{simTimeExtra = 0} (idt + (simTimeExtra isim)) where
+
+step :: Sim -> Double -> Vec2 -> Double -> IO Sim
+step isim idt targetCoP yGRF = step' isim{simTimeExtra = 0} (idt + (simTimeExtra isim)) where
     ddt = timeDelta isim
     w = wid isim
     step' sim dt
         | dt >= ddt     = do
-                            stepODE w
-                            
+                            stepODE w targetCoP yGRF
+
                             -- per step instructions go here
-                            matchMotionData sim ddt
-                            
-                            
+                            matchMotionDataVars sim ddt
+
+
                             simF <- step' sim{
                                 simTimeExtra = 0,
                                 simTime      = (simTime sim) + ddt
                             } (dt - ddt)
                             return simF
         | otherwise     = return sim{simTimeExtra = dt}
-        
-matchMotionData :: Sim -> Double -> IO ()
-matchMotionData sim dt = do
+
+-- Sim:     the simulation to match against
+-- Double:  the time delta in which to match the data (as the siumlation is only changed via manipulating velocities)
+matchMotionDataVars :: Sim -> Double -> IO ()
+matchMotionDataVars sim dt = do
     (_, rootSimQuat) <- getBodyPosRot $- (odeBodies sim)
     -- TODO: calculate joint angular velocities in global coordinates relative to the simulated root orientation and apply to AMotors
     let
-        md = targetMotion sim
-        frame = getInterpolatedFrame (simTime sim) md
-        setAMotor :: TreeF (DBodyID, Joint) -> TreeF (Maybe DJointID) -> IO ()
-        setAMotor bidFjF mamF = maybe (return ()) (setAMotor' bidF jF) (view mamF)
-           where
-            bidF = fmap fst bidFjF
-            jF   = fmap snd bidFjF
-        setAMotor' :: TreeF DBodyID -> JointF -> DJointID -> IO ()
-        setAMotor' bidF jF am
-            | hasParent jF && (hasParent $ justParent jF) = do
-                (_,ppRotGSim) <- getBodyPosRot $- (justParent bidF)
-                (_, pRotGSim) <- getBodyPosRot $- bidF
+        MotionDataVars{
+                _dt=dtF,
+                _jHasParent=jHasParent,
+                _js=js,
+                _pj=pj,
+                _rjL=rjL
+            } = targetMotion sim
+        t = simTime sim
+        fu = (t + dt) / dtF
+        u = --traceShowVM "matchMotionDataVars: u = " $
+                1 - (fu - (fromIntegral fai))
+        fai = floor fu
+        faI = F fai
+        fbi = ceiling fu
+        fbI = F fbi
+        setAMotor :: (DBodyID,DBodyID) -> JointIx -> Maybe DJointID -> IO ()
+        setAMotor bids jI mam = maybe (return ()) (setAMotor' bids jI) mam
+        setAMotor' :: (DBodyID,DBodyID) -> JointIx -> DJointID -> IO ()
+        setAMotor' (bidP,bid) jI am
+            | jHasParent jI && (jHasParent $ pj jI) = do
+                (_,ppRotGSim) <- getBodyPosRot bidP
+                (_, pRotGSim) <- getBodyPosRot bid
                 let
-                    pjF = justParent jF
-
                     simRotG     = pRotGSim
-                    targetRotG  = ppRotGSim * (rotationL $- pjF)
-                    
+                    targetRotG  = ppRotGSim * (slerp (rjL faI $ pj jI) (rjL fbI $ pj jI) u)
+
                     angularVelG = toAngularVel simRotG targetRotG dt
-                
+
                 setAMotorVelocity am angularVelG
-            | otherwise = error $ "jF doesn't have 2 parent's..... That doesn't make sense!!!"
-    treeSequence_ $ treeZipWith setAMotor (treeZip (odeBodies sim) frame) (odeMotors sim)
---    tMapM_ (maybe (return ()) (\jid -> setAMotorVelocity jid (V3 0 0 (2*pi)))) (odeMotors sim)
-    
+            | otherwise = error $ "joint doesn't have 2 parent's yet has an aMotor..... That should not be!!!"
+    sequence_ $ zipWith3 setAMotor (flatten $ treeMap' (\ f -> (view (justParent f), view f)) (odeBodies sim)) js (flatten $ odeMotors sim)
+
 
 getSimSkel :: Sim -> IO [Bone]
 getSimSkel sim = fmap allButRoot frame where
     allButRoot = tail . flatten
     frame = tMapM getBodyBone (odeBodies sim)
-    
+

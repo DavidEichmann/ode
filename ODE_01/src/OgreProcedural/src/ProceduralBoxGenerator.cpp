@@ -29,7 +29,6 @@ THE SOFTWARE.
 #include "ProceduralBoxGenerator.h"
 #include "ProceduralPlaneGenerator.h"
 #include "ProceduralUtils.h"
-#include <assert.h>
 
 using namespace Ogre;
 

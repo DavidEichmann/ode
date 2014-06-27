@@ -78,19 +78,20 @@ void Simulation::collisionCallback(dGeomID o1, dGeomID o2) {
 
 	// create collision joints
 	for (int i = 0; i < c; i++) {
-		if(contact[i].depth != 0) {
+		if(contact[i].depth > 0) {
 			dContact dc;
 
-			dc.surface.mode = dContactSoftERP | dContactSoftCFM;
+			dc.surface.mode = dContactSoftERP | dContactSoftCFM | dContactRolling;
 			dc.surface.soft_erp = 0.1;
 			dc.surface.soft_cfm = 0.00007;
+			dc.surface.rhoN = dInfinity;
 			dc.surface.mu = dInfinity;
 //			dc.surface.bounce = 0;
 //			dc.surface.bounce_vel = 0.1;
 			dc.geom = contact[i];
 
-			dJointID cj = dJointCreateContact(wid, contactGroupid, &dc);
-			dJointAttach(cj, b1, b2);
+//			dJointID cj = dJointCreateContact(wid, contactGroupid, &dc);
+			//dJointAttach(cj, b1, b2);
 		}
 	}
 }

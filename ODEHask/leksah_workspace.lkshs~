@@ -1,0 +1,18 @@
+Version of session file format:
+               1
+Time of storage:
+               "Sat May 17 15:18:59 BST 2014"
+Layout:        VerticalP (TerminalP {paneGroups = fromList [], paneTabs = Just TopP, currentPage = 5, detachedId = Nothing, detachedSize = Nothing}) (HorizontalP (HorizontalP (TerminalP {paneGroups = fromList [("Browser",HorizontalP (TerminalP {paneGroups = fromList [], paneTabs = Nothing, currentPage = -1, detachedId = Nothing, detachedSize = Nothing}) (HorizontalP (TerminalP {paneGroups = fromList [], paneTabs = Nothing, currentPage = 0, detachedId = Nothing, detachedSize = Nothing}) (TerminalP {paneGroups = fromList [], paneTabs = Nothing, currentPage = 0, detachedId = Nothing, detachedSize = Nothing}) 241) 58)], paneTabs = Just TopP, currentPage = 0, detachedId = Nothing, detachedSize = Nothing}) (TerminalP {paneGroups = fromList [], paneTabs = Just TopP, currentPage = 0, detachedId = Nothing, detachedSize = Nothing}) 407) (TerminalP {paneGroups = fromList [], paneTabs = Nothing, currentPage = 0, detachedId = Nothing, detachedSize = Nothing}) 947) 1194
+Population:    [(Just (BufferSt (BufferState "/home/david/git/ode/ODEHask/src/Data/Color.hs" 1191)),[SplitP LeftP]),(Just (BufferSt (BufferState "/home/david/git/ode/ODEHask/src/Constants.hs" 412)),[SplitP LeftP]),(Just (ErrorsSt ErrorsState),[SplitP RightP,SplitP TopP,SplitP BottomP]),(Just (BufferSt (BufferState "/home/david/git/ode/ODEHask/src/FFI.hs" 11614)),[SplitP LeftP]),(Just (FilesSt FilesState),[SplitP RightP,SplitP TopP,SplitP TopP]),(Just (BufferSt (BufferState "/home/david/git/ode/ODEHask/src/Data/Geom.hs" 37)),[SplitP LeftP]),(Just (InfoSt (InfoState Nothing)),[SplitP RightP,SplitP TopP,SplitP TopP,GroupP "Browser",SplitP BottomP,SplitP BottomP]),(Just (LogSt LogState),[SplitP RightP,SplitP BottomP]),(Just (BufferSt (BufferState "/home/david/git/ode/ODEHask/src/Main.hs" 4315)),[SplitP LeftP]),(Just (ModulesSt (ModulesState 224 (WorkspaceScope False,False) (Just (ModuleName ["Util"]),Nothing) (ExpanderState {packageExp = ([],[]), packageExpNoBlack = ([],[]), packageDExp = ([],[]), packageDExpNoBlack = ([],[]), workspaceExp = ([],[]), workspaceExpNoBlack = ([],[]), workspaceDExp = ([],[]), workspaceDExpNoBlack = ([],[]), systemExp = ([],[]), systemExpNoBlack = ([],[])}))),[SplitP RightP,SplitP TopP,SplitP TopP,GroupP "Browser",SplitP BottomP,SplitP TopP]),(Just (BufferSt (BufferState "/home/david/git/ode/ODEHask/src/MotionData.hs" 32639)),[SplitP LeftP]),(Just (SearchSt (SearchState {searchString = "", searchScope = SystemScope, searchMode = Prefix {caseSense = False}})),[SplitP RightP,SplitP TopP,SplitP TopP]),(Just (BufferSt (BufferState "/home/david/git/ode/ODEHask/src/Util.hs" 6505)),[SplitP LeftP])]
+Window size:   (1871,1056)
+Completion size:
+               (750,400)
+Workspace:     Just "/home/david/git/ode/ODEHask/leksah_workspace.lkshw"
+Active pane:   Just "MotionData.hs"
+Toolbar visible:
+               True
+FindbarState:  (True,FindState {entryStr = "Gree", entryHist = ["Gree","hat","motiondatava","motiondataB","changeM","updateM","acos","asin","i","fi","I","hk"], replaceStr = "I", replaceHist = [], caseSensitive = False, entireWord = False, wrapAround = True, regex = False, lineNr = 1})
+Recently opened files:
+               ["/home/david/git/ode/ODEHask/src/Util.hs","/home/david/git/ode/ODEHask/src/Main.hs","/home/david/git/ode/ODEHask/src/Data/TreeF.hs","/home/david/git/ode/ODEHask/src/MotionData.hs"]
+Recently opened workspaces:
+               []

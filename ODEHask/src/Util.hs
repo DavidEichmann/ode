@@ -230,3 +230,6 @@ applyUntilN n fn ck val
 traceShowV :: Show a => a -> a
 traceShowV v = traceShow v v
 
+traceShowVM :: Show a => String -> a -> a
+traceShowVM msg v = traceShow (msg ++ (show v)) v
+
