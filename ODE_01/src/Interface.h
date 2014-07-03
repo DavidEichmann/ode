@@ -7,7 +7,7 @@ extern "C" {
 	//
 	// Matrix solver
 	//
-	double* sparseMatrixSolve(int n, int nz, int* mixs, int r, double* vals);
+	double* sparseMatrixSolve(int n, int nz, int* mixs, int r, double* vals, bool leastSquare);
 	double* inverseMatrix(int r, int c, double* vals);
 
 
@@ -31,6 +31,7 @@ extern "C" {
 
 	dWorldID initODE(double dt);
 
+	double* getFloorContacts();
 	double* getBodyGeomStartEnd(dBodyID bid);
 	double* getBodyGeomBox(dBodyID bid);
 	double* getBodyGeom(dBodyID bid);

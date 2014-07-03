@@ -96,7 +96,7 @@ mainLoopOut md = do
             zipWith (\ proj zmp -> if null proj then zmp else xz2x0z . head $ proj) [polyEdgeLineSegIntersect (sp fI) (toXZ (zmp fI), spC) | (fI,spC) <- zip fs centerOfSp] (map zmp fs)
 
 
-        mdvMod@MotionDataVars{_zmp=zmpMod,_fs=fsMod} = iterate (flip fitMottionDataToZmp targetZmp) mdvActual !! 1
+        mdvMod@MotionDataVars{_zmp=zmpMod,_fs=fsMod} = fitMottionDataToZmp mdvActual targetZmp 0.15 5
 
         loop sim ti tl = do
             tc <- getCurrentTime
@@ -113,7 +113,7 @@ mainLoop :: Sim -> MotionDataVars -> MotionDataVars -> Array Int Vec3 -> Double 
 mainLoop
   sim
   mvdOrig@MotionDataVars{_zmpIsInSp=aniZmpIsInSp,_com=targetZmp'@aniCom,_zmp=aniZmp,_sp=aniSp}
-  mdv@MotionDataVars{_zmpIsInSp=zmpIsInSp,_dt=dt,_fs=fs,_fN=fN,_bs=bs,_zmp=zmp}
+  mdv@MotionDataVars{_zmpIsInSp=zmpIsInSp,_dt=dt,_fs=fs,_fN=fN,_bs=bs,_m=m,_l=l,_zmp=zmp}
   targetZmp
   t'
   simdt' = do
@@ -128,13 +128,15 @@ mainLoop
         frameix = if loop then (1 + ((floor $ t / dt))) `mod` maxFIndex else min (maxFIndex) (1 + ((floor $ t / dt)))
         frameIx = F frameix
 
-        yGRF = 700
+        yGRF = sum [(m b) * ((vy $ l frameIx b) + gravityAcc) | b <- bs]
 
     sim' <- step sim simdt (toXZ $ targetZmp!frameix) yGRF
+    floorCOntacts <- getFloorContacts
     cSimFrame <- getSimSkel sim'
 
     -- sim visualization
-    drawSkeleton $ cSimFrame
+    --drawSkeleton $ cSimFrame
+    --mapM_ (\p -> drawPointC Yellow p 0.02) (map xz2x0z floorCOntacts)
 
     -- Annimation
     let aniOffset =   zero --V3 (-2) 0 0
@@ -186,9 +188,10 @@ drawFrame offset' j = treeMapM_ drawBone' (set ((view j){offset = (offset $- j) 
 
 drawSkeleton :: [Bone] -> IO ()
 drawSkeleton = mapM_ drawBone' where
-     drawBone' :: Bone -> IO ()
-     drawBone' (Long start end) = drawBoneC (RedA 0.5) start end boneRadiusDisplay
-     drawBone' (Box lengths center rot) = drawBoxC (RedA 0.5) lengths center rot
+    color = RedA 0.2
+    drawBone' :: Bone -> IO ()
+    drawBone' (Long start end) = drawBoneC color start end boneRadiusDisplay
+    drawBone' (Box lengths center rot) = drawBoxC color lengths center rot
 
 
 

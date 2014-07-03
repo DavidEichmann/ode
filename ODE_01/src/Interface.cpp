@@ -1,6 +1,8 @@
 #include "OgreCanvas.h"
 #include <Eigen/Core>
 #include <Eigen/SparseLU>
+#include <Eigen/SparseQR>
+#include <Eigen/QR>
 #include "Util.h"
 
 #include "Interface.h"
@@ -20,8 +22,8 @@
  * returns r*n values representing solved vectors
  */
 double* matrixSolveResults = new double[1];
-double* sparseMatrixSolve(const int n, const int nnz, int* const mixs, const int r, double* const vals) {
-	cout << "Sparse Matrix solve started..." << endl;
+double* sparseMatrixSolve(const int n, const int nnz, int* const mixs, const int r, double* const vals, bool leastSquare) {
+	cout << "Sparse Matrix solve started..." << (leastSquare ? " (with least square)" : "")<< endl;
 	double* valsC = vals;
 	// prepare return buffer
 	delete[] matrixSolveResults;
@@ -49,7 +51,7 @@ double* sparseMatrixSolve(const int n, const int nnz, int* const mixs, const int
 	}
 
 //	cout << "vals\n";
-//	for(int i = 0; i < (nnz) + (r*n); i++) {
+//	for(int i = 0; i < nnz; i++) {
 //		cout << vals[i] << " ";
 //	}
 //	cout << "\nmixs\n";
@@ -57,18 +59,37 @@ double* sparseMatrixSolve(const int n, const int nnz, int* const mixs, const int
 //		cout << mixs[i] << " ";
 //	}
 	// solve A x = b
-	SparseLU< SparseMatrix<double> > solver;
-	solver.compute(A);
-	if(solver.info()!=Success) {
-		// decomposition failed
-		cerr << "Matrix solver: failed in COMPUTE stage" << endl;
-		exit(1);
+	if(leastSquare) {
+		SparseQR< SparseMatrix<double>, AMDOrdering<int> > solver;
+		x = A.toDense().fullPivHouseholderQr().solve(b);
+//		solver.setPivotThreshold(0);
+//		solver.compute(A);
+//		if(solver.info()!=Success) {
+//			// decomposition failed
+//			cerr << "Matrix solver (with least square): failed in COMPUTE stage" << endl;
+//			exit(1);
+//		}
+//		x = solver.solve(b);
+//		if(solver.info()!=Success) {
+//			// solving failed
+//			cerr << "Matrix solver (with least square): failed in SOLVE stage" << endl;
+//			exit(1);
+//		}
 	}
-	x = solver.solve(b);
-	if(solver.info()!=Success) {
-		// solving failed
-		cerr << "Matrix solver: failed in SOLVE stage" << endl;
-		exit(1);
+	else {
+		SparseLU< SparseMatrix<double> > solver;
+		solver.compute(A);
+		if(solver.info()!=Success) {
+			// decomposition failed
+			cerr << "Matrix solver: failed in COMPUTE stage" << endl;
+			exit(1);
+		}
+		x = solver.solve(b);
+		if(solver.info()!=Success) {
+			// solving failed
+			cerr << "Matrix solver: failed in SOLVE stage" << endl;
+			exit(1);
+		}
 	}
 	// copy results into array
 	for(int bc = 0; bc < r; bc++) {
@@ -146,8 +167,20 @@ dWorldID wid;
 dSpaceID sid;
 dJointGroupID jointGroupid;
 dJointGroupID contactGroupid;
-double * buf = new double[20]; // pos + rot
+vector<dContact> contacts;
+vector<dBodyID> contactBodies;
+double * buf = new double[200]; // pos + rot
 
+double * getFloorContacts() {
+	buf[0] = contacts.size();
+	double* bufa = buf + 1;
+	for(auto it = contacts.begin(); it != contacts.end(); it++) {
+		bufa[0] = (*it).geom.pos[0];
+		bufa[1] = (*it).geom.pos[2];
+		bufa += 2;
+	}
+	return buf;
+}
 
 double * getBodyPosRot(dBodyID bid) {
 	const dReal * pos = dBodyGetPosition(bid);
@@ -408,9 +441,6 @@ void createFixedJoint(dBodyID a, dBodyID b) {
 	dJointAttach(jid, a, b);
 	dJointSetFixed(jid);
 }
-
-vector<dContact> contacts;
-vector<dBodyID> contactBodies;
 void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 
 	// ignore collisions with spaces
@@ -485,9 +515,20 @@ void doCollisions() {
 
 	// using generalised barycentric coordinates
 	Vector2d p{zmpX,zmpZ};
-	int n = contacts.size();
+	int n = 4;
+
 	double weightSum = 0;
 	double w[n];
+
+	contacts.push_back(contacts[0]);
+	contacts.push_back(contacts[0]);
+	contacts.push_back(contacts[0]);
+	for(int j = 0; j < n; j++) {
+		contacts[j].geom.pos[0] = (j <= 1) ? -50 : 50;
+		contacts[j].geom.pos[1] = 0;
+		contacts[j].geom.pos[2] = (1 <= j && j <= 2) ? -50 : 50;
+	}
+
 	for(int j = 0; j < n; j++) {
 
 		int prev = (j + n - 1) % n;
@@ -505,14 +546,14 @@ void doCollisions() {
 		double fj = w[j] * fy;
 		cout << "y force on contact point " << j << ": " << fj << endl;
 		dBodyAddForceAtPos(
-				contactBodies[j],
+				contactBodies[1],
 				0, fj, 0,	// force to add
 				contacts[j].geom.pos[0],
 				contacts[j].geom.pos[1],
 				contacts[j].geom.pos[2]);
 	}
 
-	/* Using psudo invers is no longer used
+	/* psudo invers method is no longer used
 	//   create matrix
 	int cn = contacts.size();
 	MatrixXd matrix(3,cn);

@@ -365,6 +365,8 @@ getMotionDataVariables dt j bskel fN = MotionDataVars {
     l :: FrameIx -> BoneIx -> Vec3
     l = deriveFB xb
 
+
+
     -- bone angular velocity
     w :: FrameIx -> BoneIx -> Vec3
     w = memoizeFB w_ where
@@ -781,221 +783,227 @@ dip :: Double -> MotionDataVars -> MotionDataVars
 dip amount md@MotionDataVars{_fs=fs,_j=j} = modifyMotionDataVars md [let joint = j fi 0 in ((fi,0), joint{offset = (offset joint) - (V3 0 amount 0)}) | (F fi) <- fs]
 
 -- based off of "Online Generation of Humanoid Walking Motion based on a Fast Generation Method of Motion Pattern that Follows Desired ZMP"
-fitMottionDataToZmp :: MotionDataVars -> Array Int Vec3 -> MotionDataVars
-fitMottionDataToZmp mdv zmpX = modifiedMdv where
+-- origional motion data
+-- target ZMP trajectory
+-- dip (lower the body to extend leg reach)
+-- number of itterations
+fitMottionDataToZmp :: MotionDataVars -> Array Int Vec3 -> Double -> Int -> MotionDataVars
+fitMottionDataToZmp mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig its where
+    fitMottionDataToZmp' mdv 0 = mdv
+    fitMottionDataToZmp' mdv itsI = modifiedMdv where
+        MotionDataVars{
+            _j       = j,
+            _g       = g,
+            _m       = m,
+            _dt      = dt,
+            _fN      = fN,
+            _fs      = fs,
+            _bs      = bs,
+            _xb      = posb,
+            _l'      = l',
+            _zmp     = zmp
+        } = mdv
 
-    MotionDataVars{
-        _j       = j,
-        _g       = g,
-        _m       = m,
-        _dt      = dt,
-        _fN      = fN,
-        _fs      = fs,
-        _bs      = bs,
-        _xb      = posb,
-        _l'      = l',
-        _zmp     = zmp
-    } = mdv
-
-    x f i = vx (posb (F f) i)
-    y f i = vy (posb (F f) i)
-    z f i = vz (posb (F f) i)
+        x f i = vx (posb (F f) i)
+        y f i = vy (posb (F f) i)
+        z f i = vz (posb (F f) i)
 
 
-    constrainLast = True
+        constrainLast = True
 
-    -- here we setup:    M xe = xep
-    --           and:    M ze = zep
-    -- M is a matrix
-    -- xe is the vector of shifts in body position (to be solved with a matrix solver)
-    -- xep is the shift is ZMP poisitons through time (note that first and last elements are 0)
+        -- here we setup:    M xe = xep
+        --           and:    M ze = zep
+        -- M is a matrix
+        -- xe is the vector of shifts in body position (to be solved with a matrix solver)
+        -- xep is the shift is ZMP poisitons through time (note that first and last elements are 0)
 
-    -- generate the matrix M (list of position and values... sparse matrix)
-    _M :: [((Int,Int),Double)]
-    _M = if constrainLast
+        -- generate the matrix M (list of position and values... sparse matrix)
+        _M :: [((Int,Int),Double)]
+        _M = if constrainLast
+                then
+                    ((0,0), 1) : ((fN-1,fN-1), 1) : concat [[((r,r-1), f r), ((r,r),diag r), ((r,r+1), f r)] | r <- [1..fN-2]]
+                else
+                     ((0,0), 1) :
+                     ((1,0), negate (f 1)) :
+                     ((1,1), 1 + (f 1)) :
+                     concat [
+                        [
+
+                            ((r,r-2), f r),
+                            ((r,r-1), (-2)*(f r)),
+                            ((r,r),   1 + (f r))
+
+                        ] | r <- [2..fN-1]
+                    ]
+            where
+                dt2         = dt ** 2
+                f :: Int -> Double
+                f           = memoize (0,fN-1) f' where
+                                f' :: Int -> Double
+                                f' r =  (negate (sum (map (\bI -> (m bI) * (y r bI)) bs))) /
+                                            (dt2 * (sum (fmap (\bI -> (m bI) * ((vy $ l' fI bI) + g)) bs))) where
+                                           fI = F r
+                diag r = 1 - (2 * (f r))
+
+        -- ep
+        ep :: Array Int Vec3
+        ep = if constrainLast
             then
-                ((0,0), 1) : ((fN-1,fN-1), 1) : concat [[((r,r-1), f r), ((r,r),diag r), ((r,r+1), f r)] | r <- [1..fN-2]]
+                array (0,fN-1) ((0,0) : (fN-1, 0) : [(fi, (zmpX!fi) - (zmp (F fi))) | fi <- range (1,fN-2)])
             else
-                 ((0,0), 1) :
-                 ((1,0), negate (f 1)) :
-                 ((1,1), 1 + (f 1)) :
-                 concat [
-                    [
+                array (0,fN-1) ((0,0) :             [(fi, (zmpX!fi) - (zmp (F fi))) | fi <- range (1,fN-1)])
+        -- xep
+        xep = fmap vx ep
+        --
+        zep = fmap vz ep
 
-                        ((r,r-2), f r),
-                        ((r,r-1), (-2)*(f r)),
-                        ((r,r),   1 + (f r))
+        -- use matrix solver to get xe
+        --  sparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
+        --(xe:ze:_) = leastSquareSparseMatrixSolve _M  [xep,zep]
+        (xe:ze:_) = sparseMatrixSolve _M  [xep,zep]
 
-                    ] | r <- [2..fN-1]
-                ]
-        where
-            dt2         = dt ** 2
-            f :: Int -> Double
-            f           = memoize (0,fN-1) f' where
-                            f' :: Int -> Double
-                            f' r =  (negate (sum (map (\bI -> (m bI) * (y r bI)) bs))) /
-                                        (dt2 * (sum (fmap (\bI -> (m bI) * ((vy $ l' fI bI) + g)) bs))) where
-                                       fI = F r
-            diag r = 1 - (2 * (f r))
+        shiftedFrames = [ let joint@Joint{offset=offset} = j fi 0 in ((fi, 0), joint{ offset = offset + (V3 (xe!fi) 0 (ze!fi)) })  | fi <- [0..fN-1] ]
 
-    -- ep
-    ep :: Array Int Vec3
-    ep = if constrainLast
-        then
-            array (0,fN-1) ((0,0) : (fN-1, 0) : [(fi, (zmpX!fi) - (zmp (F fi))) | fi <- range (1,fN-2)])
-        else
-            array (0,fN-1) ((0,0) :             [(fi, (zmpX!fi) - (zmp (F fi))) | fi <- range (1,fN-1)])
-    -- xep
-    xep = fmap vx ep
+        --modifyMotionDataVars :: MotionDataVars -> FJIndexedFrames -> MotionDataVars
+        modifiedMdv = fitMottionDataToZmp' (correctFeet mdvOrig $ (if itsI == its then dip dipHeight else id) $ modifyMotionDataVars mdv shiftedFrames) (itsI-1)
+
+        -- Move (via IK) feet in the second MDV argument to the position of the feet in the first
+        -- update the motion data. Each frame is updated independantly (individual updates are collected from "correctFrame")
+        correctFeet :: MotionDataVars -> MotionDataVars -> MotionDataVars
+        correctFeet target@MotionDataVars{_xj=xjT} md@MotionDataVars{_pj=pj,_bj=bj,_fN=fN,_fs=fs,_j=j,_rj=rj,_xj=xj,_bByName=bByName,_footBs=((lfbI,_),(rfbI,_))} =
+            trace
+             "Done correction feet with IK"
+             (modifyMotionDataVars md (concat [correctFrame fI | fI <- fs])) where
+
+                maxIKItterations = 25
+                alpha = 0.4 -- portion of change to apply per IK step
+    --            maxAngleDelta = pi/4
+                dampening = 0.02 ** 2 -- IK damping term
+
+                -- returns the updates to apply to a given frame
+                correctFrame :: FrameIx -> [((Int,Int), Joint)]
+                correctFrame fI@(F fi) = (correctLeg lajI) ++ (correctLeg rajI) where
+
+                    correctLeg ajI@(J aji) = [
+                             ((fi, hji), jF fi hji) -- jointH{ rotationL = (rotationL jointH) * dRotHL})
+                            ,((fi, kji), jF fi kji) -- jointK{ rotationL = (rotationL jointK) * dRotKL})
+                            ,((fi, aji), jF fi aji) -- jointA{ rotationL = (rotationL jointA) * dRotAL})
+                        ] where
+
+                            kjI@(J kji) = pj ajI
+                            hjI@(J hji) = pj kjI
+
+                            -- joints
+
+                            jointH = j fi hji
+                            jointK = j fi kji
+                            jointA = j fi aji
+
+
+                            -- clamped asin/acos
+
+                            asinc v = asin $ max (-1) (min v 1)
+                            acosc v = acos $ max (-1) (min v 1)
+
+                            -- target ankel position (normalized for max extention)
+
+                            maxExtention = (norm ((xj fI kjI) - (xj fI hjI))) + (norm ((xj fI ajI) - (xj fI kjI)))
+
+                            aT = h' + ((min (norm hat') maxExtention) *^ (normalize hat')) where
+                                h' = (xj fI hjI)
+                                hat' = (xjT fI ajI) - h'
+
+                            -- setp 1   Rotate hip to point ankel toward target ankel
+
+                            ha1  = (xj fI ajI)  - (xj fI hjI)
+                            hat1 = aT - (xj fI hjI)
+
+                            axisH = normalize $ ha1 `cross` hat1
+                            angleDH2 = acosc $ (ha1 `dot` hat1) / ((norm ha1) * (norm hat1))
+
+                            md2@MotionDataVars{_j=j2,_xj=xj2,_rj=rj2} = modifyMotionDataVars md [
+                                    ((fi,hji), jointH{rotationL = (rotationL jointH) * (axisAngle ((conjugate $ rj fI hjI) `rotate` axisH) angleDH2)})
+                                ]
+                            jointH2 = j2 fi hji
+                            jointK2 = j2 fi kji
+
+                            -- step 2   adjust knee/hip (rota aroun knee asxis) to be reach the correct distance (hipt to ankel)
+
+                            -- some vectors
+                            haT  = aT  - (xj2 fI hjI)
+                            hatNorm = norm haT
+                            ha  = (xj2 fI ajI)  - (xj2 fI hjI)
+                            kh  = (xj2 fI hjI)  - (xj2 fI kjI)
+                            hk  = (xj2 fI kjI)  - (xj2 fI hjI)
+                            ka  = (xj2 fI ajI)  - (xj2 fI kjI)
+
+                            -- original angles
+                            angleK = acosc $ (kh `dot` ka) / ((norm kh) * (norm ka))
+                            angleH = acosc $ (ha `dot` hk) / ((norm ha) * (norm hk))
+                            -- new angles
+                            angleKT = acosc $ ((hatNorm ** 2) - (norm2 hk) - (norm2 ka)) / (-2 * (norm hk) * (norm ka))
+                            angleHT = asinc $ ((norm ka) * (sin angleKT)) / (hatNorm)
+
+                            -- 2.1  extend
+                            axisKExtend = normalize $ kh `cross` ka
+                            md22@MotionDataVars{_j=j22,_xj=xj22,_rj=rj22} = modifyMotionDataVars md2 [
+                                    ((fi,hji), jointH2{rotationL = (rotationL jointH2) * (axisAngle ((conjugate $ rj2 fI hjI) `rotate` axisKExtend) (negate angleH))}),
+                                    ((fi,kji), jointK2{rotationL = (rotationL jointK2) * (axisAngle ((conjugate $ rj2 fI kjI) `rotate` axisKExtend) (pi - angleK))})
+                                ]
+                            jointH22 = j22 fi hji
+                            jointK22 = j22 fi kji
+                            jointA22 = j22 fi aji
+
+                            -- 2.2 retract and correct foot
+                            axisKRetract = (rj22 fI hjI) `rotate` (negate unitX)
+
+                            md3@MotionDataVars{_rj=rj3} = modifyMotionDataVars md22 [
+                                     ((fi,hji), jointH22{rotationL = (rotationL jointH22) * (axisAngle ((conjugate $ rj22 fI hjI) `rotate` axisKRetract) angleHT)})
+                                    ,((fi,kji), jointK22{rotationL = (rotationL jointK22) * (axisAngle ((conjugate $ rj22 fI kjI) `rotate` axisKRetract) (angleKT - pi))})
+                                ]
+
+                            -- 3 correct foot
+                            mdF@MotionDataVars{_j=jF} = modifyMotionDataVars md3 [
+                                    -- target global ankel rotation is (rj fI ajI) we want this equal to the current global rotation (rj3 fI ajI = rj3 fI kjI * rotaionL ajI) hence
+                                    --      rj3 fI kjI * rotaionL ajI = rj fI ajI
+                                    --                    rotaionL ajI = (conjugate $ rj3 fI kjI) * (rj fI ajI)
+                                    ((fi,aji), jointA22{rotationL = (conjugate $ rj3 fI kjI) * (rj fI ajI)})
+                                ]
+
+
+    --                        -- hip
+    --                        dRotHG = (axisAngle axisH angleDH2)
+    --                                    -- step 2.1     extend
+    --                                    * dRotHG21
+    --                                    -- step 2.2     retract
+    --                                    * (axisAngle ((conjugate dRotHG21) `rotate` axisKRetract) angleHT)
+    --                        dRotHL = let rot = rj fI hjI
+    --                                 in (conjugate rot) * dRotHG * rot
     --
-    zep = fmap vz ep
-
-    -- use matrix solver to get xe
-    --  sparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
-    (xe:ze:_) = sparseMatrixSolve _M  [xep,zep]
-
-    shiftedFrames = [ let joint@Joint{offset=offset} = j fi 0 in ((fi, 0), joint{ offset = offset + (V3 (xe!fi) 0 (ze!fi)) })  | fi <- [0..fN-1] ]
-
-    --modifyMotionDataVars :: MotionDataVars -> FJIndexedFrames -> MotionDataVars
-    modifiedMdv = correctFeet mdv $ dip 0.11 $ modifyMotionDataVars mdv shiftedFrames
-
-    -- Move (via IK) feet in the second MDV argument to the position of the feet in the first
-    -- update the motion data. Each frame is updated independantly (individual updates are collected from "correctFrame")
-    correctFeet :: MotionDataVars -> MotionDataVars -> MotionDataVars
-    correctFeet target@MotionDataVars{_xj=xjT} md@MotionDataVars{_pj=pj,_bj=bj,_fN=fN,_fs=fs,_j=j,_rj=rj,_xj=xj,_bByName=bByName,_footBs=((lfbI,_),(rfbI,_))} =
-        trace
-         "Done correction feet with IK"
-         (modifyMotionDataVars md (concat [correctFrame fI | fI <- fs])) where
-
-            maxIKItterations = 25
-            alpha = 0.4 -- portion of change to apply per IK step
---            maxAngleDelta = pi/4
-            dampening = 0.02 ** 2 -- IK damping term
-
-            -- returns the updates to apply to a given frame
-            correctFrame :: FrameIx -> [((Int,Int), Joint)]
-            correctFrame fI@(F fi) = (correctLeg lajI) ++ (correctLeg rajI) where
-
-                correctLeg ajI@(J aji) = [
-                         ((fi, hji), jF fi hji) -- jointH{ rotationL = (rotationL jointH) * dRotHL})
-                        ,((fi, kji), jF fi kji) -- jointK{ rotationL = (rotationL jointK) * dRotKL})
-                        ,((fi, aji), jF fi aji) -- jointA{ rotationL = (rotationL jointA) * dRotAL})
-                    ] where
-
-                        kjI@(J kji) = pj ajI
-                        hjI@(J hji) = pj kjI
-
-                        -- joints
-
-                        jointH = j fi hji
-                        jointK = j fi kji
-                        jointA = j fi aji
-
-
-                        -- clamped asin/acos
-
-                        asinc v = asin $ max (-1) (min v 1)
-                        acosc v = acos $ max (-1) (min v 1)
-
-                        -- target ankel position (normalized for max extention)
-
-                        maxExtention = (norm ((xj fI kjI) - (xj fI hjI))) + (norm ((xj fI ajI) - (xj fI kjI)))
-
-                        aT = h' + ((min (norm hat') maxExtention) *^ (normalize hat')) where
-                            h' = (xj fI hjI)
-                            hat' = (xjT fI ajI) - h'
-
-                        -- setp 1   Rotate hip to point ankel toward target ankel
-
-                        ha1  = (xj fI ajI)  - (xj fI hjI)
-                        hat1 = aT - (xj fI hjI)
-
-                        axisH = normalize $ ha1 `cross` hat1
-                        angleDH2 = acosc $ (ha1 `dot` hat1) / ((norm ha1) * (norm hat1))
-
-                        md2@MotionDataVars{_j=j2,_xj=xj2,_rj=rj2} = modifyMotionDataVars md [
-                                ((fi,hji), jointH{rotationL = (rotationL jointH) * (axisAngle ((conjugate $ rj fI hjI) `rotate` axisH) angleDH2)})
-                            ]
-                        jointH2 = j2 fi hji
-                        jointK2 = j2 fi kji
-
-                        -- step 2   adjust knee/hip (rota aroun knee asxis) to be reach the correct distance (hipt to ankel)
-
-                        -- some vectors
-                        haT  = aT  - (xj2 fI hjI)
-                        hatNorm = norm haT
-                        ha  = (xj2 fI ajI)  - (xj2 fI hjI)
-                        kh  = (xj2 fI hjI)  - (xj2 fI kjI)
-                        hk  = (xj2 fI kjI)  - (xj2 fI hjI)
-                        ka  = (xj2 fI ajI)  - (xj2 fI kjI)
-
-                        -- original angles
-                        angleK = acosc $ (kh `dot` ka) / ((norm kh) * (norm ka))
-                        angleH = acosc $ (ha `dot` hk) / ((norm ha) * (norm hk))
-                        -- new angles
-                        angleKT = acosc $ ((hatNorm ** 2) - (norm2 hk) - (norm2 ka)) / (-2 * (norm hk) * (norm ka))
-                        angleHT = asinc $ ((norm ka) * (sin angleKT)) / (hatNorm)
-
-                        -- 2.1  extend
-                        axisKExtend = normalize $ kh `cross` ka
-                        md22@MotionDataVars{_j=j22,_xj=xj22,_rj=rj22} = modifyMotionDataVars md2 [
-                                ((fi,hji), jointH2{rotationL = (rotationL jointH2) * (axisAngle ((conjugate $ rj2 fI hjI) `rotate` axisKExtend) (negate angleH))}),
-                                ((fi,kji), jointK2{rotationL = (rotationL jointK2) * (axisAngle ((conjugate $ rj2 fI kjI) `rotate` axisKExtend) (pi - angleK))})
-                            ]
-                        jointH22 = j22 fi hji
-                        jointK22 = j22 fi kji
-                        jointA22 = j22 fi aji
-
-                        -- 2.2 retract and correct foot
-                        axisKRetract = (rj22 fI hjI) `rotate` (negate unitX)
-
-                        md3@MotionDataVars{_rj=rj3} = modifyMotionDataVars md22 [
-                                 ((fi,hji), jointH22{rotationL = (rotationL jointH22) * (axisAngle ((conjugate $ rj22 fI hjI) `rotate` axisKRetract) angleHT)})
-                                ,((fi,kji), jointK22{rotationL = (rotationL jointK22) * (axisAngle ((conjugate $ rj22 fI kjI) `rotate` axisKRetract) (angleKT - pi))})
-                            ]
-
-                        -- 3 correct foot
-                        mdF@MotionDataVars{_j=jF} = modifyMotionDataVars md3 [
-                                -- target global ankel rotation is (rj fI ajI) we want this equal to the current global rotation (rj3 fI ajI = rj3 fI kjI * rotaionL ajI) hence
-                                --      rj3 fI kjI * rotaionL ajI = rj fI ajI
-                                --                    rotaionL ajI = (conjugate $ rj3 fI kjI) * (rj fI ajI)
-                                ((fi,aji), jointA22{rotationL = (conjugate $ rj3 fI kjI) * (rj fI ajI)})
-                            ]
-
-
---                        -- hip
---                        dRotHG = (axisAngle axisH angleDH2)
---                                    -- step 2.1     extend
---                                    * dRotHG21
---                                    -- step 2.2     retract
---                                    * (axisAngle ((conjugate dRotHG21) `rotate` axisKRetract) angleHT)
---                        dRotHL = let rot = rj fI hjI
---                                 in (conjugate rot) * dRotHG * rot
---
---                        -- knee
---                        dRotKG21 = axisAngle axisKExtend (pi - angleK)
---                        dRotKG =    -- step 2.1     extend
---                                    dRotKG21
---                                    -- step 2.2     retract
---                                    * (axisAngle ((conjugate dRotKG21) `rotate` axisKRetract) (negate $ pi - angleKT))
---                        dRotKL = let rot = rj fI kjI
---                                 in (conjugate rot) * dRotKG * rot
---
---                        -- foot
---                        dRotAG = conjugate $ dRotHG * dRotKG
---                        dRotAL = let rot = rj fI ajI
---                                 in (conjugate rot) * dRotAG * rot
+    --                        -- knee
+    --                        dRotKG21 = axisAngle axisKExtend (pi - angleK)
+    --                        dRotKG =    -- step 2.1     extend
+    --                                    dRotKG21
+    --                                    -- step 2.2     retract
+    --                                    * (axisAngle ((conjugate dRotKG21) `rotate` axisKRetract) (negate $ pi - angleKT))
+    --                        dRotKL = let rot = rj fI kjI
+    --                                 in (conjugate rot) * dRotKG * rot
+    --
+    --                        -- foot
+    --                        dRotAG = conjugate $ dRotHG * dRotKG
+    --                        dRotAL = let rot = rj fI ajI
+    --                                 in (conjugate rot) * dRotAG * rot
 
 
 
 
-            -- itterativelly move joints
-            lajI = pj . bj $ lfbI   -- left ankel joint
-            lkjI = pj lajI          -- left knee joint
-            lhjI = pj lkjI          -- left hip joint
-            rajI = pj . bj $ rfbI   -- right ankel joint
-            rkjI = pj rajI          -- right knee joint
-            rhjI = pj rkjI          -- right hip joint
+                -- itterativelly move joints
+                lajI = pj . bj $ lfbI   -- left ankel joint
+                lkjI = pj lajI          -- left knee joint
+                lhjI = pj lkjI          -- left hip joint
+                rajI = pj . bj $ rfbI   -- right ankel joint
+                rkjI = pj rajI          -- right knee joint
+                rhjI = pj rkjI          -- right hip joint
 
 
 

@@ -102,7 +102,7 @@ void OgreCanvas::initOgre() {
 
 	/// create camera
 	mCamera = mSceneMgr->createCamera("My Cam");
-	mCamera->setPosition(Ogre::Vector3(0, 1, 7));
+	mCamera->setPosition(Ogre::Vector3(0, 1, 5));
 	mCamera->lookAt(Ogre::Vector3(0, 1, 0));
 	mCamera->setNearClipDistance(0.05);
 	mCamera->setFarClipDistance(100);

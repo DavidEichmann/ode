@@ -3,6 +3,7 @@ module FFI (
 
     inverseMatrix,
     sparseMatrixSolve,
+    leastSquareSparseMatrixSolve,
 
     initOgre,
     drawPolygonC,
@@ -21,6 +22,7 @@ module FFI (
     DBodyID,
     DJointID,
     initODE,
+    getFloorContacts,
     getBodyPosRot,
     setBodyPosRot,
     getBodyBone,
@@ -43,6 +45,7 @@ import Data.Color
 import Data.Maybe
 import Data.Bone
 import Data.Array
+import Data.List.Split
 import Control.Arrow
 import Control.Monad
 
@@ -105,6 +108,7 @@ drawPoint = drawPointC White
     ODE stuff
 -}
 type CBool = CInt
+toCBool b = CInt (if b then 1 else 0)
 type DBodyID = Ptr ()
 type DJointID = Ptr ()
 type DWorldID = Ptr ()
@@ -134,6 +138,18 @@ getBodyBone bid = do
     case round cls of
         1   -> return (Box (V3 x1 y1 z1) (V3 x2 y2 z2) (Quaternion qw (V3 qx qy qz)))
         2   -> return (Long (V3 x1 y1 z1) (V3 x2 y2 z2))
+
+foreign import ccall unsafe "Interface.h getFloorContacts"
+        getFloorContacts_c :: IO (Ptr CDouble)
+getFloorContacts :: IO [Vec2]
+getFloorContacts = do
+    ncs <- getFloorContacts_c
+    (nd:[]) <- cdPeekArray 1 ncs
+    let n = round nd
+    (_:cs2) <- cdPeekArray ((n*2)+1) ncs
+    return $ map (\(x:z:_) -> V2 x z) (chunksOf 2 cs2)
+
+
 
 
 foreign import ccall unsafe "Interface.h appendCapsuleBody"
@@ -260,9 +276,9 @@ fromFnCVec3D fn a b c = ((applyColor a) >>> (applyVec3 b) >>> (applyDouble c)) f
 
 
 foreign import ccall unsafe "Interface.h sparseMatrixSolve"
-    sparseMatrixSolve_c :: CInt -> CInt -> Ptr CInt -> CInt -> Ptr CDouble -> IO (Ptr CDouble)
-sparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
-sparseMatrixSolve matrix rhs = unsafeLocalState (do
+    sparseMatrixSolve_c :: CInt -> CInt -> Ptr CInt -> CInt -> Ptr CDouble -> CBool -> IO (Ptr CDouble)
+sparseMatrixSolveRaw :: Bool -> [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
+sparseMatrixSolveRaw useLeastSquare matrix rhs = unsafeLocalState (do
     let
         n = arraySize $ head rhs   -- size of rhs vectors (also matrix is n x n)
         r = length rhs          -- number of rhs vectors
@@ -281,11 +297,16 @@ sparseMatrixSolve matrix rhs = unsafeLocalState (do
             pokeArray arrMIxs (map fromIntegral (concat $ map (\((r,c),_) -> [r,c]) matrix))
             -- fill array with matrix values then rhs vectors
             pokeArray arr (map CDouble ((map snd matrix) ++ (concat $ map elems rhs)))
-            results <- cdPeekArray (r*n) =<< sparseMatrixSolve_c (fromIntegral n) (fromIntegral mNZ) arrMIxs (fromIntegral r) arr
+            results <- cdPeekArray (r*n) =<< sparseMatrixSolve_c (fromIntegral n) (fromIntegral mNZ) arrMIxs (fromIntegral r) arr (toCBool useLeastSquare)
             return $ map (listArray (0,n-1)) (breakSized n results)
          )
      )
  )
+
+sparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
+sparseMatrixSolve = sparseMatrixSolveRaw False
+leastSquareSparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
+leastSquareSparseMatrixSolve = sparseMatrixSolveRaw True
 
 
 foreign import ccall unsafe "Interface.h inverseMatrix"
