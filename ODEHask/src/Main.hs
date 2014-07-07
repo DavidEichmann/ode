@@ -96,7 +96,7 @@ mainLoopOut md = do
             zipWith (\ proj zmp -> if null proj then zmp else xz2x0z . head $ proj) [polyEdgeLineSegIntersect (sp fI) (toXZ (zmp fI), spC) | (fI,spC) <- zip fs centerOfSp] (map zmp fs)
 
 
-        mdvMod@MotionDataVars{_zmp=zmpMod,_fs=fsMod} = fitMottionDataToZmp mdvActual targetZmp 0.15 5
+        mdvMod@MotionDataVars{_zmp=zmpMod,_fs=fsMod} = fitMottionDataToZmp mdvActual targetZmp 0 5
 
         loop sim ti tl = do
             tc <- getCurrentTime
@@ -119,7 +119,7 @@ mainLoop
   simdt' = do
     let
         --sim' = sim
-        speed = 1/5
+        speed = 1/10
         t = t' * speed
         simdt = simdt' * speed
         -- sim' = sim
@@ -130,7 +130,9 @@ mainLoop
 
         yGRF = sum [(m b) * ((vy $ l frameIx b) + gravityAcc) | b <- bs]
 
-    sim' <- step sim simdt (toXZ $ targetZmp!frameix) yGRF
+        sim' = sim
+    --sim' <- step sim simdt (toXZ $ targetZmp!frameix) yGRF
+
     floorCOntacts <- getFloorContacts
     cSimFrame <- getSimSkel sim'
 
@@ -149,6 +151,8 @@ mainLoop
     --mapM_ ((\p -> drawPointC Blue p 0.02) . (\(V2 x z) ->V3 x 0 z)) (polyEdgeLineSegIntersect (aniSp frameIx) (toXZ (aniZmp frameIx), toXZ (aniCom frameIx)))
 
     -- ZMP
+    --putStrLn $ "target zmp: " ++ (show $ targetZmp!(frameix))
+    --putStrLn $ "actual zmp: " ++ (show (zmp frameIx))
     drawPointC (Green) (aniZmp frameIx) 0.02
     drawPointC (Red) (zmp frameIx) 0.02
     drawPointC (WhiteA 0.4) (targetZmp!(frameix)) 0.04

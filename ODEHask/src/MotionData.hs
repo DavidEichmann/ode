@@ -808,9 +808,6 @@ fitMottionDataToZmp mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig it
         y f i = vy (posb (F f) i)
         z f i = vz (posb (F f) i)
 
-
-        constrainLast = True
-
         -- here we setup:    M xe = xep
         --           and:    M ze = zep
         -- M is a matrix
@@ -818,23 +815,13 @@ fitMottionDataToZmp mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig it
         -- xep is the shift is ZMP poisitons through time (note that first and last elements are 0)
 
         -- generate the matrix M (list of position and values... sparse matrix)
+        constraintFramesRix = zip [0,100,fN-1] [0,fN,fN-1]
+        mrn = fN+1
         _M :: [((Int,Int),Double)]
-        _M = if constrainLast
-                then
-                    ((0,0), 1) : ((fN-1,fN-1), 1) : concat [[((r,r-1), f r), ((r,r),diag r), ((r,r+1), f r)] | r <- [1..fN-2]]
-                else
-                     ((0,0), 1) :
-                     ((1,0), negate (f 1)) :
-                     ((1,1), 1 + (f 1)) :
-                     concat [
-                        [
-
-                            ((r,r-2), f r),
-                            ((r,r-1), (-2)*(f r)),
-                            ((r,r),   1 + (f r))
-
-                        ] | r <- [2..fN-1]
-                    ]
+        _M =    -- fN-2 rows are the zmp = target zmp constraint for all frames other than the first and last
+                (concat  [[((r,r-1), f r), ((r,r),diag r), ((r,r+1), f r)] | r <- [1..fN-2]]) ++
+                -- remaining rows ensure that ther is no shift for the constraintFrames
+                (map (\(f,rix) -> ((rix,f), 1000000000000)) constraintFramesRix)
             where
                 dt2         = dt ** 2
                 f :: Int -> Double
@@ -847,11 +834,11 @@ fitMottionDataToZmp mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig it
 
         -- ep
         ep :: Array Int Vec3
-        ep = if constrainLast
-            then
-                array (0,fN-1) ((0,0) : (fN-1, 0) : [(fi, (zmpX!fi) - (zmp (F fi))) | fi <- range (1,fN-2)])
-            else
-                array (0,fN-1) ((0,0) :             [(fi, (zmpX!fi) - (zmp (F fi))) | fi <- range (1,fN-1)])
+        ep = array (0,mrn-1) (
+                            -- first fN-2 rows is the zmp = target zmp constraint for all frames other than the first and last
+                            [(fi, (zmpX!fi) - (zmp (F fi))) | fi <- range (1,fN-2)] ++
+                            -- remaining rows ensure that ther is no shift for the constraintFrames
+                            [(rix,V3 0 0 0) | (_,rix) <- constraintFramesRix])
         -- xep
         xep = fmap vx ep
         --
@@ -859,8 +846,8 @@ fitMottionDataToZmp mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig it
 
         -- use matrix solver to get xe
         --  sparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
-        --(xe:ze:_) = leastSquareSparseMatrixSolve _M  [xep,zep]
-        (xe:ze:_) = sparseMatrixSolve _M  [xep,zep]
+        (xe:ze:_) = leastSquareSparseMatrixSolve mrn fN _M [xep,zep]
+        --(xe:ze:_) = traceShow ep (sparseMatrixSolve _M  [xep,zep])
 
         shiftedFrames = [ let joint@Joint{offset=offset} = j fi 0 in ((fi, 0), joint{ offset = offset + (V3 (xe!fi) 0 (ze!fi)) })  | fi <- [0..fN-1] ]
 

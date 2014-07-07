@@ -22,14 +22,14 @@
  * returns r*n values representing solved vectors
  */
 double* matrixSolveResults = new double[1];
-double* sparseMatrixSolve(const int n, const int nnz, int* const mixs, const int r, double* const vals, bool leastSquare) {
-	cout << "Sparse Matrix solve started..." << (leastSquare ? " (with least square)" : "")<< endl;
+double* sparseMatrixSolve(const int mrn, const int mcn, const int nnz, int* const mixs, const int r, double* const vals) {
+	cout << "Sparse Matrix solve started..." << endl;
 	double* valsC = vals;
 	// prepare return buffer
 	delete[] matrixSolveResults;
-	matrixSolveResults = new double[n*r];
+	matrixSolveResults = new double[mcn*r];
 	// fill matrix A
-	SparseMatrix<double,RowMajor> A(n,n);
+	SparseMatrix<double,RowMajor> A(mrn,mcn);
 	std::vector< Eigen::Triplet<double> > entries;
 	int* mixsC = mixs;
 	for(int i = 0; i < nnz; i++) {
@@ -41,10 +41,10 @@ double* sparseMatrixSolve(const int n, const int nnz, int* const mixs, const int
 	A.makeCompressed();
 	//cout << "Matrix determinant: " << A.toDense().determinant() << endl;
 	// fill b
-	MatrixXd b(n,r);
-	MatrixXd x(n,r);
+	MatrixXd x(mcn,r);
+	MatrixXd b(mrn,r); // rhs
 	for(int bc = 0; bc < r; bc++) {
-		for(int br = 0; br < n; br++) {
+		for(int br = 0; br < mcn; br++) {
 			b(br,bc) = *valsC;
 			valsC++;
 		}
@@ -59,9 +59,9 @@ double* sparseMatrixSolve(const int n, const int nnz, int* const mixs, const int
 //		cout << mixs[i] << " ";
 //	}
 	// solve A x = b
-	if(leastSquare) {
-		SparseQR< SparseMatrix<double>, AMDOrdering<int> > solver;
-		x = A.toDense().fullPivHouseholderQr().solve(b);
+	if(true) {
+		x = A.toDense().colPivHouseholderQr().solve(b);
+//		SparseQR< SparseMatrix<double>, AMDOrdering<int> > solver;
 //		solver.setPivotThreshold(0);
 //		solver.compute(A);
 //		if(solver.info()!=Success) {
@@ -91,10 +91,16 @@ double* sparseMatrixSolve(const int n, const int nnz, int* const mixs, const int
 			exit(1);
 		}
 	}
+	// print difference vector for first rhs column
+	MatrixXd ax = A * x;
+	cout << "x:\n\n";
+	for(int i = 0; i < mcn; i++) {
+		cout << x(i,0) << endl;
+	}
 	// copy results into array
 	for(int bc = 0; bc < r; bc++) {
-		for(int br = 0; br < n; br++) {
-			matrixSolveResults[(n*bc)+br] = x(br,bc);
+		for(int br = 0; br < mcn; br++) {
+			matrixSolveResults[(mcn*bc)+br] = x(br,bc);
 		}
 	}
 	cout << "Sparse Matrix solve finished!" << endl;
@@ -544,7 +550,7 @@ void doCollisions() {
 	for(int j = 0; j < n; j++) {
 		w[j] /= weightSum;
 		double fj = w[j] * fy;
-		cout << "y force on contact point " << j << ": " << fj << endl;
+//		cout << "y force on contact point " << j << ": " << fj << endl;
 		dBodyAddForceAtPos(
 				contactBodies[1],
 				0, fj, 0,	// force to add

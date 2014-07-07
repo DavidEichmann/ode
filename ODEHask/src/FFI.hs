@@ -276,16 +276,16 @@ fromFnCVec3D fn a b c = ((applyColor a) >>> (applyVec3 b) >>> (applyDouble c)) f
 
 
 foreign import ccall unsafe "Interface.h sparseMatrixSolve"
-    sparseMatrixSolve_c :: CInt -> CInt -> Ptr CInt -> CInt -> Ptr CDouble -> CBool -> IO (Ptr CDouble)
-sparseMatrixSolveRaw :: Bool -> [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
-sparseMatrixSolveRaw useLeastSquare matrix rhs = unsafeLocalState (do
+    sparseMatrixSolve_c :: CInt -> CInt -> CInt -> Ptr CInt -> CInt -> Ptr CDouble -> IO (Ptr CDouble)
+sparseMatrixSolveRaw :: Int -> Int -> [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
+sparseMatrixSolveRaw mrn mcn matrix rhs = unsafeLocalState (do
     let
-        n = arraySize $ head rhs   -- size of rhs vectors (also matrix is n x n)
+        -- n = arraySize $ head rhs   -- size of rhs vectors (also matrix is n x n)
         r = length rhs          -- number of rhs vectors
 
         mNZ = length matrix         -- number of nonempty (non-zero) matix elements
         arrMIxsSize = 2 * mNZ       -- size of matrix index array
-        arrSize = (mNZ) + (n * r)   -- size of dataArray
+        arrSize = (mNZ) + (mrn * r)   -- size of dataArray
 
         breakSized :: Int -> [a] -> [[a]]
         breakSized s [] = []
@@ -297,16 +297,16 @@ sparseMatrixSolveRaw useLeastSquare matrix rhs = unsafeLocalState (do
             pokeArray arrMIxs (map fromIntegral (concat $ map (\((r,c),_) -> [r,c]) matrix))
             -- fill array with matrix values then rhs vectors
             pokeArray arr (map CDouble ((map snd matrix) ++ (concat $ map elems rhs)))
-            results <- cdPeekArray (r*n) =<< sparseMatrixSolve_c (fromIntegral n) (fromIntegral mNZ) arrMIxs (fromIntegral r) arr (toCBool useLeastSquare)
-            return $ map (listArray (0,n-1)) (breakSized n results)
+            results <- cdPeekArray (r*mrn) =<< sparseMatrixSolve_c (fromIntegral mrn) (fromIntegral mcn) (fromIntegral mNZ) arrMIxs (fromIntegral r) arr
+            return $ map (listArray (0,mrn-1)) (breakSized mrn results)
          )
      )
  )
 
-sparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
-sparseMatrixSolve = sparseMatrixSolveRaw False
-leastSquareSparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
-leastSquareSparseMatrixSolve = sparseMatrixSolveRaw True
+sparseMatrixSolve :: Int -> Int -> [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
+sparseMatrixSolve = error "only least squares is supported now"
+leastSquareSparseMatrixSolve :: Int -> Int -> [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
+leastSquareSparseMatrixSolve = sparseMatrixSolveRaw
 
 
 foreign import ccall unsafe "Interface.h inverseMatrix"
