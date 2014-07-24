@@ -4,6 +4,7 @@ import Control.Applicative (liftA2)
 import Data.List
 import Data.Array
 import Data.Maybe
+import Data.Functor
 import Data.TreeF as T
 import Data.Geometry.Point
 import Data.Geometry.Polygon
@@ -779,8 +780,14 @@ fitMottionDataToSP mdvOrig@MotionDataVars{_fN=fN,_g=g,_dt=dt,_bs=bs,_fs=fs,_zmp=
     dt2 = dt*dt
 
 
+shiftPerFrame :: Array Int Vec3 -> MotionDataVars -> MotionDataVars
+shiftPerFrame v md@MotionDataVars{_fs=fs,_j=j} = modifyMotionDataVars md [let joint = j fi 0 in ((fi,0), joint{offset = (offset joint) + v!fi}) | (F fi) <- fs]
+
+shift :: Vec3 -> MotionDataVars -> MotionDataVars
+shift v md@MotionDataVars{_fs=fs,_j=j} = modifyMotionDataVars md [let joint = j fi 0 in ((fi,0), joint{offset = (offset joint) + v}) | (F fi) <- fs]
+
 dip :: Double -> MotionDataVars -> MotionDataVars
-dip amount md@MotionDataVars{_fs=fs,_j=j} = modifyMotionDataVars md [let joint = j fi 0 in ((fi,0), joint{offset = (offset joint) - (V3 0 amount 0)}) | (F fi) <- fs]
+dip amount = shift (V3 0 (-amount) 0)
 
 -- based off of "Online Generation of Humanoid Walking Motion based on a Fast Generation Method of Motion Pattern that Follows Desired ZMP"
 -- origional motion data
@@ -788,10 +795,11 @@ dip amount md@MotionDataVars{_fs=fs,_j=j} = modifyMotionDataVars md [let joint =
 -- dip (lower the body to extend leg reach)
 -- number of itterations
 fitMottionDataToZmp :: MotionDataVars -> Array Int Vec3 -> Double -> Int -> MotionDataVars
-fitMottionDataToZmp mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig its where
-    fitMottionDataToZmp' mdv 0 = mdv
-    fitMottionDataToZmp' mdv itsI = modifiedMdv where
-        MotionDataVars{
+fitMottionDataToZmp mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig (listArray (bounds zmpX) [1,1..]) its where
+    fitMottionDataToZmp' :: MotionDataVars -> Array Int Double -> Int -> MotionDataVars
+    fitMottionDataToZmp' mdv _ 0 = mdv
+    fitMottionDataToZmp' mdv weights itsI = finalModifiedMdv where
+        MotionDataVars {
             _j       = j,
             _g       = g,
             _m       = m,
@@ -815,13 +823,13 @@ fitMottionDataToZmp mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig it
         -- xep is the shift is ZMP poisitons through time (note that first and last elements are 0)
 
         -- generate the matrix M (list of position and values... sparse matrix)
-        constraintFramesRix = zip [0,100,fN-1] [0,fN,fN-1]
-        mrn = fN+1
+        constraintFramesRix = zip [0,fN-1,1] [0,fN-1,fN]
+        mrn = fN - 2 + (length constraintFramesRix)
         _M :: [((Int,Int),Double)]
         _M =    -- fN-2 rows are the zmp = target zmp constraint for all frames other than the first and last
-                (concat  [[((r,r-1), f r), ((r,r),diag r), ((r,r+1), f r)] | r <- [1..fN-2]]) ++
-                -- remaining rows ensure that ther is no shift for the constraintFrames
-                (map (\(f,rix) -> ((rix,f), 1000000000000)) constraintFramesRix)
+                (concat  [zip [(r,r-1), (r,r), (r,r+1)] (fmap (*(weights!r)) [f r, diag r, f r]) | r <- [1..fN-2]]) ++
+                -- remaining rows ensure that there is no shift for the constraintFrames
+                (map (\(f,rix) -> ((rix,f), 10000000000)) constraintFramesRix)
             where
                 dt2         = dt ** 2
                 f :: Int -> Double
@@ -836,36 +844,40 @@ fitMottionDataToZmp mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig it
         ep :: Array Int Vec3
         ep = array (0,mrn-1) (
                             -- first fN-2 rows is the zmp = target zmp constraint for all frames other than the first and last
-                            [(fi, (zmpX!fi) - (zmp (F fi))) | fi <- range (1,fN-2)] ++
+                            [(fi, (weights!fi) *^ ((zmpX!fi) - (zmp (F fi)))) | fi <- range (1,fN-2)] ++
                             -- remaining rows ensure that ther is no shift for the constraintFrames
                             [(rix,V3 0 0 0) | (_,rix) <- constraintFramesRix])
         -- xep
         xep = fmap vx ep
-        --
         zep = fmap vz ep
 
         -- use matrix solver to get xe
         --  sparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
-        (xe:ze:_) = leastSquareSparseMatrixSolve mrn fN _M [xep,zep]
+--        (ze:xe:_) = leastSquareSparseMatrixSolve mrn fN _M [zep,xep]
+        xe:_ = leastSquareSparseMatrixSolve mrn fN _M [xep]
+        ze:_ = leastSquareSparseMatrixSolve mrn fN _M [zep]
         --(xe:ze:_) = traceShow ep (sparseMatrixSolve _M  [xep,zep])
 
         shiftedFrames = [ let joint@Joint{offset=offset} = j fi 0 in ((fi, 0), joint{ offset = offset + (V3 (xe!fi) 0 (ze!fi)) })  | fi <- [0..fN-1] ]
+        modifiedMdv@MotionDataVars{_zmp=zmpActualResult} = modifyMotionDataVars mdv shiftedFrames
+
+        weightsLearnRateA = 30
+        weightsLearnRateB = 2
+        newWeightsRaw = array (bounds weights) [ (fi, (weights!fi) + ((weightsLearnRateA * (norm $ (zmpX!fi) - (zmpActualResult (F fi)))) ** weightsLearnRateB)) | fi <- indices weights]
+        windowHalf = 2
+        newWeights = let x = listArray (bounds weights) [ (sum (map (\fi -> if inRange (bounds weights) fi then newWeightsRaw!fi else 0) [fi-windowHalf..fi+windowHalf])) / (1 + (2*(fromIntegral windowHalf))) | fi <- indices weights] in traceShow (elems x) x
 
         --modifyMotionDataVars :: MotionDataVars -> FJIndexedFrames -> MotionDataVars
-        modifiedMdv = fitMottionDataToZmp' (correctFeet mdvOrig $ (if itsI == its then dip dipHeight else id) $ modifyMotionDataVars mdv shiftedFrames) (itsI-1)
+        doFeetIK = False
+        finalModifiedMdv = fitMottionDataToZmp' ((if doFeetIK then (correctFeet mdvOrig) else id) $ (if itsI == its then dip dipHeight else id) $ if itsI == 1 then modifiedMdv else mdv) newWeights (itsI-1)
 
         -- Move (via IK) feet in the second MDV argument to the position of the feet in the first
         -- update the motion data. Each frame is updated independantly (individual updates are collected from "correctFrame")
         correctFeet :: MotionDataVars -> MotionDataVars -> MotionDataVars
         correctFeet target@MotionDataVars{_xj=xjT} md@MotionDataVars{_pj=pj,_bj=bj,_fN=fN,_fs=fs,_j=j,_rj=rj,_xj=xj,_bByName=bByName,_footBs=((lfbI,_),(rfbI,_))} =
             trace
-             "Done correction feet with IK"
+             "Done correcting feet with IK"
              (modifyMotionDataVars md (concat [correctFrame fI | fI <- fs])) where
-
-                maxIKItterations = 25
-                alpha = 0.4 -- portion of change to apply per IK step
-    --            maxAngleDelta = pi/4
-                dampening = 0.02 ** 2 -- IK damping term
 
                 -- returns the updates to apply to a given frame
                 correctFrame :: FrameIx -> [((Int,Int), Joint)]
@@ -958,33 +970,6 @@ fitMottionDataToZmp mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig it
                                 ]
 
 
-    --                        -- hip
-    --                        dRotHG = (axisAngle axisH angleDH2)
-    --                                    -- step 2.1     extend
-    --                                    * dRotHG21
-    --                                    -- step 2.2     retract
-    --                                    * (axisAngle ((conjugate dRotHG21) `rotate` axisKRetract) angleHT)
-    --                        dRotHL = let rot = rj fI hjI
-    --                                 in (conjugate rot) * dRotHG * rot
-    --
-    --                        -- knee
-    --                        dRotKG21 = axisAngle axisKExtend (pi - angleK)
-    --                        dRotKG =    -- step 2.1     extend
-    --                                    dRotKG21
-    --                                    -- step 2.2     retract
-    --                                    * (axisAngle ((conjugate dRotKG21) `rotate` axisKRetract) (negate $ pi - angleKT))
-    --                        dRotKL = let rot = rj fI kjI
-    --                                 in (conjugate rot) * dRotKG * rot
-    --
-    --                        -- foot
-    --                        dRotAG = conjugate $ dRotHG * dRotKG
-    --                        dRotAL = let rot = rj fI ajI
-    --                                 in (conjugate rot) * dRotAG * rot
-
-
-
-
-                -- itterativelly move joints
                 lajI = pj . bj $ lfbI   -- left ankel joint
                 lkjI = pj lajI          -- left knee joint
                 lhjI = pj lkjI          -- left hip joint

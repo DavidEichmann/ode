@@ -15,6 +15,7 @@ import Util
 import Data.Time.Clock
 import System.Environment
 import Control.DeepSeq
+import System.Random
 
 
 debug =
@@ -84,6 +85,10 @@ mainLoopOut :: MotionData -> IO ()
 mainLoopOut md = do
     let
         (mdvActual@MotionDataVars{_fN=fN,_fs=fs,_js=js,_pT=pT,_l=l,_com=com,_zmp=zmp,_sp=sp,_zmpIsInSp=zmpIsInSp}) = getMotionDataVariablesFromMotionData md
+        rands = map (\(x,z) -> V3 x 0 z) (zip (randomRs (-1,1) (mkStdGen 1045902832)) (randoms (mkStdGen 498205208)))
+        noisy  = shiftPerFrame (listArray (0,fN-1) (zero : zero : (take (fN-3) rands) ++ [zero])) mdvActual
+
+
         comI  =  ((com (F 0)) * (V3 1 0 1)) + (V3 (-0.1) 0 0) --zmp (F 0)
         comIF = (((com (F 0)) * (V3 1 0 1)) + (V3 (0.1) 0 0)) -comI --(zmp (F (fN-1))) - comI
         bnds = (0,fN-1)
@@ -91,18 +96,19 @@ mainLoopOut md = do
         centerOfSp = [let poly = (sp fI) in sum poly ^/ (fromIntegral $ length poly)  | fI <- fs]
         targetZmp = listArray bnds $
             -- target zmp as center of SP
-            -- map xz2x0z centerOfSp
+            map xz2x0z centerOfSp
             -- target zmp as origional zmp projeted onto SP
-            zipWith (\ proj zmp -> if null proj then zmp else xz2x0z . head $ proj) [polyEdgeLineSegIntersect (sp fI) (toXZ (zmp fI), spC) | (fI,spC) <- zip fs centerOfSp] (map zmp fs)
+            -- zipWith (\ proj zmp -> if null proj then zmp else xz2x0z . head $ proj) [polyEdgeLineSegIntersect (sp fI) (toXZ (zmp fI), spC) | (fI,spC) <- zip fs centerOfSp] (map zmp fs)
 
 
-        mdvMod@MotionDataVars{_zmp=zmpMod,_fs=fsMod} = fitMottionDataToZmp mdvActual targetZmp 0 5
+        mdvMod@MotionDataVars{_zmp=zmpMod,_fs=fsMod,_pT=pTMod} = fitMottionDataToZmp (shift (V3 0 0 0) mdvActual) targetZmp 0 1
 
         loop sim ti tl = do
             tc <- getCurrentTime
             sim' <- mainLoop sim mdvActual mdvMod targetZmp (realToFrac $ diffUTCTime tc ti) (realToFrac $ diffUTCTime tc tl)
             loop sim' ti tc
 
+    putStrLn $ "Initial momentum data and modData: " ++ (show $ pT (F 0)) ++ "\t\t" ++ (show $ pTMod (F 0))
     seq (foldl1' seqMDV [mdvActual,mdvMod]) (return ())
     sim <- startSim mdvMod
     initOgre
@@ -119,7 +125,7 @@ mainLoop
   simdt' = do
     let
         --sim' = sim
-        speed = 1/10
+        speed = 1
         t = t' * speed
         simdt = simdt' * speed
         -- sim' = sim
@@ -142,8 +148,8 @@ mainLoop
 
     -- Annimation
     let aniOffset =   zero --V3 (-2) 0 0
-    drawFrameIx White aniOffset mdv frameIx
-    drawFrameIx (BlackA 0.25) aniOffset mvdOrig frameIx
+    drawFrameIx (WhiteA 0.25) aniOffset mdv frameIx
+    drawFrameIx (BlackA 0.15) aniOffset mvdOrig frameIx
 
     -- SP
 --    drawPolygonC (OrangeA 0.3) (map (\(V2 x z) -> V3 x 0 z) (aniSp frameIx))
@@ -151,11 +157,13 @@ mainLoop
     --mapM_ ((\p -> drawPointC Blue p 0.02) . (\(V2 x z) ->V3 x 0 z)) (polyEdgeLineSegIntersect (aniSp frameIx) (toXZ (aniZmp frameIx), toXZ (aniCom frameIx)))
 
     -- ZMP
+    putStrLn $ "target - actual zmp: " ++ (show $ targetZmp!(frameix) - (zmp frameIx))
     --putStrLn $ "target zmp: " ++ (show $ targetZmp!(frameix))
     --putStrLn $ "actual zmp: " ++ (show (zmp frameIx))
-    drawPointC (Green) (aniZmp frameIx) 0.02
+    drawPointC (Black) (aniZmp frameIx) 0.02
     drawPointC (Red) (zmp frameIx) 0.02
     drawPointC (WhiteA 0.4) (targetZmp!(frameix)) 0.04
+--    print $ (zmp frameIx) - (targetZmp!(frameix))
 --    drawPointC (if zmpIsInSp frameIx then White else Red) (aniOffset + (zmp frameIx)) 0.02
 --    drawPointC (if aniZmpIsInSp frameIx then (WhiteA 0.5) else (OrangeA 0.5)) (aniOffset + (aniZmp frameIx)) 0.04
 --    drawPointC Red (aniOffset + (targetZmp frameIx)) 0.04

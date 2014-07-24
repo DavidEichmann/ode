@@ -60,7 +60,10 @@ double* sparseMatrixSolve(const int mrn, const int mcn, const int nnz, int* cons
 //	}
 	// solve A x = b
 	if(true) {
-		x = A.toDense().colPivHouseholderQr().solve(b);
+		for(int ci = 0; ci < r; ci++) {
+			x.col(ci) = A.toDense().jacobiSvd(ComputeThinU | ComputeThinV).solve(b.col(ci));
+		}
+//		x = A.toDense().colPivHouseholderQr().solve(b);
 //		SparseQR< SparseMatrix<double>, AMDOrdering<int> > solver;
 //		solver.setPivotThreshold(0);
 //		solver.compute(A);
@@ -91,12 +94,12 @@ double* sparseMatrixSolve(const int mrn, const int mcn, const int nnz, int* cons
 			exit(1);
 		}
 	}
-	// print difference vector for first rhs column
-	MatrixXd ax = A * x;
-	cout << "x:\n\n";
-	for(int i = 0; i < mcn; i++) {
-		cout << x(i,0) << endl;
-	}
+//	// print difference vector for first rhs column
+//	MatrixXd ax = A * x;
+//	cout << "ax - b:\n\n";
+//	for(int i = 0; i < mcn; i++) {
+//		cout << (ax(i,0) - b(i,0)) << endl;
+//	}
 	// copy results into array
 	for(int bc = 0; bc < r; bc++) {
 		for(int br = 0; br < mcn; br++) {
