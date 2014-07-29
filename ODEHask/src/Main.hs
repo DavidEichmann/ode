@@ -10,7 +10,7 @@ import Data.Array
 import Data.Color
 import Simulation
 import FFI
-import Linear
+import Linear hiding (_j)
 import Util
 import Data.Time.Clock
 import System.Environment
@@ -84,9 +84,12 @@ main = do
 mainLoopOut :: MotionData -> IO ()
 mainLoopOut md = do
     let
-        (mdvActual@MotionDataVars{_fN=fN,_fs=fs,_js=js,_pT=pT,_l=l,_com=com,_zmp=zmp,_sp=sp,_zmpIsInSp=zmpIsInSp}) = getMotionDataVariablesFromMotionData md
-        rands = map (\(x,z) -> V3 x 0 z) (zip (randomRs (-1,1) (mkStdGen 1045902832)) (randoms (mkStdGen 498205208)))
-        noisy  = shiftPerFrame (listArray (0,fN-1) (zero : zero : (take (fN-3) rands) ++ [zero])) mdvActual
+        (mdvActual@MotionDataVars{_fN=fN,_fs=fs,_js=js,_j=j,_pT=pT,_l=l,_com=com,_zmp=zmp,_sp=sp,_zmpIsInSp=zmpIsInSp}) = getMotionDataVariablesFromMotionData md
+--        rands = map (\(x,z) -> V3 x 0 z) (zip (randomRs (-1,1) (mkStdGen 1045902832)) (randoms (mkStdGen 498205208)))
+--        noisy  = shiftPerFrame (listArray (0,fN-1) (zero : zero : (take (fN-3) rands) ++ [zero])) mdvActual
+        -- blend test
+        --      blendIntoMotionData :: (Int -> Joint) -> MotionDataVars -> MotionDataVars
+--        blended = blendIntoMotionData 1 (j 200) mdvActual
 
 
         comI  =  ((com (F 0)) * (V3 1 0 1)) + (V3 (-0.1) 0 0) --zmp (F 0)
@@ -101,78 +104,98 @@ mainLoopOut md = do
             -- zipWith (\ proj zmp -> if null proj then zmp else xz2x0z . head $ proj) [polyEdgeLineSegIntersect (sp fI) (toXZ (zmp fI), spC) | (fI,spC) <- zip fs centerOfSp] (map zmp fs)
 
 
-        mdvMod@MotionDataVars{_zmp=zmpMod,_fs=fsMod,_pT=pTMod} = fitMottionDataToZmp (shift (V3 0 0 0) mdvActual) targetZmp 0 1
+        mdvMod@MotionDataVars{_zmp=zmpMod,_fs=fsMod,_pT=pTMod} = fitMottionDataToZmp (shift (V3 0 0 0) mdvActual) targetZmp 0 0
 
-        loop sim ti tl = do
+        displayFDT = 1 / frameRate
+
+        loopSimulate :: Sim -> Double -> IO [IO ()]
+        loopSimulate (sim@Sim{targetMotion=MotionDataVars{_dt=tmDt,_fN=fN}}) tl = do
+            let
+                tc = tl + displayFDT
+                tf = tmDt * (fromIntegral fN)
+            putStrLn $ "Simulating (" ++ (show tc) ++ "/" ++ (show tf) ++")"
+            -- out :: [IO ()]
+            out <- if tc <= tf
+                then do
+                    (sim', displayIO) <- mainLoop sim mdvActual mdvMod targetZmp (realToFrac $ tc) (realToFrac $ tc - tl)
+                    rest <- loopSimulate sim' tc
+                    return (displayIO : rest)
+                else do
+                    putStrLn $ "Done Simulating!"
+                    return []
+            return out
+
+        loopDisplay ios ti = do
             tc <- getCurrentTime
-            sim' <- mainLoop sim mdvActual mdvMod targetZmp (realToFrac $ diffUTCTime tc ti) (realToFrac $ diffUTCTime tc tl)
-            loop sim' ti tc
+            let
+                t = (realToFrac $ diffUTCTime tc ti) * playbackSpeed
+                fi = (floor (t / displayFDT)) `mod` (length ios)
+            _ <- (ios!!fi)
+            notDone <- doRender
+            loopDisplay ios ti
 
     putStrLn $ "Initial momentum data and modData: " ++ (show $ pT (F 0)) ++ "\t\t" ++ (show $ pTMod (F 0))
     seq (foldl1' seqMDV [mdvActual,mdvMod]) (return ())
     sim <- startSim mdvMod
+    displayIOs <- loopSimulate sim 0
     initOgre
     ti <- getCurrentTime
-    loop sim ti ti
+    loopDisplay displayIOs ti
 
-mainLoop :: Sim -> MotionDataVars -> MotionDataVars -> Array Int Vec3 -> Double -> Double -> IO Sim
+-- return an updated sim and display IO
+mainLoop :: Sim -> MotionDataVars -> MotionDataVars -> Array Int Vec3 -> Double -> Double -> IO (Sim, IO ())
 mainLoop
   sim
   mvdOrig@MotionDataVars{_zmpIsInSp=aniZmpIsInSp,_com=targetZmp'@aniCom,_zmp=aniZmp,_sp=aniSp}
   mdv@MotionDataVars{_zmpIsInSp=zmpIsInSp,_dt=dt,_fs=fs,_fN=fN,_bs=bs,_m=m,_l=l,_zmp=zmp}
   targetZmp
-  t'
+  t
   simdt' = do
     let
-        --sim' = sim
-        speed = 1
-        t = t' * speed
-        simdt = simdt' * speed
-        -- sim' = sim
-        loop = True
+        simdt = simdt'
+        loop = False
         maxFIndex = fN - 1
         frameix = if loop then (1 + ((floor $ t / dt))) `mod` maxFIndex else min (maxFIndex) (1 + ((floor $ t / dt)))
         frameIx = F frameix
 
         yGRF = sum [(m b) * ((vy $ l frameIx b) + gravityAcc) | b <- bs]
 
-        sim' = sim
-    --sim' <- step sim simdt (toXZ $ targetZmp!frameix) yGRF
+--        sim' = sim
+    sim' <- step sim simdt (toXZ $ targetZmp!frameix) yGRF
 
     floorCOntacts <- getFloorContacts
     cSimFrame <- getSimSkel sim'
 
-    -- sim visualization
-    --drawSkeleton $ cSimFrame
-    --mapM_ (\p -> drawPointC Yellow p 0.02) (map xz2x0z floorCOntacts)
+    let displayIO = do
+        -- sim visualization
+        drawSkeleton $ cSimFrame
+        --mapM_ (\p -> drawPointC Yellow p 0.02) (map xz2x0z floorCOntacts)
 
-    -- Annimation
-    let aniOffset =   zero --V3 (-2) 0 0
-    drawFrameIx (WhiteA 0.25) aniOffset mdv frameIx
-    drawFrameIx (BlackA 0.15) aniOffset mvdOrig frameIx
+        -- Annimation
+        let aniOffset =   zero --V3 (-2) 0 0
+    --    drawFrameIx (WhiteA 0.5) aniOffset mdv frameIx
+        --drawFrameIx (BlackA 0.5) aniOffset mvdOrig frameIx
+        drawFrameIx (YellowA 0.5) aniOffset (targetMotion sim) frameIx
 
-    -- SP
---    drawPolygonC (OrangeA 0.3) (map (\(V2 x z) -> V3 x 0 z) (aniSp frameIx))
-    drawPolygonEdgesC Black (map (\(V2 x z) -> V3 x 0 z) (aniSp frameIx))
-    --mapM_ ((\p -> drawPointC Blue p 0.02) . (\(V2 x z) ->V3 x 0 z)) (polyEdgeLineSegIntersect (aniSp frameIx) (toXZ (aniZmp frameIx), toXZ (aniCom frameIx)))
+        -- SP
+    --    drawPolygonC (OrangeA 0.3) (map (\(V2 x z) -> V3 x 0 z) (aniSp frameIx))
+        drawPolygonEdgesC Black (map (\(V2 x z) -> V3 x 0 z) (aniSp frameIx))
+        --mapM_ ((\p -> drawPointC Blue p 0.02) . (\(V2 x z) ->V3 x 0 z)) (polyEdgeLineSegIntersect (aniSp frameIx) (toXZ (aniZmp frameIx), toXZ (aniCom frameIx)))
 
-    -- ZMP
-    putStrLn $ "target - actual zmp: " ++ (show $ targetZmp!(frameix) - (zmp frameIx))
-    --putStrLn $ "target zmp: " ++ (show $ targetZmp!(frameix))
-    --putStrLn $ "actual zmp: " ++ (show (zmp frameIx))
-    drawPointC (Black) (aniZmp frameIx) 0.02
-    drawPointC (Red) (zmp frameIx) 0.02
-    drawPointC (WhiteA 0.4) (targetZmp!(frameix)) 0.04
---    print $ (zmp frameIx) - (targetZmp!(frameix))
---    drawPointC (if zmpIsInSp frameIx then White else Red) (aniOffset + (zmp frameIx)) 0.02
---    drawPointC (if aniZmpIsInSp frameIx then (WhiteA 0.5) else (OrangeA 0.5)) (aniOffset + (aniZmp frameIx)) 0.04
---    drawPointC Red (aniOffset + (targetZmp frameIx)) 0.04
-    -- COM
-    --drawPointC Yellow ((* (V3 1 0 1)) $ aniCom frameIx) 0.02
+        -- ZMP
+        --putStrLn $ "target zmp: " ++ (show $ targetZmp!(frameix))
+        --putStrLn $ "actual zmp: " ++ (show (zmp frameIx))
+        --drawPointC (Black) (aniZmp frameIx) 0.02
 
+    --    drawPointC (Red) (zmp frameIx) 0.02
+    --    drawPointC (WhiteA 0.4) (targetZmp!(frameix)) 0.04
 
-    -- do render, sleep, then loop
-    notDone <- doRender
+    --    print $ (zmp frameIx) - (targetZmp!(frameix))
+    --    drawPointC (if zmpIsInSp frameIx then White else Red) (aniOffset + (zmp frameIx)) 0.02
+    --    drawPointC (if aniZmpIsInSp frameIx then (WhiteA 0.5) else (OrangeA 0.5)) (aniOffset + (aniZmp frameIx)) 0.04
+    --    drawPointC Red (aniOffset + (targetZmp frameIx)) 0.04
+        -- COM
+        --drawPointC Yellow ((* (V3 1 0 1)) $ aniCom frameIx) 0.02
 
 
 
@@ -180,7 +203,7 @@ mainLoop
 --    if notDone
 --        then mainLoop sim (t+0.03)
 --        else return ()
-    return sim'
+    return (sim', displayIO)
 
 drawPolygonEdgesC :: Color -> [Vec3] -> IO ()
 drawPolygonEdgesC _ [] = return ()

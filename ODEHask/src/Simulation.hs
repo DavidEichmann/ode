@@ -8,7 +8,7 @@ module Simulation (
 
 import FFI
 import Util
-import Linear hiding (slerp)
+import Linear hiding (slerp, _j,trace)
 import Constants
 import MotionData
 import Data.Maybe
@@ -18,6 +18,7 @@ import Data.Color
 import Data.Bone
 import Control.Applicative
 import Math.Tau
+import Debug.Trace
 
 
 -- This record, Sim, represents an entire simulation. It should be created via the startSim function
@@ -29,10 +30,14 @@ data Sim = Sim {
     -- Each motor corresponds to a motor controlling the PARENT joint (if one exists and is not the root).
     odeMotors       :: TreeF (Maybe DJointID),
     targetMotion    :: MotionDataVars,
+    targetMotionFeedBackController :: TargetMotionFeedBackPlanner,
     simTime         :: Double,
     simTimeExtra    :: Double,
-    timeDelta       :: Double
+    timeDelta       :: Double,
+    _feedBackControlUpdateInterval :: Double,
+    _nextFeedBackControlIteration :: Double
 }
+type TargetMotionFeedBackPlanner = Sim -> (Int -> Joint) -> Sim
 
 startSim :: MotionDataVars -> IO Sim
 startSim md@MotionDataVars{_baseSkeleton=skel,_js=js,_jb=jb,_xj=xj,_xb=xb,_rj=rj,_pj=pj,_jHasParent=jHasParent} = do
@@ -42,13 +47,18 @@ startSim md@MotionDataVars{_baseSkeleton=skel,_js=js,_jb=jb,_xj=xj,_xb=xb,_rj=rj
     aMotors <- realizeAMotors bodies
     putStrLn $ "ode world id = " ++ (show $ newWid)
     return Sim {
-        wid             = newWid,
-        odeBodies       = bodies,
-        odeMotors       = aMotors,
-        targetMotion    = md,
-        simTime         = 0,
-        simTimeExtra    = 0,
-        timeDelta       = defaultTimeStep }
+            wid             = newWid,
+            odeBodies       = bodies,
+            odeMotors       = aMotors,
+            targetMotion    = md,
+--            targetMotionFeedBackController = nullController,
+            targetMotionFeedBackController = linearBlendController,
+            simTime         = 0,
+            simTimeExtra    = 0,
+            timeDelta       = defaultTimeStep,
+            _feedBackControlUpdateInterval = defaultfeedBackControlUpdateInterval,
+            _nextFeedBackControlIteration = 0
+        }
 
     where
         realizeAMotors bodies = treeMapM maybeCreateAMotor bodies
@@ -127,38 +137,86 @@ step isim idt targetCoP yGRF = step' isim{simTimeExtra = 0} (idt + (simTimeExtra
         | dt >= ddt     = do
                             stepODE w targetCoP yGRF
 
+                            -- extract the Joint Data
+                            posRotGs <- mapM getBodyPosRot (flatten $ odeBodies sim)
+                            let
+                                posGs = map fst posRotGs
+                                rotGs = map snd posRotGs
+                                tm = targetMotion sim
+                                MotionDataVars{
+                                    _j = j,
+                                    _js=js,
+                                    _jHasChild=jHasChild,
+                                    _cjs=cjs,
+                                    _pj = pj
+                                } = tm
+                                joints :: Int -> Joint
+                                joints 0 = (j 0 0) {
+                                        rotationL = rotGs !! 0,
+                                        offset = posGs !! 0
+                                    }
+                                joints ji = let origJoint = (j 0 ji) in
+                                    if jHasChild jI
+                                        then
+                                            origJoint{
+                                                rotationL = (conjugate $ rotGs!!ji) * (rotGs!!cji)
+                                            }
+
+                                        else
+                                            origJoint
+                                        where
+                                            jI = (J ji)
+                                            (J cji) = head $ cjs jI
+
                             -- per step instructions go here
-                            matchMotionDataVars sim ddt
+                                nut = _nextFeedBackControlIteration sim
+                                simFB = if simTime sim >= nut
+                                    then
+                                        ((targetMotionFeedBackController sim) sim joints){
+                                            _nextFeedBackControlIteration = nut + (_feedBackControlUpdateInterval sim)
+                                        }
+                                    else
+                                        sim
+                            matchMotionDataVars simFB (targetMotion simFB) ddt
 
-
-                            simF <- step' sim{
-                                simTimeExtra = 0,
-                                simTime      = (simTime sim) + ddt
+                            simF <- step' simFB{
+                                simTimeExtra  = 0,
+                                simTime       = (simTime sim) + ddt
                             } (dt - ddt)
                             return simF
         | otherwise     = return sim{simTimeExtra = dt}
 
+nullController :: TargetMotionFeedBackPlanner
+nullController sim _ = sim
+
+linearBlendController :: TargetMotionFeedBackPlanner
+linearBlendController sim j = sim{targetMotion = blendIntoMotionData (simTime sim) j (targetMotion sim)}
+
+
+
+
+
 -- Sim:     the simulation to match against
 -- Double:  the time delta in which to match the data (as the siumlation is only changed via manipulating velocities)
-matchMotionDataVars :: Sim -> Double -> IO ()
-matchMotionDataVars sim dt = do
+matchMotionDataVars :: Sim -> MotionDataVars -> Double -> IO ()
+matchMotionDataVars sim target dt = do
     (_, rootSimQuat) <- getBodyPosRot $- (odeBodies sim)
     -- TODO: calculate joint angular velocities in global coordinates relative to the simulated root orientation and apply to AMotors
     let
         MotionDataVars{
                 _dt=dtF,
+                _fN=fN,
                 _jHasParent=jHasParent,
                 _js=js,
                 _pj=pj,
                 _rjL=rjL
-            } = targetMotion sim
+            } = target
         t = simTime sim
         fu = (t + dt) / dtF
-        u = --traceShowVM "matchMotionDataVars: u = " $
-                1 - (fu - (fromIntegral fai))
-        fai = floor fu
+        u = (fu - (fromIntegral fai))
+        fai = min (fN - 1) (floor fu)
         faI = F fai
-        fbi = ceiling fu
+        fbi = min (fN - 1) (ceiling fu)
         fbI = F fbi
         setAMotor :: (DBodyID,DBodyID) -> JointIx -> Maybe DJointID -> IO ()
         setAMotor bids jI mam = maybe (return ()) (setAMotor' bids jI) mam

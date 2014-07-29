@@ -71,6 +71,8 @@ data MotionDataVars = MotionDataVars {
     _jb     :: JointIx -> BoneIx,
     _jHasParent :: JointIx -> Bool,
     _pj     :: JointIx -> JointIx,
+    _jHasChild :: JointIx -> Bool,
+    _cjs     :: JointIx -> [JointIx],
     _pb     :: BoneIx -> BoneIx,
     _d      :: BoneIx -> Double,
     _m      :: BoneIx -> Double,
@@ -110,13 +112,27 @@ seqMDV :: MotionDataVars -> a -> a
 seqMDV mdv@MotionDataVars{
     _fs = fs,
     _js = js,
+    _j = j,
     _zmp = zmp,
     _sp = sp
 } a =
     (seqF (show . sp))
-    (seqF zmp) a
+    (seqF zmp)
+    (seqFJ (\fi ji -> show $ j fi ji))
+    a
     where
         seqF fn = seq $ foldl1' seq [fn fI | fI <- fs]
+        seqFJ fn = seq $ foldl1' seq [fn fi ji | F fi <- fs, J ji <- js]
+
+seqJMDV :: MotionDataVars -> a -> a
+seqJMDV mdv@MotionDataVars{
+    _fs = fs,
+    _js = js,
+    _j = j
+} a = (seqFJ (\fi ji -> let joint = j fi ji in joint == joint)) a
+    where
+        seqF fn = seq $ foldl1' seq [fn fI | fI <- fs]
+        seqFJ fn = seq $ foldl1' seq [fn fi ji | F fi <- fs, J ji <- js]
 
 getMotionDataVariablesFromMotionData :: MotionData -> MotionDataVars
 getMotionDataVariablesFromMotionData md = getMotionDataVariables (frameTime md) j (baseSkeleton md) fN where
@@ -158,6 +174,8 @@ getMotionDataVariables dt j bskel fN = MotionDataVars {
     _pj     = pj,
     _jHasParent = jHasParent,
     _pb     = pb,
+    _jHasChild = jHasChild,
+    _cjs    = cjs,
     _d      = d,
     _m      = m,
     _i      = i,
@@ -274,6 +292,13 @@ getMotionDataVariables dt j bskel fN = MotionDataVars {
         pj_ (J ji) = J pjIx where
             pJoint = (flatten $ T.treeMap' ((fmap T.view) . T.parent) (bskel)) !! (ji - (fst bndJ))
             pjIx = maybe (error "trying to access root's parent") (+ (fst bndJ)) (elemIndex pJoint (map (Just . jBase . J) (range bndJ)))
+
+    -- child joints
+    jHasChild :: JointIx -> Bool
+    jHasChild = memoizeJ (\jI -> [] /= (cjs jI))
+    cjs :: JointIx -> [JointIx]
+    cjs = memoizeJ cj_ where
+        cj_ jI =[ ujI | ujI <- tail js, jI == pj ujI ]
 
     --
     -- Bone (uses on baseSkeleton)
@@ -786,6 +811,16 @@ shiftPerFrame v md@MotionDataVars{_fs=fs,_j=j} = modifyMotionDataVars md [let jo
 shift :: Vec3 -> MotionDataVars -> MotionDataVars
 shift v md@MotionDataVars{_fs=fs,_j=j} = modifyMotionDataVars md [let joint = j fi 0 in ((fi,0), joint{offset = (offset joint) + v}) | (F fi) <- fs]
 
+blendIntoMotionData :: Double -> (Int -> Joint) -> MotionDataVars -> MotionDataVars
+blendIntoMotionData time pose (mdv@MotionDataVars{_dt=dt,_j=j,_jN=jN,_fN=fN}) = modifyMotionDataVars mdv newJA where
+    blendFrameI = ceiling $ time / dt
+    blendFrameF = floor $ (time + blendTime) / dt
+    newJ :: Int -> Int -> Joint
+    newJ f
+        | blendFrameI <= f && f <= blendFrameF   = blendFrames pose (j f) ((((fromIntegral f) * dt) - time) / blendTime)
+        | otherwise                              = error "AAAAA"
+    newJA = [(ix, newJ f i) | ix@(f, i) <- range ((blendFrameI,0),(blendFrameF,jN-1))]
+
 dip :: Double -> MotionDataVars -> MotionDataVars
 dip amount = shift (V3 0 (-amount) 0)
 
@@ -865,11 +900,11 @@ fitMottionDataToZmp mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig (l
         weightsLearnRateB = 2
         newWeightsRaw = array (bounds weights) [ (fi, (weights!fi) + ((weightsLearnRateA * (norm $ (zmpX!fi) - (zmpActualResult (F fi)))) ** weightsLearnRateB)) | fi <- indices weights]
         windowHalf = 2
-        newWeights = let x = listArray (bounds weights) [ (sum (map (\fi -> if inRange (bounds weights) fi then newWeightsRaw!fi else 0) [fi-windowHalf..fi+windowHalf])) / (1 + (2*(fromIntegral windowHalf))) | fi <- indices weights] in traceShow (elems x) x
+        newWeights = weights -- let x = listArray (bounds weights) [ (sum (map (\fi -> if inRange (bounds weights) fi then newWeightsRaw!fi else 0) [fi-windowHalf..fi+windowHalf])) / (1 + (2*(fromIntegral windowHalf))) | fi <- indices weights] in traceShow (elems x) x
 
         --modifyMotionDataVars :: MotionDataVars -> FJIndexedFrames -> MotionDataVars
-        doFeetIK = False
-        finalModifiedMdv = fitMottionDataToZmp' ((if doFeetIK then (correctFeet mdvOrig) else id) $ (if itsI == its then dip dipHeight else id) $ if itsI == 1 then modifiedMdv else mdv) newWeights (itsI-1)
+        doFeetIK = True
+        finalModifiedMdv = fitMottionDataToZmp' ((if doFeetIK then (correctFeet mdvOrig) else id) $ (if itsI == its then dip dipHeight else id) $ modifiedMdv) newWeights (itsI-1)
 
         -- Move (via IK) feet in the second MDV argument to the position of the feet in the first
         -- update the motion data. Each frame is updated independantly (individual updates are collected from "correctFrame")
@@ -1053,6 +1088,14 @@ getInterpolatedFrame t md
         interpJoint af bf = (view af){
                                 rotationL  = Util.slerp (rotationL $- af) (rotationL $- bf) interp
                             }
+
+blendFrames :: (Int -> Joint) -> (Int -> Joint) -> Double -> (Int -> Joint)
+blendFrames j1 j2 t i = j1i{
+        offset = ((offset j1i) ^* (1-t)) + ((offset j2i) ^* t),
+        rotationL = Util.slerp (rotationL j1i) (rotationL j2i) t
+    } where
+        j1i = j1 i
+        j2i = j2 i
 
 
 isFootJoint :: JointF -> Bool

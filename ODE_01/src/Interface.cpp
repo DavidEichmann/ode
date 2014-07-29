@@ -2,6 +2,7 @@
 #include <Eigen/Core>
 #include <Eigen/SparseLU>
 #include <Eigen/SparseQR>
+#include <Eigen/OrderingMethods>
 #include <Eigen/QR>
 #include "Util.h"
 
@@ -29,7 +30,7 @@ double* sparseMatrixSolve(const int mrn, const int mcn, const int nnz, int* cons
 	delete[] matrixSolveResults;
 	matrixSolveResults = new double[mcn*r];
 	// fill matrix A
-	SparseMatrix<double,RowMajor> A(mrn,mcn);
+	SparseMatrix<double,ColMajor> A(mrn,mcn);
 	std::vector< Eigen::Triplet<double> > entries;
 	int* mixsC = mixs;
 	for(int i = 0; i < nnz; i++) {
@@ -60,10 +61,14 @@ double* sparseMatrixSolve(const int mrn, const int mcn, const int nnz, int* cons
 //	}
 	// solve A x = b
 	if(true) {
+		SparseQR<SparseMatrix<double,ColMajor>, COLAMDOrdering<int> > solver;
+		solver.compute(A);
 		for(int ci = 0; ci < r; ci++) {
-			x.col(ci) = A.toDense().jacobiSvd(ComputeThinU | ComputeThinV).solve(b.col(ci));
+////			x.col(ci) = A.toDense().jacobiSvd(ComputeThinU | ComputeThinV).solve(b.col(ci));
+//			x.col(ci) = A.toDense().colPivHouseholderQr().solve(b.col(ci));
+
+			x.col(ci) = solver.solve(b.col(ci));
 		}
-//		x = A.toDense().colPivHouseholderQr().solve(b);
 //		SparseQR< SparseMatrix<double>, AMDOrdering<int> > solver;
 //		solver.setPivotThreshold(0);
 //		solver.compute(A);
@@ -482,15 +487,16 @@ void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 		if(contact[i].depth != 0) {
 			dContact dc;
 
-			dc.surface.mode = dContactRolling; // | dContactSoftERP | dContactSoftCFM;
+			dc.surface.mode = dContactSoftERP | dContactSoftCFM | dContactRolling;
+//			dc.surface.mode = dContactRolling;
 			dc.surface.soft_erp = 0.1;
 			dc.surface.soft_cfm = 0.00007;
-			dc.surface.mu = dInfinity;
+			dc.surface.mu = 1;
 			dc.surface.rhoN = 1;
 			dc.geom = contact[i];
 
 			dJointID cj = dJointCreateContact(wid, contactGroupid, &dc);
-			//dJointAttach(cj, b1, b2);
+			dJointAttach(cj, b1, b2);
 
 			// add point to vector
 			contacts.push_back(dc);
@@ -554,12 +560,12 @@ void doCollisions() {
 		w[j] /= weightSum;
 		double fj = w[j] * fy;
 //		cout << "y force on contact point " << j << ": " << fj << endl;
-		dBodyAddForceAtPos(
-				contactBodies[1],
-				0, fj, 0,	// force to add
-				contacts[j].geom.pos[0],
-				contacts[j].geom.pos[1],
-				contacts[j].geom.pos[2]);
+//		dBodyAddForceAtPos(
+//				contactBodies[1],
+//				0, fj, 0,	// force to add
+//				contacts[j].geom.pos[0],
+//				contacts[j].geom.pos[1],
+//				contacts[j].geom.pos[2]);
 	}
 
 	/* psudo invers method is no longer used
