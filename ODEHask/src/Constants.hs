@@ -39,10 +39,13 @@ floorContactThreshold = 0.01
 --
 
 playbackSpeed :: Double
-playbackSpeed = 1/2
+playbackSpeed = 1
 
 frameRate :: Double
 frameRate = 60
+
+displayFDT :: Double
+displayFDT = 1 / frameRate
 
 defaultColorAlpha :: Double
 defaultColorAlpha = 1

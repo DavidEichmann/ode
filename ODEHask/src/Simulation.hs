@@ -177,6 +177,7 @@ step isim idt targetCoP yGRF = step' isim{simTimeExtra = 0} (idt + (simTimeExtra
                                         }
                                     else
                                         sim
+
                             matchMotionDataVars simFB (targetMotion simFB) ddt
 
                             simF <- step' simFB{

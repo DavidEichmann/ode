@@ -18,6 +18,7 @@ executable ODEHask
     extra-libraries: stdc++ OgreMain OIS boost_system boost_chrono glut
                      GL GLU ode
     hs-source-dirs: src
-    other-modules: Data.Geom MotionData Util FFI Data.Bone
+    other-modules: BinarySearchTree Data.Geom MotionData Util FFI
+                   Data.Bone
     ghc-options: -Wall /home/david/git/ode/Debug/ODE_01/src/*.o /home/david/git/ode/Debug/ODE_01/src/OgreProcedural/src/*.o
  

@@ -535,6 +535,8 @@ void doCollisions() {
 	double weightSum = 0;
 	double w[n];
 
+/* Barycentric coordinates to apply GRF
+
 	contacts.push_back(contacts[0]);
 	contacts.push_back(contacts[0]);
 	contacts.push_back(contacts[0]);
@@ -567,7 +569,7 @@ void doCollisions() {
 //				contacts[j].geom.pos[1],
 //				contacts[j].geom.pos[2]);
 	}
-
+*/
 	/* psudo invers method is no longer used
 	//   create matrix
 	int cn = contacts.size();
@@ -601,6 +603,8 @@ void doCollisions() {
 		dBodyAddForceAtPos(contactBodies[i],0, (double) y(i) ,0,contacts[i].geom.pos[0],contacts[i].geom.pos[1],contacts[i].geom.pos[2]);
 	}
 	 */
+
+
 }
 void step(dWorldID, double zmpX, double zmpZ, double fy) {
 	stepArgs[0] = zmpX;

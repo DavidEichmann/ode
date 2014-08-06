@@ -23,6 +23,8 @@ import Text.Parsec.Token hiding (dot)
 import Text.Parsec.Language
 
 
+--memo  = id
+--memo2 = id
 
 
 
@@ -94,6 +96,7 @@ data MotionDataVars = MotionDataVars {
     _h'     :: FrameIx -> BoneIx -> Vec3,
     _mT     :: Double,
     _com    :: FrameIx -> Vec3,
+    _lT     :: FrameIx -> Vec3,
     _pT     :: FrameIx -> Vec3,
     _hT     :: FrameIx -> Vec3,
     _pT'    :: FrameIx -> Vec3,
@@ -142,16 +145,21 @@ getMotionDataVariablesFromMotionData md = getMotionDataVariables (frameTime md) 
 
     -- joints organized by frame
     j :: FJIndexedFrames
-    j = (\ f j -> (flatten $ (frames md) ! f) !! j) where
+    j = (\ f j -> jArr ! (f,j)) where
         jArr = array bnd [((fi,ji), (flatten $ (frames md) ! fi) !! ji) | (fi,ji) <- range bnd]
         bnd = ((0,0),(fN-1,jN-1))
 
 
 modifyMotionDataVars :: MotionDataVars -> [((Int,Int), Joint)] -> MotionDataVars
-modifyMotionDataVars (MotionDataVars{_dt=dt,_baseSkeleton=bSkel,_fN=fN,_j=jOrig}) jUpdates = getMotionDataVariables dt jNew bSkel fN where
-    jNew ji fi = fromMaybe (jOrig ji fi) (jUpdatesMaybe ji fi)
-    jUpdatesMaybe = memo2 (\ j f -> lookup (j,f) jUpdates)
+modifyMotionDataVars (mdv@MotionDataVars{_fN=fN}) = modifyMotionDataVarsFN mdv fN
 
+modifyMotionDataVarsFN :: MotionDataVars -> Int -> [((Int,Int), Joint)] -> MotionDataVars
+modifyMotionDataVarsFN (MotionDataVars{_dt=dt,_baseSkeleton=bSkel,_jN=jN,_j=jOrig}) fN jUpdates = getMotionDataVariables dt jNew bSkel fN where
+    jNew ji fi = fromMaybe (jOrig ji fi) (jUpdatesMaybe ji fi)
+    jUpdatesMaybe = (\ j f -> lookup (j,f) jUpdates)
+
+
+--type JDataAndChanges = (Array (Int,Int) Joint, )
 
 -- arguments: frameTimeDelta  (motion data by FrameIx and JointIx) (base skeletion)
 -- Note that Joint index is from 0 and coresponds to flettening the base skeletoin
@@ -196,6 +204,7 @@ getMotionDataVariables dt j bskel fN = MotionDataVars {
     _h'     = h',
     _mT     = mT,
     _com    = com,
+    _lT     = lT,
     _pT     = pT,
     _hT     = hT,
     _pT'    = pT',
@@ -209,7 +218,6 @@ getMotionDataVariables dt j bskel fN = MotionDataVars {
     _footJs = footJs,
     _isFootBone = isFootBone
  } where
-
 
     memoizeJ :: (JointIx->b) -> (JointIx->b)
     memoizeJ fn = (\(J a) -> intMemo a) where
@@ -230,6 +238,32 @@ getMotionDataVariables dt j bskel fN = MotionDataVars {
     memoizeFB :: (FrameIx->BoneIx->b) -> (FrameIx->BoneIx->b)
     memoizeFB fn = (\(F a) (B b) -> intMemo a b) where
         intMemo = memo2 (\a b -> fn (F a) (B b))
+
+    -- helper function to measure change over time (using current and previous frame)
+    -- first frame simply copies the result from the second
+    deriveFB :: (FrameIx -> BoneIx -> Vec3) -> (FrameIx -> BoneIx -> Vec3)
+    deriveFB fn = derive_ where
+        derive_ = memoizeFB derive__
+        derive__ (fI@(F fi)) bI
+            | fi > fst bndF     = ((fn fI bI) - (fn (F (fi-1)) bI)) ^/ dt
+            | fN <= 1           = zero
+            | otherwise         = derive_ (F (fi+1)) bI
+    derive2FB :: (FrameIx -> BoneIx -> Vec3) -> (FrameIx -> BoneIx -> Vec3)
+    derive2FB fn = derive_ where
+        (lo,hi) = bndF
+        derive_ = memoizeFB derive__
+        derive__ (fI@(F fi)) bI
+            | lo < fi && fi < hi    = ((fn (F (fi-1)) bI) - (2 * (fn fI bI)) + (fn (F (fi+1)) bI)) ^/ (dt**2)
+            | fN <= 2               = zero
+            | fi == lo              = derive__ (F (fi+1)) bI
+            | fi == hi              = derive__ (F (fi-1)) bI
+            | otherwise             = error $ "accessing frame " ++ show fi ++ " with n = " ++ show fN
+--    deriveF :: (FrameIx -> Vec3) -> (FrameIx -> Vec3)
+--    deriveF fn = derive_ where
+--        derive_ = memoizeF derive__
+--        derive__ (fI@(F fi))
+--            | fi > fst bndF     = ((fn fI) - (fn (F (fi-1)))) ^/ dt
+--            | otherwise         = derive_ (F (fi+1))
 
 
 
@@ -365,33 +399,13 @@ getMotionDataVariables dt j bskel fN = MotionDataVars {
             x1 = ((xj fI) . pj . bj) bI
             x2 = ((xj fI) . bj) bI
 
-    -- helper function to measure change over time (using current and previous frame)
-    -- first frame simply copies the result from the second
-    deriveFB :: (FrameIx -> BoneIx -> Vec3) -> (FrameIx -> BoneIx -> Vec3)
-    deriveFB fn = derive__ where
-        derive_ = memoizeFB derive__
-        derive__ (fI@(F fi)) bI
-            | fi > fst bndF     = ((fn fI bI) - (fn (F (fi-1)) bI)) ^/ dt
-            | otherwise         = derive_ (F (fi+1)) bI
-    derive2FB :: (FrameIx -> BoneIx -> Vec3) -> (FrameIx -> BoneIx -> Vec3)
-    derive2FB fn = derive__ where
-        derive_ = memoizeFB derive__
-        derive__ (fI@(F fi)) bI
-            | fi == fst bndF = derive_ (F (fi+1)) bI
-            | fi == snd bndF = derive_ (F (fi-1)) bI
-            | otherwise      = ((fn (F (fi-1)) bI) - (2 * (fn fI bI)) + (fn (F (fi+1)) bI)) ^/ (dt**2)
-    deriveF :: (FrameIx -> Vec3) -> (FrameIx -> Vec3)
-    deriveF fn = derive__ where
-        derive_ = memoizeF derive__
-        derive__ (fI@(F fi))
-            | fi > fst bndF     = ((fn fI) - (fn (F (fi-1)))) ^/ dt
-            | otherwise         = derive_ (F (fi+1))
-
     -- bone linear velocity
     l :: FrameIx -> BoneIx -> Vec3
     l = deriveFB xb
 
-
+    -- CoM linear Velocity
+    lT :: FrameIx -> Vec3
+    lT fI = (sum [(m bI) *^ (l fI bI) | bI <- bs]) ^/ mT
 
     -- bone angular velocity
     w :: FrameIx -> BoneIx -> Vec3
@@ -830,7 +844,13 @@ dip amount = shift (V3 0 (-amount) 0)
 -- dip (lower the body to extend leg reach)
 -- number of itterations
 fitMottionDataToZmp :: MotionDataVars -> Array Int Vec3 -> Double -> Int -> MotionDataVars
-fitMottionDataToZmp mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig (listArray (bounds zmpX) [1,1..]) its where
+fitMottionDataToZmp = fitMottionDataToZmp' True
+
+fitMottionDataToZmpLooseInitVel :: MotionDataVars -> Array Int Vec3 -> Double -> Int -> MotionDataVars
+fitMottionDataToZmpLooseInitVel = fitMottionDataToZmp' False
+
+fitMottionDataToZmp' :: Bool -> MotionDataVars -> Array Int Vec3 -> Double -> Int -> MotionDataVars
+fitMottionDataToZmp' constrainInitVel mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig (listArray (bounds zmpX) [1,1..]) its where
     fitMottionDataToZmp' :: MotionDataVars -> Array Int Double -> Int -> MotionDataVars
     fitMottionDataToZmp' mdv _ 0 = mdv
     fitMottionDataToZmp' mdv weights itsI = finalModifiedMdv where
@@ -858,7 +878,7 @@ fitMottionDataToZmp mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig (l
         -- xep is the shift is ZMP poisitons through time (note that first and last elements are 0)
 
         -- generate the matrix M (list of position and values... sparse matrix)
-        constraintFramesRix = zip [0,fN-1,1] [0,fN-1,fN]
+        constraintFramesRix = (zip [0,fN-1] [0,fN-1]) ++ (if constrainInitVel then [(1,fN)] else [])
         mrn = fN - 2 + (length constraintFramesRix)
         _M :: [((Int,Int),Double)]
         _M =    -- fN-2 rows are the zmp = target zmp constraint for all frames other than the first and last
@@ -1013,6 +1033,56 @@ fitMottionDataToZmp mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig (l
                 rhjI = pj rkjI          -- right hip joint
 
 
+-- use the feedback control described in "Posture/Walking Control for Humanoid Robot Based on Kinematic Resolution of CoM Jacobian With Embedded Motion"
+-- section V (this is only the P-controler like feedback signal for the desired CoM velocity..... equation (44))
+applyCoMVelFeedbackControler :: Double -> Double -> MotionDataVars -> Array Int Vec3 -> MotionDataVars
+applyCoMVelFeedbackControler kc kp targetMotion comError = newMotion where
+
+    MotionDataVars{
+        _dt=dt,
+        _fN=fN,
+        _com=comT,
+        _zmp=zmpT
+    } = targetMotion
+
+    newMotion = applyCoMVelFeedbackControler' 0 targetMotion
+    applyCoMVelFeedbackControler' fi (mdvA@MotionDataVars{_j=jA,_com=comA,_zmp=zmpA}) = if fi < fN-1
+        then
+            applyCoMVelFeedbackControler' (fi+1) mdvA'
+        else
+            mdvA where
+
+                fI = F fi
+                fiNext = fi+1
+                fINext = F fiNext
+
+                -- errors (ZMP and CoM) comparing frame fI in target and actual
+                ep = (zmpT fI) - (zmpA fI)
+                ec = (comT fI) - (comA fI)
+
+                -- current desired CoM velocity (use current and next frame only)
+                lT = ((comT fINext) - (comT fI)) ^/ dt
+
+                -- adjusted CoM velocity (based on equation (44))
+                ld = lT - (kp *^ ep) + (kc *^ ec)
+
+                -- now we adjust the next frame (fi + 1) to reflect the adjusted CoM velocity (ld')
+                -- in this case we consider only frames fi and fi+1 when considering velocity. This
+                -- means we only calculate the offset over 1 frame given the velocity and apply that
+                -- to frame fi+1 (we don't consider a 3rd frame as is done in finite difference)
+                --
+                -- here we convert shift in CoM to shift in Root node (they are not the same thing)
+                rootJoint = (jA fi 0)
+                nextFrameRootJoint = (jA fiNext 0)
+                targetCoM = (comA fI) + (ld ^* dt)
+                --     This is the desired shift in root node
+                rootShift = (targetCoM + ((offset nextFrameRootJoint) - (comA fINext))) - (offset rootJoint)
+                --     here is the resulting offset (origional offset + shift) and now we add some noise (from comError)
+                nextOffset = (offset rootJoint) + rootShift + (comError!fiNext)
+
+                mdvA' = modifyMotionDataVarsFN mdvA (fi+2) [((fiNext,0), nextFrameRootJoint{
+                    offset = nextOffset
+                })]
 
 
 
