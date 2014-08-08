@@ -178,8 +178,8 @@ convexHull points = lower ++ upper where
         -- removing that and using (upper ++ lower) above will make it cw.
         go acc [] = reverse $ tail acc
 
-arrayEl :: Ix a => (a,a) -> (a -> b) -> Array a b
-arrayEl bnd fn = array bnd [( ix,
+buildArray :: Ix a => (a,a) -> (a -> b) -> Array a b
+buildArray bnd fn = array bnd [( ix,
                 fn ix
             ) | ix <- range bnd]
 
@@ -195,7 +195,7 @@ matrixMult a b
         mb = 1 + (brf-bri)
         p = 1 + (bcf-bci)
 
-        ab = arrayEl ((0,0),(n-1,p-1)) (\(r,c) ->
+        ab = buildArray ((0,0),(n-1,p-1)) (\(r,c) ->
             sum [ (a!(r+ari,i+aci)) * (b!(i+bri,c+bci)) | i <- [0..m-1]]
          )
 

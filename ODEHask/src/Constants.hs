@@ -30,7 +30,16 @@ boneRadiusDisplay = boneRadius * 0.25
 
 -- distance from the floor counting as contact for the support pollygon
 floorContactThreshold :: Double
-floorContactThreshold = 0.01
+floorContactThreshold = 0.0001 -- 0.0001 = 1 mm
+
+--
+-- Motion preprocessing
+--
+
+-- This is the clearance between floor and foot that is considered large enough to not be changed by the
+-- preprocessor.
+safeFloorClearance :: Double
+safeFloorClearance = 0.1
 
 
 

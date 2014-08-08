@@ -107,6 +107,7 @@ data MotionDataVars = MotionDataVars {
     _zmpIsInSp :: FrameIx -> Bool,
 
     _bByName :: String -> BoneIx,
+    _jByName :: String -> JointIx,
     _footBs :: ((BoneIx,BoneIx),(BoneIx,BoneIx)),
     _footJs :: ((JointIx,JointIx,JointIx),(JointIx,JointIx,JointIx)),
     _isFootBone  :: BoneIx -> Bool
@@ -217,6 +218,7 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     _zmpIsInSp = zmpIsInSp,
 
     _bByName = bByName,
+    _jByName = jByName,
     _footBs = footBs,
     _footJs = footJs,
     _isFootBone = isFootBone
@@ -544,6 +546,9 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
 
     bByName :: String -> BoneIx
     bByName bn = fromMaybe (error $ "Bone with name\"" ++ bn ++ "\" could not be found") (lookup bn (zip (map bName bs) bs))
+
+    jByName :: String -> JointIx
+    jByName jn = fromMaybe (error $ "Bone with name\"" ++ jn ++ "\" could not be found") (lookup jn (zip (map (name . jBase) js) js))
 
     soleCorners :: FrameIx -> [Vec3]
     soleCorners fI = corners where
@@ -935,12 +940,26 @@ fitMottionDataToZmp' constrainInitVel mdvOrig zmpX dipHeight its = fitMottionDat
 
         --modifyMotionDataVars :: MotionDataVars -> FJIndexedFrames -> MotionDataVars
         doFeetIK = True
-        finalModifiedMdv = fitMottionDataToZmp' ((if doFeetIK then (correctFeet mdvOrig) else id) $ (if itsI == its then dip dipHeight else id) $ modifiedMdv) newWeights (itsI-1)
+        finalModifiedMdv = fitMottionDataToZmp' ((if doFeetIK then (feetIK mdvOrig) else id) $ (if itsI == its then dip dipHeight else id) $ modifiedMdv) newWeights (itsI-1)
 
 -- Move (via IK) feet in the second MDV argument to the position of the feet in the first
 -- update the motion data. Each frame is updated independantly (individual updates are collected from "correctFrame")
-correctFeet :: MotionDataVars -> MotionDataVars -> MotionDataVars
-correctFeet target@MotionDataVars{_xj=xjT} md@MotionDataVars{_pj=pj,_bj=bj,_fN=fN,_fs=fs,_j=j,_rj=rj,_xj=xj,_bByName=bByName,_footBs=((lfbI,_),(rfbI,_))} =
+feetIK :: MotionDataVars -> MotionDataVars -> MotionDataVars
+feetIK target@MotionDataVars{_xj=xjT,_fN=fN,_pj=pj,_bj=bj,_footBs=((lfbI,_),(rfbI,_))} md =
+
+    ankleIK md aTs where
+
+    lajI = pj . bj $ lfbI   -- left ankel joint
+    rajI = pj . bj $ rfbI   -- right ankel joint
+
+    aTs = buildArray (0,fN-1) aT
+
+    -- target ankel position
+    aT fi = let fI = F fi in (xjT fI lajI, xjT fI rajI)
+
+-- Move (via IK) the ankels (keeping the global orientation of the feet) to the target positions
+ankleIK :: MotionDataVars -> Array Int (Vec3,Vec3) -> MotionDataVars
+ankleIK md@MotionDataVars{_xj=xj,_pj=pj,_bj=bj,_fN=fN,_fs=fs,_j=j,_rj=rj,_bByName=bByName,_footBs=((lfbI,_),(rfbI,_))} aTs =
 --    trace "Done correcting feet with IK"
      (modifyMotionDataVars md (concat [correctFrame fI | fI <- fs])) where
 
@@ -971,11 +990,7 @@ correctFeet target@MotionDataVars{_xj=xjT} md@MotionDataVars{_pj=pj,_bj=bj,_fN=f
 
                     -- target ankel position (normalized for max extention)
 
-                    maxExtention = (norm ((xj fI kjI) - (xj fI hjI))) + (norm ((xj fI ajI) - (xj fI kjI)))
-
-                    aT = h' + ((min (norm hat') maxExtention) *^ (normalize hat')) where
-                        h' = (xj fI hjI)
-                        hat' = (xjT fI ajI) - h'
+                    aT = (if ajI == lajI then fst else snd) (aTs ! fi)
 
                     -- setp 1   Rotate hip to point ankel toward target ankel
 
@@ -1042,6 +1057,56 @@ correctFeet target@MotionDataVars{_xj=xjT} md@MotionDataVars{_pj=pj,_bj=bj,_fN=f
         rkjI = pj rajI          -- right knee joint
         rhjI = pj rkjI          -- right hip joint
 
+
+-- makes the soles of the feet parralle to the floor in all frames, and emphasises floor contact / ground clearance
+flattenFeet :: MotionDataVars -> MotionDataVars
+flattenFeet mdv@MotionDataVars{_jBase=jBase,_fN=fN,_pj=pj,_bj=bj,_footBs=((_,ltbI),(_,rtbI))}  = mdv' where
+
+    fac = fixAnkleClearance mdv
+    low = feetIK fac (shift (V3 0 (negate zeroAnkleClearance) 0) fac)
+    mdv' = fixFootOrientation low
+
+
+
+    lejI = bj ltbI  -- left toe endaffector
+    rejI = bj rtbI  -- right toe endaffector
+    ltjI = pj lejI  -- left toe joint
+    rtjI = pj rejI  -- right toe joint
+    lajI = pj ltjI  -- left ankel joint
+    rajI = pj rtjI  -- right ankel joint
+
+    zeroEndClearance = 0     -- height of the end affector joint when the foot is flat on the floor
+    zeroToeClearance = zeroEndClearance - (vy $ offset (jBase lejI))     -- height of the toe joint when the foot is flat on the floor
+    zeroAnkleClearance = zeroToeClearance - (vy $ offset (jBase ltjI))     -- height of the ankle joint when the foot is flat on the floor
+
+    fixAnkleClearance mdv@MotionDataVars{_xj=xj} = ankleIK mdv (buildArray (0,fN-1) aT) where
+
+        -- takes the height of the ankel, toe, and toe endaffector, then returns the target height of the ankel
+        heightMap ha ht he = newClearance + zeroAnkleClearance where
+
+            clearance = traceShow ([ha,ht,he]) (minimum [ha-zeroAnkleClearance,ht-zeroToeClearance,he-zeroEndClearance])
+
+            newClearance =
+                -- anything within floorContactThreshold should have 0 clearance
+                if clearance <= floorContactThreshold    then 0 else
+                -- else if less than safeFloorClearance, heavily push clearance toward safeFloorClearance
+                -- if clearance <= safeFloorClearance      then safeFloorClearance - (clearance * ((clearance/safeFloorClearance)**2)) else
+                -- else leave as it is
+                  clearance + 0.1
+
+        aT fi = let
+                    fI = F fi
+                    hj = vy . (xj fI)
+                in
+                        (let (V3 x y z) = xj fI lajI in V3 x (heightMap (hj lajI) (hj ltjI) (hj lejI)) z,
+                         let (V3 x y z) = xj fI rajI in V3 x (heightMap (hj rajI) (hj rtjI) (hj rejI)) z)
+
+    fixFootOrientation mdv@MotionDataVars{_j=j,_pj=pj,_fs=fs,_rj=rj,_jByName=jByName} = modifyMotionDataVars mdv (concat [modFrame fi | (F fi) <- fs]) where
+
+        (ankleJis,toeJis) = splitAt 2 (map ((\(J ji) -> ji) . jByName) ["LeftAnkle", "RightAnkle","LeftToe","RightToe"])
+        modFrame fi = (map (modAnkles fi) ankleJis) ++ (map (modToes fi) toeJis)
+        modAnkles fi ji = let joint = j fi ji in ((fi,ji), joint{ rotationL = (rotationL joint) * (conjugate $ rj (F fi) (J ji)) })
+        modToes fi ji = let joint = j fi ji in ((fi,ji), joint{ rotationL = identity })
 
 -- use the feedback control described in "Posture/Walking Control for Humanoid Robot Based on Kinematic Resolution of CoM Jacobian With Embedded Motion"
 -- section V (this is only the P-controler like feedback signal for the desired CoM velocity..... equation (44))

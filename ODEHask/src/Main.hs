@@ -49,10 +49,11 @@ main' = do
 
 mainLoop =
 --    viewAnimationLoop
+    vewFlatFeet
 
     -- setting kc to the data's framerate (usually 60Hz) and keeping kp=0 the origional target motion
     -- will be retreived.
-    coMFeedBackLoopExperiment [73] [0]
+--    coMFeedBackLoopExperiment [73] [0]
 
 mainLoopOut :: MotionData -> IO ()
 mainLoopOut md = do
@@ -64,7 +65,7 @@ mainLoopOut md = do
         loopDisplay allIOs ios tLastRender = do
             tc <- getCurrentTime
             let
-                frameDT = (realToFrac $ tc `diffUTCTime` tLastRender)
+                frameDT = playbackSpeed * (realToFrac $ tc `diffUTCTime` tLastRender)
                 ios'@((_,io):_) = forward ios frameDT
 
                 forward [] t = forward allIOs t

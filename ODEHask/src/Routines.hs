@@ -22,8 +22,12 @@ type TimedLoop a = a -> Double -> Double -> IO (Maybe (a, IO ()))
 
 -- return an updated sim and display IO
 viewAnimationLoop :: MainLoop
-viewAnimationLoop mdv@MotionDataVars{_dt=dt,_fs=fs} = return $ zip (repeat dt) (map display fs) where
-    display fI = drawFrameIx (BlackA 0.5) zero mdv fI
+viewAnimationLoop mdv@MotionDataVars{_dt=dt,_fs=fs,_sp=sp} = return $ zip (repeat dt) (map display fs) where
+    display fI = do
+        drawFrameIx (BlackA 0.5) zero mdv fI
+        drawPolygonC Black (map xz2x0z (sp fI))
+
+vewFlatFeet =  viewAnimationLoop . flattenFeet
 
 
 
@@ -37,7 +41,7 @@ coMFeedBackLoopExperiment kcs kps targetRaw@MotionDataVars{_fs=fs,_fN=fN,_sp=spR
             map xz2x0z centerOfSp
             -- target zmp as origional zmp projeted onto SP
             -- zipWith (\ proj zmp -> if null proj then zmp else xz2x0z . head $ proj) [polyEdgeLineSegIntersect (sp fI) (toXZ (zmp fI), spC) | (fI,spC) <- zip fs centerOfSp] (map zmp fs)
-        target = fitMottionDataToZmp targetRaw targetZmp 0 10
+        target = fitMottionDataToZmp targetRaw targetZmp 0 0
 
 -- setting kc to the data's framerate (usually 60Hz) and keeping kp=0 the origional target motion
 -- will be retreived.
@@ -132,7 +136,7 @@ coMFeedBackLoopRaw kc kp target@MotionDataVars{_fs=fs,_fN=fN,_sp=spRaw,_dt=dt,_j
                                 })]
                             updatedMdvA =
                                 -- use foot IK to get feet to the true target positions
-                                copyFrames [fiNext] (correctFeet target feedbackOffestMdvA) feedbackOffestMdvA
+                                copyFrames [fiNext] (feetIK target feedbackOffestMdvA) feedbackOffestMdvA
 
 
                         -- simulate
@@ -142,7 +146,6 @@ coMFeedBackLoopRaw kc kp target@MotionDataVars{_fs=fs,_fN=fN,_sp=spRaw,_dt=dt,_j
                         -- return
                         rest <- coMFeedBackLoop' sim' (fi + 1)
                         return $ (dt, displayIO) : rest
-
 
 
 
