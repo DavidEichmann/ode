@@ -10,7 +10,7 @@ defaultTimeStep = 1/1000
 -- physics
 
 boneDensity :: Double
-boneDensity = 350
+boneDensity = 1750
 
 boneRadius :: Double
 boneRadius = 0.1
@@ -55,7 +55,7 @@ defaultColorAlpha = 1
 --
 
 defaultfeedBackControlUpdateInterval :: Double
-defaultfeedBackControlUpdateInterval = 0.1
+defaultfeedBackControlUpdateInterval = 0
 
 -- time it takes to blend into current motion
 blendTime :: Double

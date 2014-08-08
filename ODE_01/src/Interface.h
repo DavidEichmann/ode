@@ -31,6 +31,7 @@ extern "C" {
 
 	dWorldID initODE(double dt);
 
+	double* getCoP();
 	double* getFloorContacts();
 	double* getBodyGeomStartEnd(dBodyID bid);
 	double* getBodyGeomBox(dBodyID bid);

@@ -182,7 +182,10 @@ dSpaceID sid;
 dJointGroupID jointGroupid;
 dJointGroupID contactGroupid;
 vector<dContact> contacts;
+vector<dJointID> contactJoints;
+vector<dJointFeedback> contactJointFeedbacks;
 vector<dBodyID> contactBodies;
+Vec3 cop;
 double * buf = new double[200]; // pos + rot
 
 double * getFloorContacts() {
@@ -208,6 +211,13 @@ void setBodyPosRot(dBodyID bid, double x, double y, double z, double qw, double 
 	dBodySetPosition(bid,x,y,z);
 	dQuaternion q{qw, qx, qy, qz};
 	dBodySetQuaternion(bid,q);
+}
+
+double* getCoP() {
+	for(int i = 0; i < 3; i++) {
+		buf[i] = cop[i];
+	}
+	return buf;
 }
 
 double* getBodyGeom(dBodyID bid) {
@@ -411,10 +421,11 @@ dJointID createAMotor(dBodyID a, dBodyID b) {
 	dJointAttach(jid, a, b);
 	dJointSetAMotorMode(jid, dAMotorUser);
 	dJointSetAMotorNumAxes(jid, 3);
-	dJointSetAMotorParam(jid, dParamFMax,  dInfinity);
-	dJointSetAMotorParam(jid, dParamFMax1, dInfinity);
-	dJointSetAMotorParam(jid, dParamFMax2, dInfinity);
-	dJointSetAMotorParam(jid, dParamFMax3, dInfinity);
+	dReal maxForce = dInfinity;
+	dJointSetAMotorParam(jid, dParamFMax,  maxForce);
+	dJointSetAMotorParam(jid, dParamFMax1, maxForce);
+	dJointSetAMotorParam(jid, dParamFMax2, maxForce);
+	dJointSetAMotorParam(jid, dParamFMax3, maxForce);
 	return jid;
 }
 
@@ -476,6 +487,7 @@ void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 	}
 	// find the body that is not the floor
 	dBodyID bb = (dGeomGetClass(o1) != dPlaneClass) ? b1 : b2;
+	dBodyID bf = (dGeomGetClass(o1) != dPlaneClass) ? b2 : b1;
 
 	// collect collision info
 	const int maxC = 10;
@@ -487,20 +499,25 @@ void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 		if(contact[i].depth != 0) {
 			dContact dc;
 
-			dc.surface.mode = dContactSoftERP | dContactSoftCFM | dContactRolling;
+			dc.surface.mode = dContactSoftERP | dContactSoftCFM | dContactRolling | dContactBounce;
 //			dc.surface.mode = dContactRolling;
-			dc.surface.soft_erp = 0.1;
-			dc.surface.soft_cfm = 0.00007;
-			dc.surface.mu = 1;
-			dc.surface.rhoN = 1;
+			dc.surface.soft_erp = contactERP;
+			dc.surface.soft_cfm = contactCFM;
+			dc.surface.mu = 1000000;
+			dc.surface.rhoN = 100;
+			dc.surface.bounce = 0;	// (0..1) 0 means the surfaces are not bouncy at all, 1 is maximum bouncyness
 			dc.geom = contact[i];
 
 			dJointID cj = dJointCreateContact(wid, contactGroupid, &dc);
-			dJointAttach(cj, b1, b2);
+			dJointAttach(cj, bb, bf);
+			contactJointFeedbacks.push_back(dJointFeedback());
+			// TODO get feedback
+			//dJointSetFeedback(cj, &*(contactJointFeedbacks.end()-1));
 
 			// add point to vector
-			contacts.push_back(dc);
-			contactBodies.push_back(bb);
+//			contactJoints.push_back(cj);
+//			contacts.push_back(dc);
+//			contactBodies.push_back(bb);
 		}
 	}
 }
@@ -515,9 +532,6 @@ double atanBary(Vector2d a, Vector2d b, Vector2d c) {
 	return (bc.dot(ba) / bc.cross(ba).norm());
 }
 void doCollisions() {
-	// clear vectors to store contact points
-	contacts.clear();
-	contactBodies.clear();
 	// do collision detection (filling contacts and contactBodies)
 	dSpaceCollide(sid, stepArgs, &collisionCallback);
 
@@ -612,7 +626,26 @@ void step(dWorldID, double zmpX, double zmpZ, double fy) {
 	stepArgs[2] = fy;
 	doCollisions();
 	dWorldStep(wid,timeStep);
+	// measure the CoP
+	cop.setZero();
+	double grfY = 0;
+	for(size_t i = 0; i < contactJoints.size(); i++) {
+		dJointFeedback* jf = dJointGetFeedback(contactJoints[i]);
+		double grfYi = eigVec3(jf->f1).dot(Vec3::UnitY());
+		cop += grfYi * eigVec3(contacts[i].geom.pos);
+		grfY += grfYi;
+	}
+	cop /= grfY;
 	// Remove all joints in the contact joint group.
 	dJointGroupEmpty(contactGroupid);
+
+	// clear Feedback vector
+	contactJointFeedbacks.clear();
+	contactJoints.clear();
+	// clear vectors to store contact points
+	contacts.clear();
+	contactBodies.clear();
 }
+
+
 

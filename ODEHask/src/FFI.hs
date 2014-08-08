@@ -22,6 +22,7 @@ module FFI (
     DBodyID,
     DJointID,
     initODE,
+    getCoP,
     getFloorContacts,
     getBodyPosRot,
     setBodyPosRot,
@@ -129,6 +130,13 @@ foreign import ccall unsafe "Interface.h setBodyPosRot"
         setBodyPosRot_c :: DBodyID -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()
 setBodyPosRot :: DBodyID -> Vec3 -> Quat -> IO ()
 setBodyPosRot bid pos rot = ((apply bid) >>> (applyVec3 pos) >>> (applyQuat rot)) setBodyPosRot_c
+
+foreign import ccall unsafe "Interface.h getCoP"
+    getCoP_c :: IO (Ptr CDouble)
+getCoP :: IO (Vec3)
+getCoP = do
+    [x,y,z] <- getCoP_c >>= cdPeekArray 3
+    return $ V3 x y z
 
 foreign import ccall unsafe "Interface.h getBodyGeom"
         getBodyGeom_c :: DBodyID -> IO (Ptr CDouble)

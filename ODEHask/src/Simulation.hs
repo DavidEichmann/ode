@@ -3,7 +3,8 @@ module Simulation (
     Bone(..),
     startSim,
     step,
-    getSimSkel
+    getSimSkel,
+    getSimJoints
 ) where
 
 import FFI
@@ -45,14 +46,14 @@ startSim md@MotionDataVars{_baseSkeleton=skel,_js=js,_jb=jb,_xj=xj,_xb=xb,_rj=rj
     bodies <- realizeBodies
     moveToFrame0 bodies
     aMotors <- realizeAMotors bodies
-    putStrLn $ "ode world id = " ++ (show $ newWid)
+--    putStrLn $ "ode world id = " ++ (show $ newWid)
     return Sim {
             wid             = newWid,
             odeBodies       = bodies,
             odeMotors       = aMotors,
             targetMotion    = md,
---            targetMotionFeedBackController = nullController,
-            targetMotionFeedBackController = linearBlendController,
+            targetMotionFeedBackController = nullController,
+--            targetMotionFeedBackController = linearBlendController,
             simTime         = 0,
             simTimeExtra    = 0,
             timeDelta       = defaultTimeStep,
@@ -129,52 +130,59 @@ startSim md@MotionDataVars{_baseSkeleton=skel,_js=js,_jb=jb,_xj=xj,_xb=xb,_rj=rj
             | otherwise     = mapM_ (createFixedJoint (view bf)) (map view (getChildFs bf))
 
 
+getSimJoints :: Sim -> IO (Int -> Joint)
+getSimJoints sim = do
+    posRotGs <- mapM getBodyPosRot (flatten $ odeBodies sim)
+    let
+        posGs = map fst posRotGs
+        rotGs = map snd posRotGs
+        tm@MotionDataVars{
+            _j = j,
+            _js=js,
+            _jHasChild=jHasChild,
+            _cjs=cjs,
+            _pj = pj
+        } = targetMotion sim
+        joints :: Int -> Joint
+        joints 0 = (j 0 0) {
+                rotationL = rotGs !! 0,
+                offset = posGs !! 0
+            }
+        joints ji = let origJoint = (j 0 ji) in
+            if jHasChild jI
+                then
+                    origJoint{
+                        rotationL = (conjugate $ rotGs!!ji) * (rotGs!!cji)
+                    }
+
+                else
+                    origJoint
+                where
+                    jI = (J ji)
+                    (J cji) = head $ cjs jI
+    return joints
+
 step :: Sim -> Double -> Vec2 -> Double -> IO Sim
 step isim idt targetCoP yGRF = step' isim{simTimeExtra = 0} (idt + (simTimeExtra isim)) where
     ddt = timeDelta isim
     w = wid isim
+    -- dt  => time left to simulate
+    -- ddt => time delta for each simulation step
     step' sim dt
         | dt >= ddt     = do
                             stepODE w targetCoP yGRF
 
                             -- extract the Joint Data
-                            posRotGs <- mapM getBodyPosRot (flatten $ odeBodies sim)
+                            joints <- getSimJoints sim
+
                             let
-                                posGs = map fst posRotGs
-                                rotGs = map snd posRotGs
-                                tm = targetMotion sim
-                                MotionDataVars{
-                                    _j = j,
-                                    _js=js,
-                                    _jHasChild=jHasChild,
-                                    _cjs=cjs,
-                                    _pj = pj
-                                } = tm
-                                joints :: Int -> Joint
-                                joints 0 = (j 0 0) {
-                                        rotationL = rotGs !! 0,
-                                        offset = posGs !! 0
-                                    }
-                                joints ji = let origJoint = (j 0 ji) in
-                                    if jHasChild jI
-                                        then
-                                            origJoint{
-                                                rotationL = (conjugate $ rotGs!!ji) * (rotGs!!cji)
-                                            }
-
-                                        else
-                                            origJoint
-                                        where
-                                            jI = (J ji)
-                                            (J cji) = head $ cjs jI
-
-                            -- per step instructions go here
-                                nut = _nextFeedBackControlIteration sim
-                                simFB = if simTime sim >= nut
+                                nextFCIterTime = _nextFeedBackControlIteration sim
+                                simFB = if simTime sim >= nextFCIterTime
                                     then
-                                        ((targetMotionFeedBackController sim) sim joints){
-                                            _nextFeedBackControlIteration = nut + (_feedBackControlUpdateInterval sim)
-                                        }
+                                        sim
+--                                        ((targetMotionFeedBackController sim) sim joints){
+--                                            _nextFeedBackControlIteration = nextFCIterTime + (_feedBackControlUpdateInterval sim)
+--                                        }
                                     else
                                         sim
 
@@ -206,6 +214,7 @@ matchMotionDataVars sim target dt = do
     let
         MotionDataVars{
                 _dt=dtF,
+                _jBase=jBase,
                 _fN=fN,
                 _jHasParent=jHasParent,
                 _js=js,
@@ -213,8 +222,8 @@ matchMotionDataVars sim target dt = do
                 _rjL=rjL
             } = target
         t = simTime sim
-        fu = (t + dt) / dtF
-        u = (fu - (fromIntegral fai))
+        fu = (t+dt) / dtF
+        u = fu - (fromIntegral $ fai)
         fai = min (fN - 1) (floor fu)
         faI = F fai
         fbi = min (fN - 1) (ceiling fu)
@@ -232,6 +241,13 @@ matchMotionDataVars sim target dt = do
 
                     angularVelG = toAngularVel simRotG targetRotG dt
 
+                    bName = name $ jBase jI
+--                if bName == "LeftKnee"
+--                    then do
+--                        putStrLn $ "AMotor velocity (" ++ (bName) ++ "):\t\t" ++ (show $ angularVelG)
+--                        putStrLn $ "(fai,fbi,fN,u): (" ++ show fai ++ ", " ++ show fbi ++ ", " ++ show fN ++ ", " ++ show u ++ ")"
+--                    else
+--                        return ()
                 setAMotorVelocity am angularVelG
             | otherwise = error $ "joint doesn't have 2 parent's yet has an aMotor..... That should not be!!!"
     sequence_ $ zipWith3 setAMotor (flatten $ treeMap' (\ f -> (view (justParent f), view f)) (odeBodies sim)) js (flatten $ odeMotors sim)
