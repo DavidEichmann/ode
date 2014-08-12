@@ -177,49 +177,50 @@ bool OgreCanvas::doRender() {
 }
 
 int manualObjectCount = 0;
+Ogre::ManualObject manual("ManualOutline");
 Ogre::ManualObject manualR("ManualOutlineReverse");
 void OgreCanvas::drawPolygon(Ogre::ColourValue c, const int n, double* const vals) {
 	if(n > 0) {
-		//Ogre::ManualObject manual("ManualOutline"+(manualObjectCount++));
+		manual.clear();
 		manualR.clear();
 
-		//manual.begin("BaseWhiteNoLighting", Ogre::RenderOperation::OT_TRIANGLE_FAN);
+		manual.begin("BaseWhiteNoLighting", Ogre::RenderOperation::OT_TRIANGLE_FAN);
 		manualR.begin("BaseWhiteNoLighting", Ogre::RenderOperation::OT_TRIANGLE_FAN);
 
 		for (int j = 0; j < n; j++)
 		{
-			//int baseIx = j*3;
+			int baseIx = j*3;
 			int baseIxR = ((3*n)-3) - (j*3);
-	//		double posAX = vals[baseIx];
-	//		double posAY = vals[baseIx+1];
-	//		double posAZ = vals[baseIx+2];
+			double posAX = vals[baseIx];
+			double posAY = vals[baseIx+1];
+			double posAZ = vals[baseIx+2];
 			double posAXR = vals[baseIxR];
 			double posAYR = vals[baseIxR+1];
 			double posAZR = vals[baseIxR+2];
-			//		manual.position(posAX, posAY, posAZ);
+			manual.position(posAX, posAY, posAZ);
 			manualR.position(posAXR, posAYR, posAZR);
 		}
 
 		for (int j = 0; j < n - 1; j++)
 		{
-	//		  manual.index(j);
+			  manual.index(j);
 			  manualR.index(j);
 		}
 
-	//	manual.end();
+		manual.end();
 		manualR.end();
 
-	//	Ogre::MeshPtr ptr = manual.convertToMesh("ManualOutline"+(manualObjectCount++));
+		Ogre::MeshPtr ptr = manual.convertToMesh("ManualOutline"+(manualObjectCount++));
 		Ogre::MeshPtr ptrR = manualR.convertToMesh("ManualOutlineR"+(manualObjectCount++));
 
-	//	Ogre::Entity* myEntity = mSceneMgr->createEntity(ptr);
+		Ogre::Entity* myEntity = mSceneMgr->createEntity(ptr);
 		Ogre::Entity* myEntityR = mSceneMgr->createEntity(ptrR);
 
 		Ogre::MaterialPtr mat = createMaterial(c);
-	//	myEntity->setMaterial(mat);
+		myEntity->setMaterial(mat);
 		myEntityR->setMaterial(mat);
 
-	//	draw(myEntity, Vec3(0,0,0), Quaterniond::Identity());
+		draw(myEntity, Vec3(0,0,0), Quaterniond::Identity());
 		draw(myEntityR, Vec3(0,0,0), Quaterniond::Identity());
 	}
 }
@@ -236,6 +237,9 @@ void OgreCanvas::drawVec3(Ogre::ColourValue c, Vec3 origin, Vec3 vec, double rad
 //		print(vec);
 //		return;
 //	}
+	if(radius <= 0.00001) {
+		return;
+	}
 	if(vec.isApprox(Vec3(0,0,0))) {
 		drawPoint(c, origin, radius);
 	}

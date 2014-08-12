@@ -287,7 +287,7 @@ double* getBodyGeomBox(dBodyID bid) {
 
 dWorldID initODE(double dt) {
 	timeStep = dt;
-	contactERP = 75.0 / ((75 * timeStep) + 2);
+	contactERP = 1; //75.0 / ((75 * timeStep) + 2);
 	contactCFM = 1.0 / ((75000 * timeStep) + 2000);
 	dInitODE();
 	//	Create a dynamics world.
@@ -504,20 +504,20 @@ void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 			dc.surface.soft_erp = contactERP;
 			dc.surface.soft_cfm = contactCFM;
 			dc.surface.mu = 1000000;
-			dc.surface.rhoN = 100;
+			dc.surface.rhoN = 100000000000;
 			dc.surface.bounce = 0;	// (0..1) 0 means the surfaces are not bouncy at all, 1 is maximum bouncyness
 			dc.geom = contact[i];
 
 			dJointID cj = dJointCreateContact(wid, contactGroupid, &dc);
 			dJointAttach(cj, bb, bf);
 			contactJointFeedbacks.push_back(dJointFeedback());
-			// TODO get feedback
-			//dJointSetFeedback(cj, &*(contactJointFeedbacks.end()-1));
+			// get feedback
+			dJointSetFeedback(cj, &*(contactJointFeedbacks.end()-1));
 
 			// add point to vector
-//			contactJoints.push_back(cj);
-//			contacts.push_back(dc);
-//			contactBodies.push_back(bb);
+			contactJoints.push_back(cj);
+			contacts.push_back(dc);
+			contactBodies.push_back(bb);
 		}
 	}
 }
@@ -621,17 +621,23 @@ void doCollisions() {
 
 }
 void step(dWorldID, double zmpX, double zmpZ, double fy) {
+	cout << "C++ A" << endl;
 	stepArgs[0] = zmpX;
 	stepArgs[1] = zmpZ;
 	stepArgs[2] = fy;
+
 	doCollisions();
 	dWorldStep(wid,timeStep);
 	// measure the CoP
+	cout << "C++ B" << endl;
 	cop.setZero();
 	double grfY = 0;
 	for(size_t i = 0; i < contactJoints.size(); i++) {
+//		cout << "C++ contactJoints[i]->f1: " << contactJoints[i]->f1 << endl;
 		dJointFeedback* jf = dJointGetFeedback(contactJoints[i]);
+		cout << "C++ D" << endl;
 		double grfYi = eigVec3(jf->f1).dot(Vec3::UnitY());
+		cout << "C++ E" << endl;
 		cop += grfYi * eigVec3(contacts[i].geom.pos);
 		grfY += grfYi;
 	}
@@ -639,12 +645,14 @@ void step(dWorldID, double zmpX, double zmpZ, double fy) {
 	// Remove all joints in the contact joint group.
 	dJointGroupEmpty(contactGroupid);
 
+	cout << "C++ F" << endl;
 	// clear Feedback vector
 	contactJointFeedbacks.clear();
 	contactJoints.clear();
 	// clear vectors to store contact points
 	contacts.clear();
 	contactBodies.clear();
+	cout << "C++ Z" << endl;
 }
 
 

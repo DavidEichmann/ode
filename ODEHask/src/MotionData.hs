@@ -2,6 +2,7 @@ module MotionData where
 
 import Control.Applicative (liftA2)
 import Data.List
+import Control.Arrow
 import Data.Array
 import Data.Maybe
 import Data.Functor
@@ -106,6 +107,7 @@ data MotionDataVars = MotionDataVars {
     _sp     :: FrameIx -> [Vec2],
     _zmpIsInSp :: FrameIx -> Bool,
 
+    _soleCorners :: FrameIx -> ([Vec3],[Vec3]),
     _bByName :: String -> BoneIx,
     _jByName :: String -> JointIx,
     _footBs :: ((BoneIx,BoneIx),(BoneIx,BoneIx)),
@@ -217,6 +219,7 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     _sp     = sp,
     _zmpIsInSp = zmpIsInSp,
 
+    _soleCorners = soleCorners,
     _bByName = bByName,
     _jByName = jByName,
     _footBs = footBs,
@@ -550,7 +553,7 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     jByName :: String -> JointIx
     jByName jn = fromMaybe (error $ "Bone with name\"" ++ jn ++ "\" could not be found") (lookup jn (zip (map (name . jBase) js) js))
 
-    soleCorners :: FrameIx -> [Vec3]
+    soleCorners :: FrameIx -> ([Vec3],[Vec3])
     soleCorners fI = corners where
         -- hack to convert base skeleton to motiondatavars (use only one frame consisting of the base skeleton)
         MotionDataVars{_xb=base_xb',_xsb=base_xsb',_xeb=base_xeb'} = getMotionDataVariablesFromMotionData (MotionData {
@@ -590,10 +593,8 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
         -- get all corners
         ((lfI,ltI),(rfI,rtI)) = footBs
         corners =
-            (map (l2g lfI) footCorners) ++
-            (map (l2g ltI) toeCorners)  ++
-            (map (l2g rfI) footCorners) ++
-            (map (l2g rtI) toeCorners)
+            ((map (l2g lfI) footCorners) ++ (map (l2g ltI) toeCorners),
+             (map (l2g rfI) footCorners) ++ (map (l2g rtI) toeCorners))
 
         l2g :: BoneIx -> Vec3 -> Vec3
         l2g bI offset = (xb fI bI) + (rb fI bI `rotate` offset)
@@ -605,7 +606,7 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
         | otherwise             = hull
         where
             hull = convexHull contactPoints
-            contactPoints = map (\(V3 x _ z) -> V2 x z) (filter (\(V3 _ y _) -> y <= floorContactThreshold) (soleCorners fI))
+            contactPoints = map (\(V3 x _ z) -> V2 x z) (filter (\(V3 _ y _) -> y <= floorContactThreshold) (uncurry (++) (soleCorners fI)))
 
     zmpIsInSp :: FrameIx -> Bool
     zmpIsInSp fi' = polyContainsPoint (sp fi') (toXZ (zmp fi'))
@@ -1060,12 +1061,18 @@ ankleIK md@MotionDataVars{_xj=xj,_pj=pj,_bj=bj,_fN=fN,_fs=fs,_j=j,_rj=rj,_bByNam
 
 -- makes the soles of the feet parralle to the floor in all frames, and emphasises floor contact / ground clearance
 flattenFeet :: MotionDataVars -> MotionDataVars
-flattenFeet mdv@MotionDataVars{_jBase=jBase,_fN=fN,_pj=pj,_bj=bj,_footBs=((_,ltbI),(_,rtbI))}  = mdv' where
-
-    fac = fixAnkleClearance mdv
-    low = feetIK fac (shift (V3 0 (negate zeroAnkleClearance) 0) fac)
-    mdv' = fixFootOrientation low
-
+flattenFeet mdv@MotionDataVars{_dt=dt,_jBase=jBase,_fN=fN,_pj=pj,_bj=bj,_footBs=((lfbI,ltbI),(rfbI,rtbI))}  = mdv' where
+    
+    mdv' = 
+        -- lower to allow feet to reach the target location
+        ((\x -> feetIK mdv (shift (V3 0 (negate zeroAnkleClearance) 0) mdv))
+        -- Move ankles to the correct height
+        >>> fixAnkleClearance
+        -- make the feet flat
+        >>> fixFootOrientation
+        -- Remove foot sliding
+        >>> removeSliding
+        ) mdv
 
 
     lejI = bj ltbI  -- left toe endaffector
@@ -1078,35 +1085,115 @@ flattenFeet mdv@MotionDataVars{_jBase=jBase,_fN=fN,_pj=pj,_bj=bj,_footBs=((_,ltb
     zeroEndClearance = 0     -- height of the end affector joint when the foot is flat on the floor
     zeroToeClearance = zeroEndClearance - (vy $ offset (jBase lejI))     -- height of the toe joint when the foot is flat on the floor
     zeroAnkleClearance = zeroToeClearance - (vy $ offset (jBase ltjI))     -- height of the ankle joint when the foot is flat on the floor
+    
+    -- return the distance a foot is from the floor
+    footClearance :: MotionDataVars -> Bool -> FrameIx -> Double
+    footClearance mdv@MotionDataVars{_soleCorners=soleCorners} isLeft fI = minimum $ map vy sole where
+        (lSole,rSole) = soleCorners fI
+        sole = if isLeft then lSole else rSole
+    
+    -- takes True if left foor or False for right foot, and MDV and frame index and returns True if the foot is in in a supporting phase
+    isFootInSupportPhase :: MotionDataVars -> Bool -> FrameIx -> Bool
+    isFootInSupportPhase mdv@MotionDataVars{_l=l} isLeft fI = clearance <= floorContactThreshold && vel <= floorContactVelocityThreshold where
+        footBone = if isLeft then lfbI else rfbI
+        vel = norm (l fI footBone)
+        clearance = footClearance mdv isLeft fI
+        
 
-    fixAnkleClearance mdv@MotionDataVars{_xj=xj} = ankleIK mdv (buildArray (0,fN-1) aT) where
+    -- exadurates the feet height, such that it is clearer when the foot is contacting the floor
+    fixAnkleClearance mdv@MotionDataVars{_xj=xj,_l=l,_soleCorners=soleCorners} = ankleIK mdv (buildArray (0,fN-1) aT) where
 
-        -- takes the height of the ankel, toe, and toe endaffector, then returns the target height of the ankel
-        heightMap ha ht he = newClearance + zeroAnkleClearance where
-
-            clearance = traceShow ([ha,ht,he]) (minimum [ha-zeroAnkleClearance,ht-zeroToeClearance,he-zeroEndClearance])
+        -- takes the clearance from the floor, and ankle velocity, then returns the target height of the ankle
+        heightMap :: Double -> Vec3 -> Double
+        heightMap clearance vel = newClearance + zeroAnkleClearance where
 
             newClearance =
-                -- anything within floorContactThreshold should have 0 clearance
-                if clearance <= floorContactThreshold    then 0 else
-                -- else if less than safeFloorClearance, heavily push clearance toward safeFloorClearance
-                -- if clearance <= safeFloorClearance      then safeFloorClearance - (clearance * ((clearance/safeFloorClearance)**2)) else
-                -- else leave as it is
-                  clearance + 0.1
+                -- anything within floorContactThreshold clearance and floorContactVelocityThreshold velocity should have 0 clearance
+                -- if withing the floorContactThreshold, but velocity is too large, then keep just above floorContactThreshold
+                if clearance <= floorContactThreshold && norm vel <= floorContactVelocityThreshold then 0 else
+                 -- else if less than safeFloorClearance, heavily push clearance toward safeFloorClearance
+                 if clearance <= safeFloorClearance      then  (safeFloorClearance * (((max floorContactThreshold clearance)/safeFloorClearance)**floorClearanceExponent)) else
+                 -- else leave as it is
+                  clearance
 
         aT fi = let
                     fI = F fi
                     hj = vy . (xj fI)
+                    (lSole,rSole) = soleCorners fI
                 in
-                        (let (V3 x y z) = xj fI lajI in V3 x (heightMap (hj lajI) (hj ltjI) (hj lejI)) z,
-                         let (V3 x y z) = xj fI rajI in V3 x (heightMap (hj rajI) (hj rtjI) (hj rejI)) z)
+                        (let (V3 x y z) = xj fI lajI in V3 x (heightMap (minimum $ map vy lSole) (l fI lfbI)) z,
+                         let (V3 x y z) = xj fI rajI in V3 x (heightMap (minimum $ map vy rSole) (l fI rfbI)) z)
 
+    -- Set the feet to be parallel to the ground
     fixFootOrientation mdv@MotionDataVars{_j=j,_pj=pj,_fs=fs,_rj=rj,_jByName=jByName} = modifyMotionDataVars mdv (concat [modFrame fi | (F fi) <- fs]) where
 
         (ankleJis,toeJis) = splitAt 2 (map ((\(J ji) -> ji) . jByName) ["LeftAnkle", "RightAnkle","LeftToe","RightToe"])
         modFrame fi = (map (modAnkles fi) ankleJis) ++ (map (modToes fi) toeJis)
         modAnkles fi ji = let joint = j fi ji in ((fi,ji), joint{ rotationL = (rotationL joint) * (conjugate $ rj (F fi) (J ji)) })
         modToes fi ji = let joint = j fi ji in ((fi,ji), joint{ rotationL = identity })
+        
+    
+    removeSliding :: MotionDataVars -> MotionDataVars
+    removeSliding mdv@MotionDataVars{_xj=xj} = ankleIK mdv ankleTargets where
+        -- do this for each foot independently
+        -- identify floor contact frames / runs. A left and right foot list of start and end indexes of the contact runs
+        -- contactRuns :: [(Int,Int)]
+        (lContactRuns,rContactRuns) = (toRuns lContactFrames, toRuns rContactFrames) where
+            
+            (lContactFrames,rContactFrames) = (buildArray (0,fN-1) ((isFootInSupportPhase mdv True) . F), buildArray (0,fN-1) ((isFootInSupportPhase mdv False) . F))
+            
+            -- loop through the array maintaining a list of runs
+            toRuns :: Array Int Bool -> [(Int,Int)]
+            toRuns vals = reverse $ init $ toRuns' 0 [(-2,-2)] where
+                toRuns' i runs'@((s,e):rs)
+                    | i == fN   = runs'
+                    -- if in run, check if this is part of the last run or the start if a new one, and update runs' accordingly
+                    | vals!i    = toRuns' (i+1) $ if i == e+1 then (s,i):rs else (i,i):runs'
+                    | otherwise = toRuns' (i+1) runs'
+                    
+        
+        -- pick a single foot position for each floor contact run
+        -- ankleRunPos :: [Vec3]
+        (lAnkleRunPos,rAnkleRunPos) = (map (runAnkleAvg lajI) lContactRuns, map (runAnkleAvg rajI) rContactRuns) where
+            runAnkleAvg ajI (runBnds@(s,e)) = (sum [xj (F fi) ajI | fi <- range runBnds]) ^/ (fromIntegral (1+e-s))
+            
+        -- calculate new ankle positions per frame, blending floor contact into non-floor contact phases
+        ankleTargets :: Array Int (Vec3,Vec3)
+        ankleTargets = array (0,fN-1) (zipWith (\(i1,v1) (i2,v2) -> if i1 /= i2 then error "flattenFeet.ankleTargets: incorrect array indexing" else (i1,(v1,v2))) (getTargets lajI 0 (zip lContactRuns lAnkleRunPos)) (getTargets rajI 0 (zip rContactRuns rAnkleRunPos))) where
+            -- the 3rd argument to getTargets:
+            --   ensure that this always contains the rest of the runs, starting with the run just before fi (or the run that fi is in). 
+            --   if there is no run before fi, then the list starts with the next run.
+            --   if there is no run at all (an unusual situation) then this is simply an empty list
+            getTargets :: JointIx -> Int -> [((Int,Int),Vec3)] -> [(Int,Vec3)]
+            getTargets ajI fi [] = map (\fi' -> (fi', xj (F fi') ajI)) [fi..(fN-1)]
+            getTargets ajI fi (runs'@[((s,e),aPos)])
+                | fi >= fN              = []
+                | fi < s                = (fi, (u*^(xj fI ajI)) + ((1-u)*^aPos)) : getTargets ajI (fi+1) runs'
+                | fi <= e               = (zip [fi..e] (replicate (1+e-fi) aPos)) ++ (getTargets ajI (e+1) runs')
+                | e < fi                = (fi, (v*^(xj fI ajI)) + ((1-v)*^aPos)) : getTargets ajI (fi+1) runs'
+                where
+                    fI = F fi
+                    u = min 1 ((fromIntegral (s-fi) * dt) / stepBlendTime)
+                    v = min 1 ((fromIntegral (fi-e) * dt) / stepBlendTime)
+            getTargets ajI fi (runs'@(((s1,e1),aPos1):((s2,e2),aPos2):_))
+                -- stop at the last frame
+                | fi >= fN              = []
+                -- just before run 1, so blend into it
+                | fi <  s1              = (fi, (u*^(xj fI ajI)) + ((1-u)*^aPos1)) : getTargets ajI (fi+1) runs'
+                -- in run 1, so just use aPos1 for the whole run
+                | fi <= e1              = (zip [fi..e1] (replicate (1+e1-fi) aPos1)) ++ (getTargets ajI (e1+1) runs')
+                -- inbetween run 1 and 2, so blend into both and average the results
+                | fi <  s2              = (fi, (((v + w)*^(xj fI ajI)) + ((1-v)*^aPos1) + ((1-w)*^aPos2)) ^* 0.5) : getTargets ajI (fi+1) runs'
+                -- in run 2, so just use aPos2 for the whole run. Note that run 1 has no affect in the future frames, so we tail runs' (also run 3 may be needed next)
+                | fi <= e2              = (zip [fi..e2] (replicate (1+e2-fi) aPos2)) ++ (getTargets ajI (e2+1) (tail runs'))
+                where
+                    fI = F fi
+                    u = min 1 ((fromIntegral (s1-fi) * dt) / stepBlendTime)
+                    v = min 1 ((fromIntegral (fi-e1) * dt) / stepBlendTime)
+                    w = min 1 ((fromIntegral (s2-fi) * dt) / stepBlendTime)
+                    x = min 1 ((fromIntegral (fi-e2) * dt) / stepBlendTime)
+    
+        
 
 -- use the feedback control described in "Posture/Walking Control for Humanoid Robot Based on Kinematic Resolution of CoM Jacobian With Embedded Motion"
 -- section V (this is only the P-controler like feedback signal for the desired CoM velocity..... equation (44))
@@ -1159,7 +1246,6 @@ applyCoMVelFeedbackControler kc kp targetMotion comError = newMotion where
                 mdvA' = modifyMotionDataVarsFN mdvA (fi+2) [((fiNext,0), nextFrameRootJoint{
                     offset = nextOffset
                 })]
-
 
 
 

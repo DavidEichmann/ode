@@ -1,6 +1,6 @@
 module Draw where
 
-import Linear
+import Linear hiding (trace)
 import Util
 import Data.Color
 import Data.Bone
@@ -8,6 +8,7 @@ import Data.TreeF
 import FFI
 import MotionData
 import Constants
+import Debug.Trace
 
 showOrient = False
 

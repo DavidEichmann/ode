@@ -18,17 +18,28 @@ type MainLoop = MotionDataVars -> IO [(Double,IO ())]
 type TimedLoop a = a -> Double -> Double -> IO (Maybe (a, IO ()))
 
 
-
-
 -- return an updated sim and display IO
-viewAnimationLoop :: MainLoop
-viewAnimationLoop mdv@MotionDataVars{_dt=dt,_fs=fs,_sp=sp} = return $ zip (repeat dt) (map display fs) where
-    display fI = do
+viewAnimationLoop :: MotionDataVars -> (FrameIx -> IO ()) -> IO [(Double,IO ())]
+viewAnimationLoop mdv@MotionDataVars{_dt=dt,_fs=fs} display = return $ zip (repeat dt) (map display fs)
+
+viewAnimationLoopDefault :: MainLoop
+viewAnimationLoopDefault mdv@MotionDataVars{_sp=sp} = viewAnimationLoop mdv (\fI -> do
         drawFrameIx (BlackA 0.5) zero mdv fI
-        drawPolygonC Black (map xz2x0z (sp fI))
+        drawPolygonEdgesC Black (map xz2x0z (sp fI))
+    )
 
-vewFlatFeet =  viewAnimationLoop . flattenFeet
-
+vewFlatFeet :: MainLoop
+vewFlatFeet mdv@MotionDataVars{_sp=sp} = viewAnimationLoop mdv (\fI -> do
+        drawFrameIx (BlackA 0.2) zero mdvFlatFeet fI
+        drawPolygonEdgesC Black (map xz2x0z (spF fI))
+        
+        drawFrameIx (RedA 0.2) zero mdv fI
+--        drawPolygonEdgesC Red (map xz2x0z (sp fI))
+    ) where
+        mdvFlatFeet@MotionDataVars{_sp=spF} = flattenFeet mdv
+     
+vewFlatFeetSim :: MainLoop
+vewFlatFeetSim =  simulateMainLoop . flattenFeet
 
 
 coMFeedBackLoopExperiment :: [Double] -> [Double] -> MainLoop
@@ -148,9 +159,46 @@ coMFeedBackLoopRaw kc kp target@MotionDataVars{_fs=fs,_fN=fN,_sp=spRaw,_dt=dt,_j
                         return $ (dt, displayIO) : rest
 
 
+-- simulate using the motion data directly as the target motion (high gains feed forward)
+simulateMainLoop :: MainLoop
+simulateMainLoop mdv@MotionDataVars{} = do
+    sim@Sim{timeDelta=dtSim,targetMotion=targetMotion@MotionDataVars{_fN=fN,_dt=dtMDV,_zmp=targetZMP}} <- startSim mdv
+    let
+        stepDisplaySim (sim'@Sim{simTime=simTime},io') = do
+            floorCOntacts <- getFloorContacts
+            cSimFrame <- getSimSkel sim'
+            cop <- getCoP
+            let
+                fI = F (min (fN-1) (round $ simTime / dtMDV))
+                io'' = do
+                    -- sim visualization
+                    drawSkeleton (RedA 0.5) cSimFrame
+                    drawPointC (YellowA 1) cop 0.02
+                    putStrLn $ "CoP: " ++ show cop
+        
+                    -- Annimation
+                    let aniOffset =   zero :: Vec3 --V3 (-2) 0 0
+                    drawFrameIx (BlueA 0.5) aniOffset targetMotion fI
+                    --drawPointC (GreenA 0.5) (targetZMP fI) 0.02
+            putStrLn "E"
+            sim'' <- step sim' dtSim zero 0
+            putStrLn "F"
+            return (sim'', io'')
+        nSteps = round $ (fromIntegral fN * dtMDV) / dtSim
+    ios <- fmap (map snd) (iterateMN stepDisplaySim (sim,return ()) nSteps)
+    return $ zip (repeat dtSim) ios
+    
 
 
-
+-- fit the ZMP to the center of the SP
+correctZMP :: MotionDataVars -> MotionDataVars
+correctZMP mdv@MotionDataVars{_fN=fN,_fs=fs,_js=js,_j=j,_pT=pT,_l=l,_com=com,_zmp=zmp,_sp=sp,_zmpIsInSp=zmpIsInSp} = mdvMod where
+        centerOfSp = [let poly = (sp fI) in sum poly ^/ (fromIntegral $ length poly)  | fI <- fs]
+        targetZmp = listArray (0,fN-1) $
+            -- target zmp as center of SP
+            map xz2x0z centerOfSp
+            
+        mdvMod = fitMottionDataToZmp mdv targetZmp 0 10
 
 
 {-

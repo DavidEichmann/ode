@@ -30,25 +30,35 @@ boneRadiusDisplay = boneRadius * 0.25
 
 -- distance from the floor counting as contact for the support pollygon
 floorContactThreshold :: Double
-floorContactThreshold = 0.0001 -- 0.0001 = 1 mm
+floorContactThreshold = 0.001 * 5 -- 0.001 = 1 mm
+
+-- maximum velocity of the foot during floor contact
+floorContactVelocityThreshold :: Double
+floorContactVelocityThreshold = 1 -- m/s
 
 --
 -- Motion preprocessing
 --
 
+-- When stopping foot sliding, this is how long it takes to blend the position of the ankle during floor contact back into the original motion
+stepBlendTime :: Double
+stepBlendTime = 0.5
+
 -- This is the clearance between floor and foot that is considered large enough to not be changed by the
 -- preprocessor.
 safeFloorClearance :: Double
-safeFloorClearance = 0.1
+safeFloorClearance = 0.3
 
-
+-- Floor clearance is exaggurated using this exponent. 1 is no exaduration, and 0 is descrete change from floor contact to safeFloorClearance
+floorClearanceExponent :: Double
+floorClearanceExponent = 0.3
 
 --
 -- Visualization
 --
 
 playbackSpeed :: Double
-playbackSpeed = 1
+playbackSpeed = 1/5
 
 frameRate :: Double
 frameRate = 60

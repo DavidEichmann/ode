@@ -233,3 +233,12 @@ traceShowV v = traceShow v v
 traceShowVM :: Show a => String -> a -> a
 traceShowVM msg v = traceShow (msg ++ (show v)) v
 
+iterateMN :: (Monad m, Integral i) => (a -> m a) -> a -> i -> m [a]
+iterateMN fn x n
+    | n == 0    = return []
+    | otherwise = do
+        x' <- fn x
+        xs <- iterateMN fn x' (n-1)
+        return $ x : xs
+
+

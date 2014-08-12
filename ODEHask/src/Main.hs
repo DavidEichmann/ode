@@ -46,10 +46,11 @@ main' = do
 
     mainLoopOut md
 
-
+mainLoop :: MainLoop
 mainLoop =
---    viewAnimationLoop
-    vewFlatFeet
+--    viewAnimationLoopDefault
+--    vewFlatFeet
+    vewFlatFeetSim
 
     -- setting kc to the data's framerate (usually 60Hz) and keeping kp=0 the origional target motion
     -- will be retreived.
