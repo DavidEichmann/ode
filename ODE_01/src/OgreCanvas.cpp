@@ -292,6 +292,8 @@ Ogre::MaterialPtr OgreCanvas::createMaterial(Ogre::ColourValue c) {
 	Ogre::TextureUnitState* mTexUnitState = mPass->createTextureUnitState();
 	mPass = mMat->getTechnique(0)->getPass(0);
 
+	mMat->setDepthWriteEnabled(false);
+
 	mPass->setSceneBlending(Ogre::SBT_TRANSPARENT_ALPHA);	// allow transparency
 	mPass->setDiffuse(c);
 	mPass->setAmbient(c * 0.4);
