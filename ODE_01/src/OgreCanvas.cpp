@@ -230,13 +230,11 @@ void OgreCanvas::drawBone(Ogre::ColourValue c, Vec3 start, Vec3 end, double radi
 };
 
 void OgreCanvas::drawVec3(Ogre::ColourValue c, Vec3 origin, Vec3 vec, double radius) {
-//	if(isnan((double) vec(0)) || isnan((double) vec(1)) || isnan((double) vec(2)) || isnan((double) origin(0)) || isnan((double) origin(1)) || isnan((double) origin(2))) {
-//		cout << "Error: Attempting to draw a vector with NAN value (origin, vec):\n\t";
-//		print(origin);
-//		cout << "\t";
-//		print(vec);
-//		return;
-//	}
+	if(std::isnan((double) vec(0)) || std::isnan((double) vec(1)) || std::isnan((double) vec(2)) || std::isnan((double) origin(0)) || std::isnan((double) origin(1)) || std::isnan((double) origin(2)) || std::isnan((double) radius)) {
+		cout << "Error: Attempting to draw a vector with NAN value (origin, vec, radius):\n\t(";
+		cout << origin.transpose() << ")\t(" << vec.transpose() << ")\t(" << radius << endl;
+		return;
+	}
 	if(radius <= 0.00001) {
 		return;
 	}

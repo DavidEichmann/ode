@@ -40,7 +40,6 @@ double* sparseMatrixSolve(const int mrn, const int mcn, const int nnz, int* cons
 	}
 	A.setFromTriplets(entries.begin(),entries.end());
 	A.makeCompressed();
-	//cout << "Matrix determinant: " << A.toDense().determinant() << endl;
 	// fill b
 	MatrixXd x(mcn,r);
 	MatrixXd b(mrn,r); // rhs
@@ -51,42 +50,17 @@ double* sparseMatrixSolve(const int mrn, const int mcn, const int nnz, int* cons
 		}
 	}
 
-//	cout << "vals\n";
-//	for(int i = 0; i < nnz; i++) {
-//		cout << vals[i] << " ";
-//	}
-//	cout << "\nmixs\n";
-//	for(int i = 0; i < nnz*2; i++) {
-//		cout << mixs[i] << " ";
-//	}
+//	cout << "solving matrix:\n" << A << "\n with b:\n" << b << endl;
+
 	// solve A x = b
-	if(true) {
-		SparseQR<SparseMatrix<double,ColMajor>, COLAMDOrdering<int> > solver;
-		solver.compute(A);
-		for(int ci = 0; ci < r; ci++) {
+	SparseQR<SparseMatrix<double,ColMajor>, COLAMDOrdering<int> > solver;
+	solver.compute(A);
+	for(int ci = 0; ci < r; ci++) {
 ////			x.col(ci) = A.toDense().jacobiSvd(ComputeThinU | ComputeThinV).solve(b.col(ci));
 //			x.col(ci) = A.toDense().colPivHouseholderQr().solve(b.col(ci));
 
-			x.col(ci) = solver.solve(b.col(ci));
-		}
-//		SparseQR< SparseMatrix<double>, AMDOrdering<int> > solver;
-//		solver.setPivotThreshold(0);
-//		solver.compute(A);
-//		if(solver.info()!=Success) {
-//			// decomposition failed
-//			cerr << "Matrix solver (with least square): failed in COMPUTE stage" << endl;
-//			exit(1);
-//		}
-//		x = solver.solve(b);
-//		if(solver.info()!=Success) {
-//			// solving failed
-//			cerr << "Matrix solver (with least square): failed in SOLVE stage" << endl;
-//			exit(1);
-//		}
-	}
-	else {
-		SparseLU< SparseMatrix<double> > solver;
-		solver.compute(A);
+		x.col(ci) = solver.solve(b.col(ci));
+
 		if(solver.info()!=Success) {
 			// decomposition failed
 			cerr << "Matrix solver: failed in COMPUTE stage" << endl;
@@ -99,19 +73,13 @@ double* sparseMatrixSolve(const int mrn, const int mcn, const int nnz, int* cons
 			exit(1);
 		}
 	}
-//	// print difference vector for first rhs column
-//	MatrixXd ax = A * x;
-//	cout << "ax - b:\n\n";
-//	for(int i = 0; i < mcn; i++) {
-//		cout << (ax(i,0) - b(i,0)) << endl;
-//	}
 	// copy results into array
 	for(int bc = 0; bc < r; bc++) {
 		for(int br = 0; br < mcn; br++) {
 			matrixSolveResults[(mcn*bc)+br] = x(br,bc);
 		}
 	}
-	cout << "Sparse Matrix solve finished!" << endl;
+	cout << "Sparse Matrix solve finished! with solution:\n" << x.transpose() << endl;
 	return matrixSolveResults;
 }
 
@@ -183,7 +151,7 @@ dJointGroupID jointGroupid;
 dJointGroupID contactGroupid;
 vector<dContact> contacts;
 vector<dJointID> contactJoints;
-vector<dJointFeedback> contactJointFeedbacks;
+dJointFeedback contactJointFeedbacks[200];
 vector<dBodyID> contactBodies;
 Vec3 cop;
 double * buf = new double[200]; // pos + rot
@@ -287,7 +255,7 @@ double* getBodyGeomBox(dBodyID bid) {
 
 dWorldID initODE(double dt) {
 	timeStep = dt;
-	contactERP = 1; //75.0 / ((75 * timeStep) + 2);
+	contactERP = 75.0 / ((75 * timeStep) + 2);
 	contactCFM = 1.0 / ((75000 * timeStep) + 2000);
 	dInitODE();
 	//	Create a dynamics world.
@@ -511,9 +479,8 @@ void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 
 			dJointID cj = dJointCreateContact(wid, contactGroupid, &dc);
 			dJointAttach(cj, bb, bf);
-			contactJointFeedbacks.push_back(dJointFeedback());
 			// get feedback
-			dJointSetFeedback(cj, &(*(contactJointFeedbacks.end()-1)));
+			dJointSetFeedback(cj, & contactJointFeedbacks[c]);
 
 			// add point to vector
 			contactJoints.push_back(cj);
@@ -622,7 +589,6 @@ void doCollisions() {
 
 }
 void step(dWorldID, double zmpX, double zmpZ, double fy) {
-	cout << "C++ A" << endl;
 	stepArgs[0] = zmpX;
 	stepArgs[1] = zmpZ;
 	stepArgs[2] = fy;
@@ -630,13 +596,10 @@ void step(dWorldID, double zmpX, double zmpZ, double fy) {
 	doCollisions();
 	dWorldStep(wid,timeStep);
 	// measure the CoP
-	cout << "C++ B" << endl;
 	cop.setZero();
 	double grfY = 0;
 	for(size_t i = 0; i < contactJoints.size(); i++) {
-		cout << "C++ D" << endl;
 		double grfYi = eigVec3(contactJointFeedbacks[i].f1).dot(Vec3::UnitY());
-		cout << "C++ E" << endl;
 		cop += grfYi * eigVec3(contacts[i].geom.pos);
 		grfY += grfYi;
 	}
@@ -644,14 +607,11 @@ void step(dWorldID, double zmpX, double zmpZ, double fy) {
 	// Remove all joints in the contact joint group.
 	dJointGroupEmpty(contactGroupid);
 
-	cout << "C++ F" << endl;
 	// clear Feedback vector
-	contactJointFeedbacks.clear();
 	contactJoints.clear();
 	// clear vectors to store contact points
 	contacts.clear();
 	contactBodies.clear();
-	cout << "C++ Z" << endl;
 }
 
 
