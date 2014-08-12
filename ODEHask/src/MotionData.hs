@@ -1,6 +1,6 @@
 module MotionData where
 
-import Control.Applicative (liftA2)
+import Control.Applicative ((<$>),liftA2)
 import Data.List
 import Control.Arrow
 import Data.Array
@@ -21,11 +21,6 @@ import Data.Char
 import Text.Parsec
 import Text.Parsec.Token hiding (dot)
 import Text.Parsec.Language
-
-
-import Data.MemoTrie
---memo  = id
---memo2 = id
 
 
 
@@ -58,7 +53,7 @@ newtype BoneIx = B Int deriving (Show,Eq)
 data MotionDataVars = MotionDataVars {
     -- raw data
     _dt     :: Double,
-    _jRaw   :: Array (Int,Int) Joint,
+    _jRaw   :: Array Int (Array Int Joint),
     _j      :: FJIndexedFrames,
     _jBase  :: JointIx -> Joint,
     _baseSkeleton :: Frame,
@@ -147,17 +142,23 @@ getMotionDataVariablesFromMotionData md = getMotionDataVariables (frameTime md) 
     fN = arraySize $ frames md
     jN = length $ flatten $ baseSkeleton md
 
-    -- joints organized by frame
-    jRaw :: Array (Int,Int) Joint
-    jRaw = array bnd [((fi,ji), (flatten $ (frames md) ! fi) !! ji) | (fi,ji) <- range bnd] where
-        bnd = ((0,0),(fN-1,jN-1))
+    -- joints organized by frame then Joint
+    jRaw :: Array Int (Array Int Joint)
+    jRaw = array bndF [(fi, array bndJ [(ji, (flatten $ (frames md) ! fi) !! ji) | ji <- range bndJ]) | fi <- range bndF] where
+        bndF = (0,fN-1)
+        bndJ = (0,jN-1)
 
 
 modifyMotionDataVars :: MotionDataVars -> [((Int,Int), Joint)] -> MotionDataVars
 modifyMotionDataVars (mdv@MotionDataVars{_fN=fN}) = modifyMotionDataVarsFN mdv fN
 
 modifyMotionDataVarsFN :: MotionDataVars -> Int -> [((Int,Int), Joint)] -> MotionDataVars
-modifyMotionDataVarsFN (MotionDataVars{_dt=dt,_baseSkeleton=bSkel,_jN=jN,_jRaw=jRaw}) newfN jUpdates = getMotionDataVariables dt (jRaw // jUpdates) bSkel newfN
+modifyMotionDataVarsFN (MotionDataVars{_dt=dt,_jN=jN,_baseSkeleton=bSkel,_jRaw=jRaw}) newfN jUpdates = getMotionDataVariables dt (jRaw // jUpdates') bSkel newfN where
+    (_,uBoundFRaw) = bounds jRaw
+    bndF = (0,uBoundFRaw)
+    bndJ = (0,jN-1)
+    jUpdatesPerFrameAssocs = accumArray (flip (:)) [] bndF (map (\((f,j),v) -> (f,(j,v))) jUpdates)
+    jUpdates' = [ (fi, (jRaw!fi) // (jUpdatesPerFrameAssocs!fi)) | fi <- range bndF, jUpdatesPerFrameAssocs!fi /= [] ]
 
 -- copy specific frames from one motion to the other
 copyFrames :: [Int] -> MotionDataVars -> MotionDataVars -> MotionDataVars
@@ -168,7 +169,7 @@ copyFrames frames from@MotionDataVars{_js=js,_j=jFrom} to = modifyMotionDataVars
 
 -- arguments: frameTimeDelta  (motion data by FrameIx and JointIx) (base skeletion)
 -- Note that Joint index is from 0 and coresponds to flettening the base skeletoin
-getMotionDataVariables :: Double -> Array (Int,Int) Joint -> Frame -> Int -> MotionDataVars
+getMotionDataVariables :: Double -> Array Int (Array Int Joint) -> Frame -> Int -> MotionDataVars
 getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     _dt     = dt,
     _jRaw   = jRaw,
@@ -228,26 +229,26 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
  } where
 
     memoizeJ :: (JointIx->b) -> (JointIx->b)
-    memoizeJ fn = (\(J a) -> intMemo a) where
-        intMemo = memo (\a -> fn (J a))
+    memoizeJ fn = (\(J a) -> arrJ ! a) where
+        arrJ = listArray bndJ (fn <$> js)
 
     memoizeB :: (BoneIx->b) -> (BoneIx->b)
-    memoizeB fn = (\(B a) -> intMemo a) where
-        intMemo = memo (\a -> fn (B a))
+    memoizeB fn = (\(B a) -> arrB ! a) where
+        arrB = listArray bndB (fn <$> bs)
 
     memoizeF :: (FrameIx->b) -> (FrameIx->b)
-    memoizeF fn = (\(F a) -> intMemo a) where
-        intMemo = memo (\a -> fn (F a))
+    memoizeF fn = (\(F a) -> arrF ! a) where
+        arrF = listArray bndF (fn <$> fs)
 
     memoizeFJ :: (FrameIx->JointIx->b) -> (FrameIx->JointIx->b)
-    memoizeFJ fn = (\(F a) (J b) -> intMemo a b) where
-        intMemo = memo2 (\a b -> fn (F a) (J b))
+    memoizeFJ fn = (\(F a) b -> (arrFmemJ ! a) b) where
+        arrFmemJ = listArray bndF ((memoizeJ . fn) <$> fs)
 
     memoizeFB :: (FrameIx->BoneIx->b) -> (FrameIx->BoneIx->b)
-    memoizeFB fn = (\(F a) (B b) -> intMemo a b) where
-        intMemo = memo2 (\a b -> fn (F a) (B b))
+    memoizeFB fn = (\(F a) b -> (arrFmemB ! a) b) where
+        arrFmemB = listArray bndF ((memoizeB . fn) <$> fs)
 
-    j a b = jRaw!(a,b)
+    j a b = (jRaw!a)!b
 
     -- helper function to measure change over time (using current and previous frame)
     -- first frame simply copies the result from the second

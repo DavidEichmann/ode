@@ -113,7 +113,7 @@ toCBool b = CInt (if b then 1 else 0)
 type DBodyID = Ptr ()
 type DJointID = Ptr ()
 type DWorldID = Ptr ()
-cdPeekArray n = (fmap (map (fromRational . realToFrac))) . (peekArray n)
+cdPeekArray n = (fmap (map realToFrac)) . (peekArray n)
 foreign import ccall unsafe "Interface.h initODE"
         initODE_c :: CDouble -> IO DWorldID
 initODE :: Double -> IO DWorldID

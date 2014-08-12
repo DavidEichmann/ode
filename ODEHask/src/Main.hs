@@ -78,9 +78,9 @@ mainLoopOut md = do
             doRender
             loopDisplay allIOs ios' tc
 
-    ti <- getCurrentTime
-    initOgre
-    loopDisplay displayTIOs displayTIOs ti
+--    ti <- getCurrentTime
+--    initOgre
+--    loopDisplay displayTIOs displayTIOs ti
 
     return ()
 

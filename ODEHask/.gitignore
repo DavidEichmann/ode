@@ -4,3 +4,5 @@
 /.dist-buildwrapper
 /leksah_workspace.lkshs
 /obj
+/ogre.cfg
+/ogre.log
