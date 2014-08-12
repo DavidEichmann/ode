@@ -466,6 +466,7 @@ void createFixedJoint(dBodyID a, dBodyID b) {
 	dJointAttach(jid, a, b);
 	dJointSetFixed(jid);
 }
+
 void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 
 	// ignore collisions with spaces
@@ -512,7 +513,7 @@ void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 			dJointAttach(cj, bb, bf);
 			contactJointFeedbacks.push_back(dJointFeedback());
 			// get feedback
-			dJointSetFeedback(cj, &*(contactJointFeedbacks.end()-1));
+			dJointSetFeedback(cj, &(*(contactJointFeedbacks.end()-1)));
 
 			// add point to vector
 			contactJoints.push_back(cj);
@@ -633,10 +634,8 @@ void step(dWorldID, double zmpX, double zmpZ, double fy) {
 	cop.setZero();
 	double grfY = 0;
 	for(size_t i = 0; i < contactJoints.size(); i++) {
-//		cout << "C++ contactJoints[i]->f1: " << contactJoints[i]->f1 << endl;
-		dJointFeedback* jf = dJointGetFeedback(contactJoints[i]);
 		cout << "C++ D" << endl;
-		double grfYi = eigVec3(jf->f1).dot(Vec3::UnitY());
+		double grfYi = eigVec3(contactJointFeedbacks[i].f1).dot(Vec3::UnitY());
 		cout << "C++ E" << endl;
 		cop += grfYi * eigVec3(contacts[i].geom.pos);
 		grfY += grfYi;
