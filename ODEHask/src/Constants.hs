@@ -19,7 +19,7 @@ gravityAcc :: Double
 gravityAcc = 9.8
 
 footWidth :: Double
-footWidth = 0.08
+footWidth = 0.2
 
 boneRadiusDisplay :: Double
 boneRadiusDisplay = boneRadius * 0.25
@@ -51,14 +51,14 @@ safeFloorClearance = 0.3
 
 -- Floor clearance is exaggurated using this exponent. 1 is no exaduration, and 0 is descrete change from floor contact to safeFloorClearance
 floorClearanceExponent :: Double
-floorClearanceExponent = 0.3
+floorClearanceExponent = 0.4
 
 --
 -- Visualization
 --
 
 playbackSpeed :: Double
-playbackSpeed = 1/5
+playbackSpeed = 1
 
 frameRate :: Double
 frameRate = 60

@@ -926,10 +926,7 @@ fitMottionDataToZmp' constrainInitVel mdvOrig zmpX dipHeight its = fitMottionDat
 
         -- use matrix solver to get xe
         --  sparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
---        (ze:xe:_) = leastSquareSparseMatrixSolve mrn fN _M [zep,xep]
-        xe:_ = leastSquareSparseMatrixSolve mrn fN _M [xep]
-        ze:_ = leastSquareSparseMatrixSolve mrn fN _M [zep]
-        --(xe:ze:_) = traceShow ep (sparseMatrixSolve _M  [xep,zep])
+        (ze:xe:_) = leastSquareSparseMatrixSolve mrn fN _M [zep,xep]
 
         shiftedFrames = [ let joint@Joint{offset=offset} = j fi 0 in ((fi, 0), joint{ offset = offset + (V3 (xe!fi) 0 (ze!fi)) })  | fi <- [0..fN-1] ]
         modifiedMdv@MotionDataVars{_zmp=zmpActualResult} = modifyMotionDataVars mdv shiftedFrames
@@ -1158,7 +1155,7 @@ flattenFeet mdv@MotionDataVars{_dt=dt,_jBase=jBase,_fN=fN,_pj=pj,_bj=bj,_footBs=
         (lAnkleRunPos,rAnkleRunPos) = (map (runAnkleAvg lajI) lContactRuns, map (runAnkleAvg rajI) rContactRuns) where
             runAnkleAvg ajI (runBnds@(s,e)) = (sum [xj (F fi) ajI | fi <- range runBnds]) ^/ (fromIntegral (1+e-s))
             
-        -- calculate new ankle positions per frame, blending floor contact into non-floor contact phases
+        -- calculate new ankle positions per frame, blending floor contact XZ components into non-floor contact phases
         ankleTargets :: Array Int (Vec3,Vec3)
         ankleTargets = array (0,fN-1) (zipWith (\(i1,v1) (i2,v2) -> if i1 /= i2 then error "flattenFeet.ankleTargets: incorrect array indexing" else (i1,(v1,v2))) (getTargets lajI 0 (zip lContactRuns lAnkleRunPos)) (getTargets rajI 0 (zip rContactRuns rAnkleRunPos))) where
             -- the 3rd argument to getTargets:
@@ -1169,31 +1166,35 @@ flattenFeet mdv@MotionDataVars{_dt=dt,_jBase=jBase,_fN=fN,_pj=pj,_bj=bj,_footBs=
             getTargets ajI fi [] = map (\fi' -> (fi', xj (F fi') ajI)) [fi..(fN-1)]
             getTargets ajI fi (runs'@[((s,e),aPos)])
                 | fi >= fN              = []
-                | fi < s                = (fi, (u*^(xj fI ajI)) + ((1-u)*^aPos)) : getTargets ajI (fi+1) runs'
+                | fi < s                = (fi, useYandZX xjjI ((u*^(xjjI)) + ((1-u)*^aPos))) : getTargets ajI (fi+1) runs'
                 | fi <= e               = (zip [fi..e] (replicate (1+e-fi) aPos)) ++ (getTargets ajI (e+1) runs')
-                | e < fi                = (fi, (v*^(xj fI ajI)) + ((1-v)*^aPos)) : getTargets ajI (fi+1) runs'
+                | e < fi                = (fi, useYandZX xjjI ((v*^(xjjI)) + ((1-v)*^aPos))) : getTargets ajI (fi+1) runs'
                 where
                     fI = F fi
+                    xjjI = xj fI ajI
                     u = min 1 ((fromIntegral (s-fi) * dt) / stepBlendTime)
                     v = min 1 ((fromIntegral (fi-e) * dt) / stepBlendTime)
             getTargets ajI fi (runs'@(((s1,e1),aPos1):((s2,e2),aPos2):_))
                 -- stop at the last frame
                 | fi >= fN              = []
                 -- just before run 1, so blend into it
-                | fi <  s1              = (fi, (u*^(xj fI ajI)) + ((1-u)*^aPos1)) : getTargets ajI (fi+1) runs'
+                | fi <  s1              = (fi, useYandZX xjjI ((u*^(xjjI)) + ((1-u)*^aPos1))) : getTargets ajI (fi+1) runs'
                 -- in run 1, so just use aPos1 for the whole run
                 | fi <= e1              = (zip [fi..e1] (replicate (1+e1-fi) aPos1)) ++ (getTargets ajI (e1+1) runs')
                 -- inbetween run 1 and 2, so blend into both and average the results
-                | fi <  s2              = (fi, (((v + w)*^(xj fI ajI)) + ((1-v)*^aPos1) + ((1-w)*^aPos2)) ^* 0.5) : getTargets ajI (fi+1) runs'
+                | fi <  s2              = (fi, useYandZX xjjI ((((v + w)*^(xjjI)) + ((1-v)*^aPos1) + ((1-w)*^aPos2)) ^* 0.5)) : getTargets ajI (fi+1) runs'
                 -- in run 2, so just use aPos2 for the whole run. Note that run 1 has no affect in the future frames, so we tail runs' (also run 3 may be needed next)
                 | fi <= e2              = (zip [fi..e2] (replicate (1+e2-fi) aPos2)) ++ (getTargets ajI (e2+1) (tail runs'))
                 where
                     fI = F fi
+                    xjjI = xj fI ajI
                     u = min 1 ((fromIntegral (s1-fi) * dt) / stepBlendTime)
                     v = min 1 ((fromIntegral (fi-e1) * dt) / stepBlendTime)
                     w = min 1 ((fromIntegral (s2-fi) * dt) / stepBlendTime)
                     x = min 1 ((fromIntegral (fi-e2) * dt) / stepBlendTime)
     
+            -- combine 2 Vec3, using y from the first vector and x and z from the second vector 
+            useYandZX (V3 _ y _) (V3 x _ z) = V3 x y z
         
 
 -- use the feedback control described in "Posture/Walking Control for Humanoid Robot Based on Kinematic Resolution of CoM Jacobian With Embedded Motion"

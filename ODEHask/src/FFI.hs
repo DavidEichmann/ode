@@ -305,8 +305,8 @@ sparseMatrixSolveRaw mrn mcn matrix rhs = unsafeLocalState (do
             pokeArray arrMIxs (map fromIntegral (concat $ map (\((r,c),_) -> [r,c]) matrix))
             -- fill array with matrix values then rhs vectors
             pokeArray arr (map CDouble ((map snd matrix) ++ (concat $ map elems rhs)))
-            results <- cdPeekArray (r*mrn) =<< sparseMatrixSolve_c (fromIntegral mrn) (fromIntegral mcn) (fromIntegral mNZ) arrMIxs (fromIntegral r) arr
-            return $ map (listArray (0,mrn-1)) (breakSized mrn results)
+            results <- cdPeekArray (r*mcn) =<< sparseMatrixSolve_c (fromIntegral mrn) (fromIntegral mcn) (fromIntegral mNZ) arrMIxs (fromIntegral r) arr
+            return $ map (listArray (0,mcn-1)) (breakSized mcn results)
          )
      )
  )

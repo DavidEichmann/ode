@@ -14,7 +14,8 @@
 /*
  * Solve A x = b
  *
- * n	dimentionality of rhs vectors (also matrix is n x n)
+ * mrn	rows of the matrix A
+ * mcn	columns of the matrix A
  * nnz	number of non-empty (non-zero) matrix elements
  * mixs	array of matrix indexies  (in the form: [row1,col1,row2,col2 ... , row nz, col nz])
  * r	number of rhs vectors
@@ -41,11 +42,12 @@ double* sparseMatrixSolve(const int mrn, const int mcn, const int nnz, int* cons
 	A.setFromTriplets(entries.begin(),entries.end());
 	A.makeCompressed();
 	// fill b
-	MatrixXd x(mcn,r);
-	MatrixXd b(mrn,r); // rhs
+	vector<VectorXd>x;
+	vector<VectorXd>b; // rhs
 	for(int bc = 0; bc < r; bc++) {
-		for(int br = 0; br < mcn; br++) {
-			b(br,bc) = *valsC;
+		b.push_back(VectorXd(mrn));
+		for(int br = 0; br < mrn; br++) {
+			b[bc](br) = *valsC;
 			valsC++;
 		}
 	}
@@ -53,20 +55,18 @@ double* sparseMatrixSolve(const int mrn, const int mcn, const int nnz, int* cons
 //	cout << "solving matrix:\n" << A << "\n with b:\n" << b << endl;
 
 	// solve A x = b
-	SparseQR<SparseMatrix<double,ColMajor>, COLAMDOrdering<int> > solver;
-	solver.compute(A);
+	SparseQR<SparseMatrix<double,ColMajor>, COLAMDOrdering<int> > solver(A);
 	for(int ci = 0; ci < r; ci++) {
 ////			x.col(ci) = A.toDense().jacobiSvd(ComputeThinU | ComputeThinV).solve(b.col(ci));
 //			x.col(ci) = A.toDense().colPivHouseholderQr().solve(b.col(ci));
-
-		x.col(ci) = solver.solve(b.col(ci));
+		x.push_back(solver.solve(b[ci]));
+		//x = solver.solve(b);
 
 		if(solver.info()!=Success) {
 			// decomposition failed
 			cerr << "Matrix solver: failed in COMPUTE stage" << endl;
 			exit(1);
 		}
-		x = solver.solve(b);
 		if(solver.info()!=Success) {
 			// solving failed
 			cerr << "Matrix solver: failed in SOLVE stage" << endl;
@@ -76,10 +76,10 @@ double* sparseMatrixSolve(const int mrn, const int mcn, const int nnz, int* cons
 	// copy results into array
 	for(int bc = 0; bc < r; bc++) {
 		for(int br = 0; br < mcn; br++) {
-			matrixSolveResults[(mcn*bc)+br] = x(br,bc);
+			matrixSolveResults[(mcn*bc)+br] = x[bc](br);
 		}
 	}
-	cout << "Sparse Matrix solve finished! with solution:\n" << x.transpose() << endl;
+	cout << "Sparse Matrix solve finished!" << endl;
 	return matrixSolveResults;
 }
 
@@ -255,8 +255,15 @@ double* getBodyGeomBox(dBodyID bid) {
 
 dWorldID initODE(double dt) {
 	timeStep = dt;
-	contactERP = 75.0 / ((75 * timeStep) + 2);
-	contactCFM = 1.0 / ((75000 * timeStep) + 2000);
+
+	// spring damper constants
+	const double kp = 75000;
+	const double kd = 2000;
+//	const double kp = 0;
+//	const double kd = 10000;
+
+	contactERP = (timeStep*kp) / ((timeStep*kp) + kd);
+	contactCFM = 1 / ((timeStep*kp) + kd);
 	dInitODE();
 	//	Create a dynamics world.
 	wid = dWorldCreate();

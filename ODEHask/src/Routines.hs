@@ -49,8 +49,8 @@ vewFlatFeet mdv@MotionDataVars{_sp=sp} = viewAnimationLoop mdv (\fI -> do
 
 
      
-vewFlatFeetSim :: MainLoop
-vewFlatFeetSim =
+viewFlatFeetSim :: MainLoop
+viewFlatFeetSim =
     -- apply the flattenFeet motion preprocessor
     flattenFeet >>>
     -- apply ZMP correction
@@ -58,8 +58,15 @@ vewFlatFeetSim =
     -- pass to simulation MainLoop
     simulateMainLoop
 
-
-
+viewZmpCorrection :: MainLoop
+viewZmpCorrection mdvOrig = viewAnimationLoop mdv display where
+    mdv@MotionDataVars{
+        _zmp = zmp
+    } = correctZMP 10 mdvOrig
+    display fI = do
+        drawFrameIx (BlackA 0.5) zero mdv fI
+        drawPointC Red (zmp fI) 0.03
+        
 
 
 

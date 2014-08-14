@@ -49,8 +49,9 @@ main' = do
 mainLoop :: MainLoop
 mainLoop =
 --    viewAnimationLoopDefault
---    vewFlatFeet
-    vewFlatFeetSim
+--    viewFlatFeet
+--    viewFlatFeetSim
+    viewZmpCorrection
 
     -- setting kc to the data's framerate (usually 60Hz) and keeping kp=0 the origional target motion
     -- will be retreived.
@@ -78,9 +79,9 @@ mainLoopOut md = do
             doRender
             loopDisplay allIOs ios' tc
 
---    ti <- getCurrentTime
---    initOgre
---    loopDisplay displayTIOs displayTIOs ti
+    ti <- getCurrentTime
+    initOgre
+    loopDisplay displayTIOs displayTIOs ti
 
     return ()
 
