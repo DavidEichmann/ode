@@ -1,7 +1,7 @@
 module Routines where
 
 import Simulation
-import MotionData
+import Motion
 import Constants
 import Draw
 import Data.Color

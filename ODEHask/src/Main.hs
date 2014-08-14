@@ -2,7 +2,7 @@
 
 module Main where
 
-import MotionData
+import Motion
 import Constants
 import Routines
 import Data.TreeF

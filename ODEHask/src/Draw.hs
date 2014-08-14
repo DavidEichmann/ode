@@ -6,7 +6,7 @@ import Data.Color
 import Data.Bone
 import Data.TreeF
 import FFI
-import MotionData
+import Motion
 import Constants
 import Debug.Trace
 

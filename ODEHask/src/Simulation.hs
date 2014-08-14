@@ -11,7 +11,7 @@ import FFI
 import Util
 import Linear hiding (slerp, _j,trace)
 import Constants
-import MotionData
+import Motion
 import Data.Maybe
 import Data.Array
 import Data.TreeF
