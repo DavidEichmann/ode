@@ -150,9 +150,9 @@ dSpaceID sid;
 dJointGroupID jointGroupid;
 dJointGroupID contactGroupid;
 vector<dContact> contacts;
-vector<dJointID> contactJoints;
+//vector<dJointID> contactJoints;
 dJointFeedback contactJointFeedbacks[200];
-vector<dBodyID> contactBodies;
+//vector<dBodyID> contactBodies;
 Vec3 cop;
 double * buf = new double[200]; // pos + rot
 
@@ -490,9 +490,9 @@ void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 			dJointSetFeedback(cj, & contactJointFeedbacks[c]);
 
 			// add point to vector
-			contactJoints.push_back(cj);
+//			contactJoints.push_back(cj);
 			contacts.push_back(dc);
-			contactBodies.push_back(bb);
+//			contactBodies.push_back(bb);
 		}
 	}
 }
@@ -605,7 +605,7 @@ void step(dWorldID, double zmpX, double zmpZ, double fy) {
 	// measure the CoP
 	cop.setZero();
 	double grfY = 0;
-	for(size_t i = 0; i < contactJoints.size(); i++) {
+	for(size_t i = 0; i < contacts.size(); i++) {
 		double grfYi = eigVec3(contactJointFeedbacks[i].f1).dot(Vec3::UnitY());
 		cop += grfYi * eigVec3(contacts[i].geom.pos);
 		grfY += grfYi;
@@ -615,10 +615,10 @@ void step(dWorldID, double zmpX, double zmpZ, double fy) {
 	dJointGroupEmpty(contactGroupid);
 
 	// clear Feedback vector
-	contactJoints.clear();
+//	contactJoints.clear();
 	// clear vectors to store contact points
 	contacts.clear();
-	contactBodies.clear();
+//	contactBodies.clear();
 }
 
 
