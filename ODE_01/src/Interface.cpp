@@ -404,6 +404,16 @@ dJointID createAMotor(dBodyID a, dBodyID b) {
 	return jid;
 }
 
+void addAMotorTorque(dJointID jid, double x, double y, double z) {
+	// set the AMotor axies to be the global axies
+	dJointSetAMotorAxis(jid,0,0, 1,0,0);
+	dJointSetAMotorAxis(jid,1,0, 0,1,0);
+	dJointSetAMotorAxis(jid,2,0, 0,0,1);
+
+	// apply the torques
+	dJointAddAMotorTorques(jid, x,y,z);
+}
+
 void setAMotorVelocity(dJointID jid, double x, double y, double z) {
 	if(x == 0 && y == 0 && z == 0) {
 		dJointSetAMotorAxis(jid,0,0, 1,0,0);

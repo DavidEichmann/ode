@@ -84,6 +84,7 @@ extern "C" {
 	void createBallJoint(dBodyID a, dBodyID b, double x, double y, double z);
 	dJointID createAMotor(dBodyID a, dBodyID b);
 	void setAMotorVelocity(dJointID jid, double x, double y, double z);
+	void addAMotorTorque(dJointID jid, double x, double y, double z);
 	void createFixedJoint(dBodyID a, dBodyID b);
 }
 

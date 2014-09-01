@@ -50,8 +50,8 @@ mainLoop :: MainLoop
 mainLoop =
 --    viewAnimationLoopDefault
 --    viewFlatFeet
---    viewFlatFeetSim
-    viewZmpCorrection
+    viewFlatFeetSim
+--    viewZmpCorrection
 
     -- setting kc to the data's framerate (usually 60Hz) and keeping kp=0 the origional target motion
     -- will be retreived.

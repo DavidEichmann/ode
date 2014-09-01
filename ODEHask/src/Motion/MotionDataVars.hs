@@ -14,7 +14,18 @@ import Motion.Joint
 import Motion.MotionData
 
 
+{-
 
+    Joints are all ball and socket
+    Joint J i is at the end of bone B i
+    
+    there is no fictitious "root" bone from origin to root (B 0 is a real bone)
+    
+    J 0 = root joint
+    B 0 = first bone
+    
+    
+-}
 
 
 
@@ -23,6 +34,8 @@ type FJIndexedFrames = Int -> Int -> Joint
 newtype FrameIx = F Int deriving (Show,Eq)
 newtype JointIx = J Int deriving (Show,Eq)
 newtype BoneIx = B Int deriving (Show,Eq)
+unB (B i) = i
+unJ (J i) = i
 
 
 data MotionDataVars = MotionDataVars {
@@ -46,7 +59,8 @@ data MotionDataVars = MotionDataVars {
     _jHasParent :: JointIx -> Bool,
     _pj     :: JointIx -> JointIx,
     _jHasChild :: JointIx -> Bool,
-    _cjs     :: JointIx -> [JointIx],
+    _cjs    :: JointIx -> [JointIx],
+    _cj     :: JointIx -> JointIx,
     _pb     :: BoneIx -> BoneIx,
     _d      :: BoneIx -> Double,
     _m      :: BoneIx -> Double,
@@ -54,6 +68,9 @@ data MotionDataVars = MotionDataVars {
     _rjL    :: FrameIx -> JointIx -> Quat,
     _rj     :: FrameIx -> JointIx -> Quat,
     _xj     :: FrameIx -> JointIx -> Vec3,
+    _q'     :: FrameIx -> JointIx -> Vec3,
+    _q''    :: FrameIx -> JointIx -> Vec3,
+    _rbL    :: FrameIx -> BoneIx -> Quat,
     _rb     :: FrameIx -> BoneIx -> Quat,
     _xb     :: FrameIx -> BoneIx -> Vec3,
     _xsb    :: FrameIx -> BoneIx -> Vec3,
@@ -166,12 +183,16 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     _pb     = pb,
     _jHasChild = jHasChild,
     _cjs    = cjs,
+    _cj     = cj,
     _d      = d,
     _m      = m,
     _i      = i,
     _rjL    = rjL,
     _rj     = rj,
     _xj     = xj,
+    _q'     = q',
+    _q''    = q'',
+    _rbL    = rbL,
     _rb     = rb,
     _xb     = xb,
     _xsb    = xsb,
@@ -320,6 +341,8 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     cjs :: JointIx -> [JointIx]
     cjs = memoizeJ cj_ where
         cj_ jI =[ ujI | ujI <- tail js, jI == pj ujI ]
+    cj :: JointIx -> JointIx
+    cj = head . cjs
 
     --
     -- Bone (uses on baseSkeleton)
@@ -373,16 +396,20 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     -- Frame Bone
     --
 
+    rbL :: FrameIx -> BoneIx -> Quat
+    rbL fI = (rjL fI) . pj . bj
+
     -- bone orientation
     rb :: FrameIx -> BoneIx -> Quat
-    rb fI bI = ((rj fI) . pj . bj) bI
+    rb fI = (rj fI) . pj . bj
 
     -- bone start
     xsb :: FrameIx -> BoneIx -> Vec3
-    xsb fI bI = ((xj fI) . pj . bj) bI
+    xsb fI = (xj fI) . pj . bj
+    
     -- bone end
     xeb :: FrameIx -> BoneIx -> Vec3
-    xeb fI bI = ((xj fI) . bj) bI
+    xeb fI = (xj fI) . bj
 
     -- bone CoM position
     xb :: FrameIx -> BoneIx -> Vec3
@@ -401,10 +428,7 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
 
     -- bone angular velocity
     w :: FrameIx -> BoneIx -> Vec3
-    w = memoizeFB w_ where
-        w_ (fI@(F fi)) bI
-            | fi > fst bndF     = toAngularVel (rb (F (fi-1)) bI) (rb fI bI)  dt
-            | otherwise         = w (F (fi+1)) bI
+    w fI bI = q' fI $ (pj . bj) bI
 
     -- bone linear acc
     l' :: FrameIx -> BoneIx -> Vec3
@@ -412,10 +436,7 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
 
     -- bone angular acc
     w' :: FrameIx -> BoneIx -> Vec3
-    w' = memoizeFB w'_ where
-        w'_ (fI@(F fi)) bI
-            | fi > fst bndF     = ((toAngularVel (rb (F (fi-1)) bI) (rb fI bI)  dt) - (toAngularVel (rb fI bI) (rb (F (fi+1)) bI) dt)) ^/ dt
-            | otherwise         = w' (F (fi+1)) bI
+    w' fI bI = q'' fI $ (pj . bj) bI
 
     -- bone linear momentum
     p :: FrameIx -> BoneIx -> Vec3
@@ -436,6 +457,20 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     h' fI bI = rot `rotate` ((i bI) !* (rotInv `rotate` (w' fI bI))) where
         rot = rb fI bI
         rotInv = conjugate rot
+        
+        
+    -- joint velocity and accelerations 
+    q' :: FrameIx -> JointIx -> Vec3
+    q' = memoizeFJ q'_ where
+        q'_ (fI@(F fi)) jI
+            | fi > fst bndF     = toAngularVel (rj (F (fi-1)) jI) (rj fI jI)  dt
+            | otherwise         = q' (F (fi+1)) jI
+            
+    q'' :: FrameIx -> JointIx -> Vec3
+    q'' = memoizeFJ q''_ where
+        q''_ (fI@(F fi)) jI
+            | fi > fst bndF     = ((toAngularVel (rj (F (fi-1)) jI) (rj fI jI)  dt) - (toAngularVel (rj fI jI) (rj (F (fi+1)) jI) dt)) ^/ dt
+            | otherwise         = q'' (F (fi+1)) jI
 
     --
     -- Frame
@@ -587,3 +622,24 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     zmpIsInSp :: FrameIx -> Bool
     zmpIsInSp fi' = polyContainsPoint (sp fi') (toXZ (zmp fi'))
 
+
+-- given a motion data and an absolute time, this returns the 2 closest frame indexies and an interpolation value in the range[0,1]
+-- where 0 means at the first index and 1 means at the second. Note the indexies may be the same
+getFrameInterpVals :: MotionDataVars -> Double -> (FrameIx,FrameIx,Double)
+getFrameInterpVals mdv t = (faI,fbI,u) where
+        MotionDataVars{
+                _dt=dtF,
+                _fN=fN,
+                _jHasParent=jHasParent,
+                _jHasChild=jHasChild,
+                _js=js,
+                _jb=jb,
+                _cj=cj,
+                _rjL=rjL
+            } = mdv
+        fu = t / dtF
+        u = fu - (fromIntegral $ fai)
+        fai = min (fN - 1) (floor fu)
+        faI = F fai
+        fbi = min (fN - 1) (ceiling fu)
+        fbI = F fbi

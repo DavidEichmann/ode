@@ -1,5 +1,7 @@
 module Util where
 
+import Data.Vector (Vector,fromList)
+import qualified Data.Vector as V
 import Linear hiding (slerp,trace)
 import Linear.Matrix hiding (trace)
 import Data.Array
@@ -213,6 +215,35 @@ matrixAddition a b = array newBnds [((r,c), (a!(r,c)) + (b!(r,c))) | (r,c) <- ra
 matrix :: Int -> Int -> (Int -> Int -> a) -> Array (Int,Int) a
 matrix rs cs fn = listArray bnds [ fn r c | (r,c) <- range bnds] where
     bnds = ((0,0),(rs-1,cs-1))
+
+zeroMatrix :: Num a =>  Int -> Int -> Vector (Vector a)
+zeroMatrix r c = V.replicate r (V.replicate c 0)
+
+zero33 :: Num a => Vector (Vector a)
+zero33 =  zeroMatrix 3 3
+  
+fromList2 :: [[a]] -> Vector (Vector a)
+fromList2 = fromList . (fmap fromList)
+
+fromList2Vector2 ::[[ Vector (Vector a) ]] -> Vector (Vector a)
+fromList2Vector2 = V.concat . (map (foldr1 (V.zipWith (V.++))))
+
+fromList22 ::[[ [[a]] ]] -> Vector (Vector a)
+fromList22 = fromList2Vector2 . ((map . map) fromList2)
+
+-- horizontaly concatenate 2 matrixes
+infix 6 |||
+(|||) :: Vector (Vector a) -> Vector (Vector a) -> Vector (Vector a)
+a ||| b = V.zipWith (V.++) a b 
+
+-- Vertically concatenate 2 matrixes
+infix 5 -|-
+(-|-) :: Vector (Vector a) -> Vector (Vector a) -> Vector (Vector a)
+(-|-) = (V.++)
+
+
+-- transpose a vector matrix
+vectorT = (V.foldl1 (V.zipWith (V.++))) . ((fmap . fmap) V.singleton)
 
 showMatrix :: Show a => Array (Int, Int) a -> String
 showMatrix m = concat [(show $ m!(r,c)) ++ (if c == cF && r /= rF then "\n" else "  \t") | (r,c) <- range bnds] where

@@ -82,8 +82,9 @@ coMFeedBackLoopExperiment kcs kps targetRaw@MotionDataVars{_fs=fs,_fN=fN,_sp=spR
             -- zipWith (\ proj zmp -> if null proj then zmp else xz2x0z . head $ proj) [polyEdgeLineSegIntersect (sp fI) (toXZ (zmp fI), spC) | (fI,spC) <- zip fs centerOfSp] (map zmp fs)
         target = fitMottionDataToZmp targetRaw targetZmp 0 0
 
+-- based off of the CoM Jacobian paper
 -- setting kc to the data's framerate (usually 60Hz) and keeping kp=0 the origional target motion
--- will be retreived.
+-- will be retrieved.
 coMFeedBackLoopRaw :: Double -> Double -> MainLoop
 coMFeedBackLoopRaw kc kp target@MotionDataVars{_fs=fs,_fN=fN,_sp=spRaw,_dt=dt,_js=js,_j=jT,_com=comT,_zmp=zmpT} = do
 
@@ -190,8 +191,23 @@ coMFeedBackLoopRaw kc kp target@MotionDataVars{_fs=fs,_fN=fN,_sp=spRaw,_dt=dt,_j
 -- simulate using the motion data directly as the target motion (high gains feed forward)
 simulateMainLoop :: MainLoop
 simulateMainLoop mdv@MotionDataVars{} = do
-    sim@Sim{timeDelta=dtSim,targetMotion=targetMotion@MotionDataVars{_fN=fN,_dt=dtMDV,_zmp=targetZMP}} <- startSim mdv
+    sim'@Sim{odeMotors=motors} <- startSim mdv
     let
+        sim@Sim{timeDelta=dtSim,targetMotion=targetMotion@MotionDataVars{_fN=fN,_dt=dtMDV,_zmp=targetZMP}} = sim'{
+            feedBackController = (\sim dtSim -> do
+                    let
+                        (faI,fbI,u) = getFrameInterpVals mdv ((simTime sim)+(dtSim/2))
+                        
+                        -- TODO Blend 2 frames
+                        jointTorques = inverseDynamics targetMotion faI
+                        
+                        setAMotor :: (BoneIx, JointIx, BoneIx, DJointID) -> IO ()
+                        setAMotor m@(_,(J ji),_,jID) = addAMotorTorque jID (jointTorques!ji)
+                        
+                    mapM_ setAMotor motors
+                )
+        }
+    
         stepDisplaySim (sim'@Sim{simTime=simTime},io') = do
             floorCOntacts <- getFloorContacts
             cSimFrame <- getSimSkel sim'
@@ -207,7 +223,7 @@ simulateMainLoop mdv@MotionDataVars{} = do
                     -- Annimation
                     let aniOffset =   zero :: Vec3 --V3 (-2) 0 0
                     drawFrameIx (BlueA 0.5) aniOffset targetMotion fI
-                    --drawPointC (GreenA 0.5) (targetZMP fI) 0.02
+                    drawPointC (GreenA 0.5) (targetZMP fI) 0.02
             sim'' <- step sim' dtSim zero 0
             return (sim'', io'')
         nSteps = round $ (fromIntegral fN * dtMDV) / dtSim

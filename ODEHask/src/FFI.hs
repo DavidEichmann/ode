@@ -32,6 +32,7 @@ module FFI (
     createBallJoint,
     createAMotor,
     setAMotorVelocity,
+    addAMotorTorque,
     createFixedJoint,
     stepODE
 ) where
@@ -216,6 +217,11 @@ foreign import ccall unsafe "Interface.h setAMotorVelocity"
     setAMotorVelocity_c :: DJointID -> CDouble -> CDouble -> CDouble -> IO ()
 setAMotorVelocity :: DJointID -> Vec3 -> IO ()
 setAMotorVelocity jid aVel = ((apply jid) >>> (applyVec3 aVel)) setAMotorVelocity_c
+
+foreign import ccall unsafe "Interface.h addAMotorTorque"
+    addAMotorTorque_c :: DJointID -> CDouble -> CDouble -> CDouble -> IO ()
+addAMotorTorque :: DJointID -> Vec3 -> IO ()
+addAMotorTorque joint torque = ((apply joint) >>> (applyVec3 torque)) addAMotorTorque_c
 
 foreign import ccall unsafe "Interface.h createFixedJoint"
     createFixedJoint :: DBodyID -> DBodyID -> IO ()
