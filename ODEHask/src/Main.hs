@@ -19,14 +19,16 @@ import System.Environment
 import Control.DeepSeq
 import System.Random
 import Math.Tau
+import Test.MyTest
 
 
-getArguments :: IO (String, Integer)
+getArguments :: IO (Bool, String, Integer)
 getArguments = do
     ws <- getArgs
-    return (getPath ws, getPP ws) where
+    return (isTest ws, getPath ws, getPP ws) where
+        isTest = elem "-unitTest" 
         getPath ws = case find (not . (isPrefixOf "-")) ws of
-                Just path   -> if elem '/' path then path else "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/" ++ path
+                Just path   -> if elem '/' path then path else defaultDataDirectory ++ path
                 Nothing     -> "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/david-1-martialarts-004_David.bvh"
 
         getPP ws = case find (isPrefixOf "-pp") ws of
@@ -40,17 +42,21 @@ main = main'
 main' :: IO ()
 main' = do
 
-    (file, pp) <- getArguments
-
-    md <- fmap (scaleAndTranslate 2 0) $ parseBVH file pp
-
-    mainLoopOut md
+    (isTest, file, pp) <- getArguments
+    
+    if isTest
+        then
+            runTests
+        else do
+            md <- fmap scaleAndTranslate $ parseBVH file pp
+            mainLoopOut md
 
 mainLoop :: MainLoop
 mainLoop =
 --    viewAnimationLoopDefault
 --    viewFlatFeet
-    viewFlatFeetSim
+--    viewFlatFeetSim
+    viewSim
 --    viewZmpCorrection
 
     -- setting kc to the data's framerate (usually 60Hz) and keeping kp=0 the origional target motion

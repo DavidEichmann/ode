@@ -3,7 +3,7 @@
 
 #include <ode/ode.h>
 
-const float GRAVITY_ACC = 9.8;
+const float GRAVITY_ACC = 0;//9.8; in C++ and HASKELL
 const float STEP_SIZE = 1.0 / 200.0; // in seconds
 const double PI = 3.14159265359;
 

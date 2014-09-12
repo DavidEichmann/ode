@@ -15,6 +15,9 @@ type Vec3 = V3 Double
 type M3 = M33 Double
 type Quat = Quaternion Double
 
+vec3 :: Double -> Double -> Double -> Vec3
+vec3 x y z = V3 x y z
+
 unitX :: Vec3
 unitX = V3 1 0 0
 
@@ -241,6 +244,17 @@ infix 5 -|-
 (-|-) :: Vector (Vector a) -> Vector (Vector a) -> Vector (Vector a)
 (-|-) = (V.++)
 
+
+type Matrix = Vector (Vector Double)
+
+quat2Matrix :: Quat -> Matrix
+quat2Matrix q = m332Matrix $ (fromQuaternion q)
+
+m332Matrix :: M33 Double -> Matrix
+m332Matrix = v32Vector . (fmap v32Vector) 
+
+v32Vector :: V3 a -> Vector a
+v32Vector (V3 a b c) = fromList [a,b,c] 
 
 -- transpose a vector matrix
 vectorT = (V.foldl1 (V.zipWith (V.++))) . ((fmap . fmap) V.singleton)

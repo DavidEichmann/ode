@@ -19,7 +19,7 @@ import Motion.MotionData
     Joints are all ball and socket
     Joint J i is at the end of bone B i
     
-    there is no fictitious "root" bone from origin to root (B 0 is a real bone)
+    there is NO fictitious "root" bone from origin to root (B 0 is a real bone)
     
     J 0 = root joint
     B 0 = first bone
@@ -68,8 +68,8 @@ data MotionDataVars = MotionDataVars {
     _rjL    :: FrameIx -> JointIx -> Quat,
     _rj     :: FrameIx -> JointIx -> Quat,
     _xj     :: FrameIx -> JointIx -> Vec3,
-    _q'     :: FrameIx -> JointIx -> Vec3,
-    _q''    :: FrameIx -> JointIx -> Vec3,
+    _q'     :: FrameIx -> JointIx -> (Vec3,Vec3),
+    _q''    :: FrameIx -> JointIx -> (Vec3,Vec3),
     _rbL    :: FrameIx -> BoneIx -> Quat,
     _rb     :: FrameIx -> BoneIx -> Quat,
     _xb     :: FrameIx -> BoneIx -> Vec3,
@@ -428,7 +428,10 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
 
     -- bone angular velocity
     w :: FrameIx -> BoneIx -> Vec3
-    w fI bI = q' fI $ (pj . bj) bI
+    w = memoizeFB w_ where
+        w_ (fI@(F fi)) bI
+            | fi > fst bndF     = toAngularVel (rb (F (fi-1)) bI) (rb fI bI)  dt
+            | otherwise         = w (F (fi+1)) bI
 
     -- bone linear acc
     l' :: FrameIx -> BoneIx -> Vec3
@@ -436,7 +439,13 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
 
     -- bone angular acc
     w' :: FrameIx -> BoneIx -> Vec3
-    w' fI bI = q'' fI $ (pj . bj) bI
+    w' = memoizeFB w'_ where
+        w'_ (fI@(F fi)) bI
+            | lo < fi && fi < hi    = ((toAngularVel (rb (F (fi-1)) bI) (rb fI bI)  dt) - (toAngularVel (rb fI bI) (rb (F (fi+1)) bI) dt)) ^/ dt
+            | fi <= lo              = w' (F (lo+1)) bI
+            | otherwise             = w' (F (hi-1)) bI
+            where
+                (lo,hi) = bndF
 
     -- bone linear momentum
     p :: FrameIx -> BoneIx -> Vec3
@@ -459,18 +468,25 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
         rotInv = conjugate rot
         
         
-    -- joint velocity and accelerations 
-    q' :: FrameIx -> JointIx -> Vec3
+    -- local joint (angular,linear) velocity and accelerations
+    -- note that linear velocity is in the frame after the local rotation
+    -- note that only the 6DOF root joint has a linear component
+    q' :: FrameIx -> JointIx -> (Vec3,Vec3)
     q' = memoizeFJ q'_ where
-        q'_ (fI@(F fi)) jI
-            | fi > fst bndF     = toAngularVel (rj (F (fi-1)) jI) (rj fI jI)  dt
+        q'_ (fI@(F fi)) (jI@(J ji))
+            | fi > fst bndF     = (toAngularVel (rjL (F (fi-1)) jI) (rjL fI jI)  dt,
+                                   if ji == 0 then ((conjugate (rj fI jI)) `rotate` (((xj fI jI) - (xj (F (fi-1)) jI)) ^/ dt)) else zero)
             | otherwise         = q' (F (fi+1)) jI
             
-    q'' :: FrameIx -> JointIx -> Vec3
+    q'' :: FrameIx -> JointIx -> (Vec3,Vec3)
     q'' = memoizeFJ q''_ where
-        q''_ (fI@(F fi)) jI
-            | fi > fst bndF     = ((toAngularVel (rj (F (fi-1)) jI) (rj fI jI)  dt) - (toAngularVel (rj fI jI) (rj (F (fi+1)) jI) dt)) ^/ dt
-            | otherwise         = q'' (F (fi+1)) jI
+        q''_ (fI@(F fi)) (jI@(J ji))
+            | lo < fi && fi < hi    = (((toAngularVel (rjL (F (fi-1)) jI) (rjL fI jI)  dt) - (toAngularVel (rjL fI jI) (rjL (F (fi+1)) jI) dt)) ^/ dt,
+                                        if ji == 0 then ((conjugate (rj fI jI)) `rotate` (((xj (F (fi+1)) jI)  -  (2*(xj fI jI))  + (xj (F (fi-1)) jI)) ^/ (dt*dt)))  else zero)
+            | fi <= lo              = q'' (F (lo+1)) jI
+            | otherwise             = q'' (F (hi-1)) jI
+            where
+                (lo,hi) = bndF
 
     --
     -- Frame

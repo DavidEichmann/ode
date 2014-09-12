@@ -47,6 +47,8 @@ vewFlatFeet mdv@MotionDataVars{_sp=sp} = viewAnimationLoop mdv (\fI -> do
 
 
 
+viewSim :: MainLoop
+viewSim = simulateMainLoop
 
      
 viewFlatFeetSim :: MainLoop
@@ -190,25 +192,37 @@ coMFeedBackLoopRaw kc kp target@MotionDataVars{_fs=fs,_fN=fN,_sp=spRaw,_dt=dt,_j
 
 -- simulate using the motion data directly as the target motion (high gains feed forward)
 simulateMainLoop :: MainLoop
-simulateMainLoop mdv@MotionDataVars{} = do
-    sim'@Sim{odeMotors=motors} <- startSim mdv
+simulateMainLoop targetMotion@MotionDataVars{_dt=dtMDV,_js=js,_fN=fN,_zmp=targetZMP} = do
+    -- init the simulator
+    sim'@Sim{odeMotors=motors,timeDelta=dtSim,targetMotion=targetMotion} <- startSim targetMotion
     let
-        sim@Sim{timeDelta=dtSim,targetMotion=targetMotion@MotionDataVars{_fN=fN,_dt=dtMDV,_zmp=targetZMP}} = sim'{
-            feedBackController = (\sim dtSim -> do
+        -- modify the Sim to use a ID feedback controller
+        sim = sim'{
+            feedBackController = (\sim@Sim{simTime=simTime} dtSim -> do
+                    -- blend the actual state into the target motion then do ID
+                    jointsActual <- getSimJoints sim
                     let
-                        (faI,fbI,u) = getFrameInterpVals mdv ((simTime sim)+(dtSim/2))
+                        --mdvActualBlend = blendIntoMotionData simTime jointsActual targetMotion
+                        mdvActualBlend = targetMotion
+
+                        (faI,fbI,u) = getFrameInterpVals mdvActualBlend (simTime+(dtSim/2))
                         
                         -- TODO Blend 2 frames
-                        jointTorques = inverseDynamics targetMotion faI
+                        jointTorques = inverseDynamics mdvActualBlend faI
                         
                         setAMotor :: (BoneIx, JointIx, BoneIx, DJointID) -> IO ()
-                        setAMotor m@(_,(J ji),_,jID) = addAMotorTorque jID (jointTorques!ji)
-                        
+                        setAMotor m@(_,jI,_,jID) = addAMotorTorque jID (jointTorques jI)
+                    
+                    putStrLn "------------------------------------------ ID output:"
+                    putStrLn $ concat [ "Joint torque " ++ show ji ++ "  " ++ show (jointTorques jI) ++ "\n"| jI@(J ji) <- js ]
+                    
                     mapM_ setAMotor motors
+                    -- update the target motion to the blended motion NOTE in this case this is actually redundant
+                    return sim{targetMotion=mdvActualBlend}
                 )
         }
     
-        stepDisplaySim (sim'@Sim{simTime=simTime},io') = do
+        stepDisplaySim (sim'@Sim{simTime=simTime,targetMotion=targetMotion'@MotionDataVars{_zmp=targetZMP'}},io') = do
             floorCOntacts <- getFloorContacts
             cSimFrame <- getSimSkel sim'
             cop <- getCoP
@@ -218,12 +232,11 @@ simulateMainLoop mdv@MotionDataVars{} = do
                     -- sim visualization
                     drawSkeleton (RedA 0.5) cSimFrame
                     drawPointC (YellowA 1) cop 0.02
-                    putStrLn $ "CoP: " ++ show cop
         
                     -- Annimation
                     let aniOffset =   zero :: Vec3 --V3 (-2) 0 0
-                    drawFrameIx (BlueA 0.5) aniOffset targetMotion fI
-                    drawPointC (GreenA 0.5) (targetZMP fI) 0.02
+                    drawFrameIx (BlueA 0.5) aniOffset targetMotion' fI
+                    drawPointC (GreenA 0.5) (targetZMP' fI) 0.02
             sim'' <- step sim' dtSim zero 0
             return (sim'', io'')
         nSteps = round $ (fromIntegral fN * dtMDV) / dtSim

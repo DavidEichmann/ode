@@ -86,10 +86,21 @@ frameBoundingBox f = treeFoldNR minMax initMinMax f where
         minMax :: (Vec3, Vec3) -> JointF -> (Vec3, Vec3)
         minMax (cMin,cMax) v = let vPos = getPosEnd v in ((liftA2 min) cMin vPos, (liftA2 max) cMax vPos)
 
+scaleAndTranslate :: MotionData -> MotionData
+scaleAndTranslate md = mdTS where
+    bb = frameBoundingBox $ (frames md)!0
+    bbDiag = uncurry (+) bb
+    bbC@(V3 _ cHeight _) = bbDiag / 2
+    targetC = (V3 0 (cHeight + boneRadius) 0)
+    translation = targetC - bbC
+    scaleFactor = capturedDataScale
+
+    mdT  = translate translation md
+    mdTS = scale scaleFactor mdT
 
 
-scaleAndTranslate :: Double -> Int -> MotionData -> MotionData
-scaleAndTranslate targetHeight sampleFrameIndex md = mdTS where
+scaleAndTranslateToDesiredHeight :: Double -> Int -> MotionData -> MotionData
+scaleAndTranslateToDesiredHeight targetHeight sampleFrameIndex md = mdTS where
     bb = frameBoundingBox $ (frames md)!sampleFrameIndex
     bbDiag = uncurry (+) bb
     bbC@(V3 _ cHeight _) = bbDiag / 2

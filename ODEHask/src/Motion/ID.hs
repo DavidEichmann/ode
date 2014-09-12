@@ -3,20 +3,26 @@
 -}
 
 module Motion.ID (
-    inverseDynamics
+    inverseDynamics,
+    unitTestsID,
+    inverseDynamicsInternals
 ) where
 
 import Prelude hiding (map,foldr,replicate, (++))
 import qualified Data.List as L
 import qualified Data.Vector as V
-import Data.Vector (Vector, generate, map, fromList, toList, replicate, (!), (++), imap)
-import qualified Data.Array as A
-import Data.Array hiding ((!))
+import Data.Vector hiding (and,sequence_)
 import Linear hiding (_j,_i,cross,trace)
+import qualified Linear as L
 import Util
 import Motion.MotionDataVars
 import Motion.Joint
 import Debug.Trace
+import Constants hiding (gravityAcc)
+import qualified Constants as Constants
+import Test.HUnit
+import Test.HUnitX
+import Test.TestData
 
 
 -- (2.2) Plueker forces and motion. angular then linear
@@ -24,7 +30,6 @@ import Debug.Trace
 type P = Vector Double
 type MotionV = P
 type ForceV = P
-type Matrix = Vector (Vector Double)
 
 zeroP = replicate 6 0
 
@@ -45,7 +50,7 @@ s3 v = fromList2 [
             [   v!2,      0,      -(v!0)  ],
             [ -(v!1),    v!0,        0    ]
         ]
-
+{-
 smm :: P -> Matrix
 smm vm = fromList2Vector2 [[s3m,    zero33],
                            [s3 mo,  s3m]] where
@@ -55,30 +60,34 @@ smm vm = fromList2Vector2 [[s3m,    zero33],
 smf :: P -> Matrix
 smf vm = (vectorT $ smm vm) !!* (-1)
 
-
-mxm :: MotionV -> MotionV -> MotionV
-vm1 `mxm` vm2 = (m1 `cross` m2) ++ ((m1 `cross` m2o) ^+^ (m1o `cross` m2)) where
-    (m1,m1o) = split vm1
-    (m2,m2o) = split vm2
-
+    -}
 mxf :: MotionV -> ForceV -> ForceV
 vm `mxf` vf = ((m `cross` fo) ^+^ (mo `cross` f)) ++ (m `cross`f) where
     (m,mo) = split vm
     (fo,f) = split vf
     
     
+mxm :: MotionV -> MotionV -> MotionV
+vm1 `mxm` vm2 = (m1 `cross` m2) ++ ((m1 `cross` m2o) ^+^ (m1o `cross` m2)) where
+    (m1,m1o) = split vm1
+    (m2,m2o) = split vm2
     
 -- Inverse Dynamics algorithm. as described by table 2.6
 -- some differences: use B(-1) for the base body (the floor)
--- input a motion data and frame index, then output Joint indexed array of joint torques 
-inverseDynamics :: MotionDataVars -> FrameIx -> Array Int Vec3
-inverseDynamics md fI@(F fi) = fmap (\v -> V3 (v!0) (v!1) (v!2)) jointTorques where
+-- input a motion data and frame index, then output Joint indexed function of joint torques 
+inverseDynamics :: MotionDataVars -> FrameIx -> (JointIx -> Vec3)
+inverseDynamics mdv fI = fst $ inverseDynamicsInternals Constants.gravityAcc mdv fI
+
+--inverseDynamicsInternals :: MotionDataVars -> FrameIx -> ((JointIx -> Vec3), a)
+inverseDynamicsInternals gravityAcc md fI@(F fi) = ((\v -> V3 (v!0) (v!1) (v!2)) . jointTorques, (axb,(xfOj,(ixpi,(inert,(ixpiF,(v,(a,(f',(fNet,(fOe,()))))))))))) where
     -- motion data
     MotionDataVars{
         _j=jf,
         _bN=bN,
         _jN=jN,
-        _bj=bj_,
+        _bs=bs,
+        _bj=bje,
+        _jb=ejb,
         _pj=pj_,
         _pb=pb_,
         _xb=xbf,
@@ -93,137 +102,177 @@ inverseDynamics md fI@(F fi) = fmap (\v -> V3 (v!0) (v!1) (v!2)) jointTorques wh
         _i=inertCB
     } = md
     
+    -- apply frame index to may of these functions
     j=jf fi
-    cjs = (L.map unJ) . cjs_ . J
-    jHasChild = jHasChild_ . J
-    xj = v32Vector . (xjf fI) . J
-    rjL = (rjLf fI) . J
-    rj = (rjf fI) . J
-    xb = v32Vector . (xbf fI) . B
-    mass bi = massB (B bi)
-    inertC bi = inertCB (B bi)
-    q'  = v32Vector . (q'f  fI) . J
-    q'' = v32Vector . (q''f fI) . J
+    cjs = cjs_
+    xb = v32Vector . (xbf fI)
+    xj = v32Vector . (xjf fI)
+    rjL = (rjLf fI)
+    rj = (rjf fI)
+    q'  = (\(a,l) -> (v32Vector a) ++ (v32Vector l)) . (q'f  fI)
+    q'' = (\(a,l) -> (v32Vector a) ++ (v32Vector l)) . (q''f fI)
+    
+    jHasChild = jHasChild_
+    mass bi = massB bi
+    inertC bi = inertCB bi
     
     -- modification of bj to convert to the bone's starting joint instead of end joint (this fits the theory better)
-    bjp :: Int -> Int
-    bjp = unJ . pj_ . bj_ . B
-    pjb = unJ . pj_ . bj_ . B
-    p :: Int -> Int
-    p = unB . pb_ . B
+    bjp :: BoneIx -> JointIx
+    bjp = pj_ . bje
+    p :: BoneIx -> BoneIx
+    p = pb_
     
     -- ID
     
     -- spatial motion base changing matrix to change from one joint coordinate system to another
-    -- inputs are bone indexies, but the basis are the starting joint of those bones (see bjs)
+    -- input is the i bone index, but the basies are the starting joint of that bone (see bjs)
     -- bone index -> transformation matrix from parent joint to joint i
-    ixpi :: Int -> Matrix
-    ixpi bi = axb (v32Vector $ offset (j i)) (rjL i)
-     where
-        i = bjp bi
+    ixpi :: BoneIx -> Matrix
+    ixpi = ixpij . bjp
+    ixpij :: JointIx -> Matrix
+    ixpij jI@(J ji) = axb (v32Vector $ offset (j ji)) (conjugate $ rjL jI)
+    
+    ixpiF = ixpijF . bjp
+    ixpijF jI@(J ji) = axbF (v32Vector $ offset (j ji)) (conjugate $ rjL jI)
     
     -- basis conversion from global basis for spatial forces to joint basis
-    xfO :: Int -> Matrix 
-    xfO bi = axb (xj i) (rj i)
-     where
-        i = bjp bi
+    xfO :: BoneIx -> Matrix 
+    xfO = xfOj . bjp
+    xfOj :: JointIx -> Matrix 
+    xfOj jI = axbF (xj jI) (conjugate $ rj jI)
+    
+    -- Force basis change axbF = (axb)^-T = (bxa)^T   (derived by swapping a and b. see the input definitions for axb)
+    -- ba = vector b to a in b frame
+    -- br = quaternion rotation of b frame relative to a frame
+    axbF ba br = vectorT $ axb ((-1) *^ ((quat2Matrix br) !* ba)) (conjugate br)
     
     -- helper function for base change
     -- ba = vector b to a in b frame
-    -- ar = quaternion rotation from a to b
-    axb ba ar = (irpi ||| (m0 3 3))
+    -- br = quaternion rotation of b frame relative to a frame
+    axb ba br =             (irpi ||| (m0 3 3))
                                   -|-
             (((s3 ippi) !*! irpi) ||| irpi)
         where
-            -- translation from i to pi in i frame (note that i is ratates according to (rjL i))
+            -- translation from i to pi in i frame (note that i is rotated according to (rjL i))
             ippi = irpi !* ((-1) *^ ba)
             -- rotation
-            irpi = quat2Matrix (conjugate ar)      -- ??? TODO is this right???
+            irpi = quat2Matrix br
             
     
     -- spatial inertia (2.2.11)
-    -- this must be relative to the joint i (note input is bone i)
-    -- Note that the MDV's inertia matrix is 3x3 and relative to the center of mass of the bone
-    inert :: Int -> Matrix
+    -- this must be relative to the start joint of the input bone
+    -- Note that the MDV's inertia matrix (from inertC) is 3x3 and relative to the center of mass of the bone
+    inert :: BoneIx -> Matrix
     inert i =   ((icm !+! (msc !*! (vectorT sc)))     |||        msc)
                                                       -|-
                          ((vectorT msc)               |||   (m *!! (mid 3 3)))
      where
         m = mass i
         -- position of CoM in joint coordinate system
-        c = (v32Vector $ offset $ j (bjp i)) ^/ 2
+        c = (v32Vector $ offset $ j $ unJ (bje i)) ^/ 2
         sc = s3 c
         msc = m *!! sc
         -- inertia about the CoM
         icm =  m332Matrix $ inertC i
        
     -- spatial external force in global coordinates
-    fOe :: Vector ForceV  
-    fOe = replicate bN zeroP
+    -- includes gravity unless added to the root acceleration
+    fOe :: BoneIx -> ForceV  
+    fOe bI = -- zeroP
+        -- gravity. convert a pure force from the center of mass to a spatial force in base frame
+        oxc !* (mass bI *^ g)
+        where
+            -- Note that the gravity is specified in global coordinates (not the frame of the bone even though the point of application is the center of the bone)
+            oxc = axbF ((-1) *^ (xb bI)) identity
     
-    -- joint type matrix Φ. All joints are the same type (ball and socket)
-    oI :: Int -> Matrix
-    oI _ = mid 6 3
+    -- joint type matrix Φ. All joints are the same type (ball and socket) other than the rrot which is just 6 DOF
+    oI :: JointIx -> Matrix
+    oI (J ji) = if ji == 0 then mid 6 6 else mid 6 3
     
     -- spatial velocity by bone index (-1 is base)
-    v :: Int -> MotionV
-    v = (A.!) v_ where
-        v_ = buildArray (-1,bN-1) (\i ->
-                if i == -1
-                    then
-                        zeroP
-                    else
-                        ((ixpi i) !* (v (p i))) ^+^ ((oI i) !* (q' i))
+    v :: BoneIx -> MotionV
+    v (B bi) = if bi == -1 then zeroP else v_!bi where
+        v_ = generate bN (\bi -> let (bI,jI) = (B bi, bjp bI) in
+                ((ixpi bI) !* (v (p bI))) ^+^ ((oI jI) !* (q' jI))
             )
+    
+    -- gravity vector
+    g = fromList [0,0,0, 0,-gravityAcc,0]
     
     -- spatial acceleration
-    a :: Int -> MotionV
-    a = (A.!) a_ where
-        a_ = buildArray (-1,bN-1) (\i ->
-                if i == -1
-                    then
-                        zeroP
-                    else
-                        ((ixpi i) !* (a (p i))) ^+^ ((oI i) !* (q'' i)) ^+^
-                            {- assume ̇Φ' term is 0 -} ((v i) `mxm` ((oI i) !* q' i))
+    a :: BoneIx -> MotionV
+    a (B bi) = if bi == -1
+        then
+            -- gravity compensation can be achieved by setting the acceleration of the base joint to -gravity, or by using eternal forces
+            -- NOTE the algorithm uses "a_0 = - a_g" but as the direction of gravity is in the negative
+            -- y direction, we have a double negative, so can just use (0,0,0, 0,g,0) where g is the magnatude
+            -- of gravitaional acceleration
+            --(-1) *^ g    -- using base accel
+            zeroP -- NOT using base accel
+        else 
+            a_!bi where
+                a_ = generate bN (\bi -> let (bI,jI) = (B bi, bjp bI) in
+                        ((ixpi bI) !* (a (p bI))) ^+^ ((oI jI) !* (q'' jI)) ^+^
+                            {- assume ̇Φ' term is 0 -} ((v bI) `mxm` ((oI jI) !* q' jI))
+                    )
+                    
+    fNet :: BoneIx -> ForceV
+    fNet (B bi) = fNet_ ! bi where
+        fNet_ = generate bN (\bi -> let bI = (B bi) in
+                ((inert bI) !* (a bI)) ^+^ ((v bI) `mxf` ((inert bI) !* (v bI)))
             )
     
-    -- spacial forces of each joint
+    -- spatial forces of each bodies's parent joint (joint attaching it to the parent bone)
     --   f' = net force - external forces
-    --   f = joint force = f' + child joint forces
-    f' :: Vector ForceV
-    f' = generate (bN-1) (\i ->
-                ((inert i) !* (a i)) ^+^ ((v i) `mxm` ((inert i) !* (v i))) ^-^ ((xfO i) !* (fOe!i)) 
-        )
+    f' :: BoneIx -> ForceV
+    f' (B bi) = f'_ ! bi where
+        f'_ = generate bN (\bi -> let bI = (B bi) in
+                (fNet bI) ^-^ ((xfO bI) !* (fOe bI))
+            )
     
-    f :: Vector ForceV
-    f = generate (bN-1) (\i ->
+    --   f = joint force = f' + child joint forces
+    f :: BoneIx -> ForceV
+    f (B bi) = f_ ! bi where
+        f_ = generate bN (\bi -> let bI = B bi in
                 -- net force - external forces = f'
-                (f'!i) ^+^
+                (f' bI) ^+^
                 -- plus sum of child joint forces
-                (L.foldr (^+^) zeroP (L.map (\ci -> trace ((show ci) L.++ "  " L.++ (name (j ci))) $ (vectorT (ixpi ci)) !* (f!ci)) (map pjb $ filter jHasChild (cjs i))))
-        )
+                (L.foldr (^+^) zeroP [(vectorT (ixpi cbI)) !* (f cbI) | cjI <- cjs (bje bI), let cbI = ejb cjI])
+                --(L.foldr (^+^) zeroP (L.map (\cjI -> (vectorT (ixpi cjI)) !* (f cjI)) (L.map pjb $ filter jHasChild (cjs bI))))
+            )
     
     -- Finally! the torques
-    t :: Vector ForceV
-    t = generate (bN-1) (\i ->
-                (vectorT (oI i)) !* (f!i)
-        )
+    t :: BoneIx -> ForceV
+    t (B bi) = t_ ! bi where t_ = generate bN (\i -> let (bI,jI) = (B bi, bjp bI) in (vectorT (oI jI)) !* (f bI))
         
-    jointTorques :: Array Int ForceV
-    jointTorques = A.accum (^+^) (listArray (0,jN-1) (L.repeat zeroP)) (toList $ imap (\i t -> (bjp i, t)) t)
+    -- some joints have multiple children (the root joitn is connected to the spine and 2 hip joints) accumulate these torques
+    jointTorques :: JointIx -> ForceV
+    jointTorques (J ji) = jointTorques'!ji where jointTorques' = accum (^+^) (replicate jN zeroP) (L.map (\bI -> (unJ (bjp bI), t bI)) bs)
     
 
-quat2Matrix :: Quat -> Matrix
-quat2Matrix q = m332Matrix $ (fromQuaternion q)
-
-m332Matrix :: M33 Double -> Matrix
-m332Matrix = v32Vector . (fmap v32Vector) 
-
-v32Vector :: V3 a -> Vector a
-v32Vector (V3 a b c) = fromList [a,b,c] 
 
 cross :: Num a => Vector a -> Vector a -> Vector a
 cross a b = (s3 a) !* b
+
+
+
+
+
+--
+-- Unit Tests
+--
+
+unitTestsID = test [
+
+        "Convert Vec3 to Vector (v32Vector)" ~: test [
+                (fromList [1,2,3]) ~=? (v32Vector (V3 1 2 3)),
+                (fromList [(-3),5,10]) ~=? (v32Vector (V3 (-3) 5 10))
+            ]
+    
+        ,"Test that the cross product matrix s3 (actually the local cross function) works as expected (compared to Linear.cross) " ~:
+            sequence_ [   ((fromList [x1,y1,z1]) `cross` (fromList [x2,y2,z2])) @?~= (v32Vector (v1 `L.cross` v2))     |      v1@(V3 x1 y1 z1) <- testDataVec3, v2@(V3 x2 y2 z2) <- testDataVec3   ]
+        
+        
+    ]
 
 

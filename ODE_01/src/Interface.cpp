@@ -278,7 +278,7 @@ dWorldID initODE(double dt) {
 	/// space
 	sid = dHashSpaceCreate(0);
 	/// floor
-	dCreatePlane(sid, 0, 1, 0, 0);
+	//dCreatePlane(sid, 0, 1, 0, 0);
 
 	return wid;
 }
@@ -389,6 +389,15 @@ void createBallJoint(dBodyID a, dBodyID b, double x, double y, double z) {
 	dJointSetBallAnchor(jid, x, y, z);
 }
 
+
+void enableAMotorVeclocityControl(dJointID jid, bool enable=true) {
+	dReal maxForce = enable ? dInfinity : 0;
+	dJointSetAMotorParam(jid, dParamFMax,  maxForce);
+	dJointSetAMotorParam(jid, dParamFMax1, maxForce);
+	dJointSetAMotorParam(jid, dParamFMax2, maxForce);
+	dJointSetAMotorParam(jid, dParamFMax3, maxForce);
+}
+
 // we use 3 axies: one to enforce the magnatude of angular velocity about the given axis,
 // and the other 2 to constrain angular velocity to the angular velocity axis
 dJointID createAMotor(dBodyID a, dBodyID b) {
@@ -396,15 +405,14 @@ dJointID createAMotor(dBodyID a, dBodyID b) {
 	dJointAttach(jid, a, b);
 	dJointSetAMotorMode(jid, dAMotorUser);
 	dJointSetAMotorNumAxes(jid, 3);
-	dReal maxForce = dInfinity;
-	dJointSetAMotorParam(jid, dParamFMax,  maxForce);
-	dJointSetAMotorParam(jid, dParamFMax1, maxForce);
-	dJointSetAMotorParam(jid, dParamFMax2, maxForce);
-	dJointSetAMotorParam(jid, dParamFMax3, maxForce);
+	enableAMotorVeclocityControl(jid);
 	return jid;
 }
 
 void addAMotorTorque(dJointID jid, double x, double y, double z) {
+	// disable the velocity control (assume that we are only using torque to control the motor
+	enableAMotorVeclocityControl(jid, false);
+
 	// set the AMotor axies to be the global axies
 	dJointSetAMotorAxis(jid,0,0, 1,0,0);
 	dJointSetAMotorAxis(jid,1,0, 0,1,0);
@@ -415,6 +423,9 @@ void addAMotorTorque(dJointID jid, double x, double y, double z) {
 }
 
 void setAMotorVelocity(dJointID jid, double x, double y, double z) {
+	// enable the velocity control (assume that we are only using angular velocity to control the motor
+	enableAMotorVeclocityControl(jid, true);
+
 	if(x == 0 && y == 0 && z == 0) {
 		dJointSetAMotorAxis(jid,0,0, 1,0,0);
 		dJointSetAMotorAxis(jid,1,0, 0,1,0);

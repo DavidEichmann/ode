@@ -85,8 +85,8 @@ blendIntoMotionData time pose (mdv@MotionDataVars{_dt=dt,_j=j,_jN=jN,_fN=fN}) = 
     newJ :: Int -> Int -> Joint
     newJ f
         | blendFrameI <= f && f <= blendFrameF   = blendFrames pose (j f) ((((fromIntegral f) * dt) - time) / blendTime)
-        | otherwise                              = error "AAAAA"
-    newJA = [(ix, newJ f i) | ix@(f, i) <- range ((blendFrameI,0),(blendFrameF,jN-1))]
+        | otherwise                              = error "Attempting to blend frames outside of the blend window"
+    newJA = [((f,j), newJf j) | f <- range (blendFrameI,blendFrameF), f < fN, let newJf = newJ f, j <- range (0,jN-1)]
 
 dip :: Double -> MotionDataVars -> MotionDataVars
 dip amount = shift (V3 0 (-amount) 0)

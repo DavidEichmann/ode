@@ -37,7 +37,7 @@ data Sim = Sim {
     simTimeExtra        :: Double,
     timeDelta           :: Double
 }
-type FeedBackController = Sim -> Double -> IO ()
+type FeedBackController = Sim -> Double -> IO (Sim)
 
 startSim :: MotionDataVars -> IO Sim
 startSim md@MotionDataVars{_baseSkeleton=skel,_jN=jN,_bN=bN,_js=js,_bs=bs,_jb=jb,_xj=xj,_xb=xb,_rb=rb,_pj=pj,_cjs=cjs,_pb=pb,_jHasParent=jHasParent,_jHasChild=jHasChild} = do
@@ -207,6 +207,7 @@ highGainsFlatFeetController sim@Sim{targetMotion=tm,odeMotors=motors} dt = do
         matchMotionDataVars sim tm dt
         -- overwrite changes to the ankle (make the foot flat)
         mapM_ flattenFeet motors
+        return sim
     where
         MotionDataVars{
             _footJs=((lajI,_,_),(rajI,_,_))
@@ -218,7 +219,7 @@ highGainsFlatFeetController sim@Sim{targetMotion=tm,odeMotors=motors} dt = do
 
 -- Sim:     the simulation to match against
 -- Double:  the time delta in which to match the data (as the siumlation is only changed via manipulating velocities)
-matchMotionDataVars :: Sim -> MotionDataVars -> Double -> IO ()
+matchMotionDataVars :: Sim -> MotionDataVars -> Double -> IO (Sim)
 matchMotionDataVars sim@Sim{odeBodies=bodies,odeMotors=motors} target dt = do
     (_, rootSimQuat) <- getBodyPosRot (fromJust $ lookup (B (-1)) bodies)
     -- calculate joint angular velocities in global coordinates relative to the simulated root orientation and apply to AMotors
@@ -232,6 +233,7 @@ matchMotionDataVars sim@Sim{odeBodies=bodies,odeMotors=motors} target dt = do
         setAMotor m@(_,jI,_,_) = setAMotorToAchieveTargetLocalRot sim m (slerp (rjL faI jI) (rjL fbI jI) u) dt
         
     mapM_ setAMotor motors
+    return sim
 
 
 setAMotorToAchieveTargetLocalRot :: Sim -> (BoneIx, JointIx, BoneIx, DJointID) -> Quat -> Double -> IO ()

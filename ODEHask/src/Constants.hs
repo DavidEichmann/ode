@@ -1,11 +1,23 @@
 module Constants where
 
 --
+-- Data
+--
+
+defaultDataDirectory = "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/"
+defaultTestDataDirectory = defaultDataDirectory ++ "test/"
+
+
+capturedDataScale :: Double
+capturedDataScale = 0.01    -- captured data is in   cm = 0.01 m
+
+
+--
 -- Simulation
 --
 
 defaultTimeStep :: Double
-defaultTimeStep = 1/1000
+defaultTimeStep = 1/100
 
 -- physics
 
@@ -16,7 +28,7 @@ boneRadius :: Double
 boneRadius = 0.1
 
 gravityAcc :: Double
-gravityAcc = 9.8
+gravityAcc = 0.0000000001    -- !!!!!!!!!!! changed! in C++ and HASKELL
 
 footWidth :: Double
 footWidth = 0.2

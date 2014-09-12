@@ -2,7 +2,7 @@ module Motion.Parse (
     parseBVH
 ) where
 
-import Util
+import Util hiding (vec3)
 import Motion.MotionData
 import Data.TreeF
 import Motion.Joint
