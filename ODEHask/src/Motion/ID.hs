@@ -8,12 +8,13 @@ module Motion.ID (
     inverseDynamicsInternals
 ) where
 
-import Prelude hiding (map,foldr,replicate, (++))
+import Prelude hiding (length,concat,map,foldl,zip,take,drop,foldr,replicate, (++))
 import qualified Data.List as L
+import Data.List.Split
 import qualified Data.Vector as V
 import Data.Vector hiding (and,sequence_)
-import Linear hiding (_j,_i,cross,trace)
-import qualified Linear as L
+import Linear hiding (_w,_j,_i,cross,trace)
+import qualified Linear as L 
 import Util
 import Motion.MotionDataVars
 import Motion.Joint
@@ -23,6 +24,8 @@ import qualified Constants as Constants
 import Test.HUnit
 import Test.HUnitX
 import Test.TestData
+import Control.Applicative
+import FFI
 
 
 -- (2.2) Plueker forces and motion. angular then linear
@@ -39,7 +42,7 @@ m0 r c = replicate r (replicate c 0)
 mid :: Int -> Int -> Matrix
 mid r c = generate r (\r -> generate c (\c -> if r == c then 1 else 0))
 
-split = V.splitAt 3
+split6 = V.splitAt 3
 
 
 -- (2.2.7)
@@ -63,23 +66,30 @@ smf vm = (vectorT $ smm vm) !!* (-1)
     -}
 mxf :: MotionV -> ForceV -> ForceV
 vm `mxf` vf = ((m `cross` fo) ^+^ (mo `cross` f)) ++ (m `cross`f) where
-    (m,mo) = split vm
-    (fo,f) = split vf
+    (m,mo) = split6 vm
+    (fo,f) = split6 vf
     
     
 mxm :: MotionV -> MotionV -> MotionV
 vm1 `mxm` vm2 = (m1 `cross` m2) ++ ((m1 `cross` m2o) ^+^ (m1o `cross` m2)) where
-    (m1,m1o) = split vm1
-    (m2,m2o) = split vm2
+    (m1,m1o) = split6 vm1
+    (m2,m2o) = split6 vm2
     
 -- Inverse Dynamics algorithm. as described by table 2.6
 -- some differences: use B(-1) for the base body (the floor)
 -- input a motion data and frame index, then output Joint indexed function of joint torques 
-inverseDynamics :: MotionDataVars -> FrameIx -> (JointIx -> Vec3)
-inverseDynamics mdv fI = fst $ inverseDynamicsInternals Constants.gravityAcc mdv fI
+inverseDynamics :: MotionDataVars -> FrameIx -> (JointIx -> Vec3, JointIx -> Vec3)
+inverseDynamics mdv fI = fst $ inverseDynamicsInternals True Constants.gravityAcc mdv fI
 
 --inverseDynamicsInternals :: MotionDataVars -> FrameIx -> ((JointIx -> Vec3), a)
-inverseDynamicsInternals gravityAcc md fI@(F fi) = ((\v -> V3 (v!0) (v!1) (v!2)) . jointTorques, (axb,(xfOj,(ixpi,(inert,(ixpiF,(v,(a,(f',(fNet,(fOe,()))))))))))) where
+inverseDynamicsInternals useGRF gravityAcc md fI@(F fi) = -- trace (L.intercalate "\n" $ fmap show [("comGRF",show comGRF),("fc'",show fc'),("contactPoints",show contactPoints)])
+ (
+    
+        ((\v -> V3 (v!0) (v!1) (v!2)) . jointTorques, (\v -> V3 (v!3) (v!4) (v!5)) . jointTorques),
+        
+        (axb,(xfOj,(ixpi,(inert,(ixpiF,(v,(a,(f',(fNet,(fOe,()))))))))))
+        
+ ) where
     -- motion data
     MotionDataVars{
         _j=jf,
@@ -99,10 +109,23 @@ inverseDynamicsInternals gravityAcc md fI@(F fi) = ((\v -> V3 (v!0) (v!1) (v!2))
         _q'=q'f,
         _q''=q''f,
         _m=massB,
-        _i=inertCB
+        _mT=mT,
+        _l'T=l'TF,
+        _i=inertCB,
+        _com=comF,
+        _w=wF,
+        _h=hF,
+        _h'=h'F,
+        _footBs=footBs,
+        _footBCorners=footBCornersF
     } = md
     
-    -- apply frame index to may of these functions
+    -- apply frame index to some of these functions
+    com = v32Vector $ comF fI
+    w bI = v32Vector $ wF fI bI
+    h bI = v32Vector $ hF fI bI
+    h' bI = v32Vector $ h'F fI bI
+    l'T = v32Vector $ l'TF fI
     j=jf fi
     cjs = cjs_
     xb = v32Vector . (xbf fI)
@@ -111,6 +134,8 @@ inverseDynamicsInternals gravityAcc md fI@(F fi) = ((\v -> V3 (v!0) (v!1) (v!2))
     rj = (rjf fI)
     q'  = (\(a,l) -> (v32Vector a) ++ (v32Vector l)) . (q'f  fI)
     q'' = (\(a,l) -> (v32Vector a) ++ (v32Vector l)) . (q''f fI)
+    footBCorners :: [[P]]
+    footBCorners = let ((lf,lt),(rf,rt)) = footBCornersF fI in (fmap . fmap) v32Vector [lf,lt,rf,rt]
     
     jHasChild = jHasChild_
     mass bi = massB bi
@@ -122,7 +147,67 @@ inverseDynamicsInternals gravityAcc md fI@(F fi) = ((\v -> V3 (v!0) (v!1) (v!2))
     p :: BoneIx -> BoneIx
     p = pb_
     
-    -- ID
+    
+    
+    --------------------------------------
+    -- Calculate Ground Reaction Forces --
+    --------------------------------------
+    
+    -- Net Spatial force on CoM
+    comFnet :: ForceV
+    comFnet =   -- angular
+                ((com `cross` (mT *^ l'T)) ^+^ (sumV [  ((w bI) `cross` (h bI)) ^+^ (h' bI)  | bI <- bs  ])) ++
+                -- linear
+                (mT *^ l'T)
+    
+    -- Net GRF = Net force - Gravity force
+    comGRF = comFnet ^-^ (fromList [0,0,0, 0,-(mT * gravityAcc),0])
+    
+    -- Distribute forces to contact points
+    
+    
+    --   Find the contact points
+    filterForContacts = L.filter (\v -> v!1 <= floorContactThreshold)
+    contactPointsBs = fmap filterForContacts footBCorners
+    contactPoints = L.concat contactPointsBs
+    --   build constrained linear programming problem
+    --     This is in the form of:   arg min x (c dot x)   where M x = f
+    setXZTorque0 matrix66 = map (\v -> (singleton (v!1)) ++ (drop 3 v)) matrix66 
+    lpMatrix = L.foldl1 (|||) [ setXZTorque0 (axbF (com ^-^ p) identity) | p <- contactPoints ]
+    
+    {-  This is in an attempt to add constraints like force must be away from floor, but maybe a simpler method (psudo inverse) is sufficient 
+    constraintIxs = [ (5+rC, (4*rC)-2) | rC <- [1..cN]]
+    lpMatrixNZ =
+        -- non zero lpMatrix values
+        [ ((r,c), v) | r <- [0..5], c <- [0..(4*cN)-1], let v = lpMatrix!r!c, v /= 0 ]
+    -- Y forces for each contact force >= 0 (these are GLPK "column constraints")
+    collumnLo = [  |  <- [] ]
+    -- solve for contact point forces (each force is relative to the contact position)
+    fcs = linearProgramOpt Minimize lpMatrixNZ constraintsLower []
+    
+    -}
+    
+    --    using psudo-inverse instead of LP (simplex/constrained lp/GLPK) method
+    fc' :: P
+    fc' = psudoInverseMult lpMatrix comGRF
+    --    extract the forces, adding back in the x and y torques = 0
+    fc :: [P]
+    fc = let zeroV1 = singleton 0 in fmap (\f -> zeroV1 ++ (fromList $ L.take 1 f) ++ zeroV1 ++ (fromList $ L.drop 1 f)) (chunksOf 4 $ toList fc')
+    -- convert to global frame
+    f0c :: [P]
+    f0c = fmap (\(c, f) -> let oxc = axbF ((-1) *^ c) identity in oxc !* f) (L.zip contactPoints fc)
+    -- split the feet, calculating net GRF on each foot
+    sumF = L.foldl (^+^) zeroP
+    boneForce0Lookup =
+        L.zip (let ((lf,lt),(rf,rt)) = footBs in [lf,lt,rf,rt]) $   -- zip bone index onto bone forces to make this a lookup list
+        fmap sumF $                                                 -- sum forces on each bone to get net forces on each bone
+        (splitPlaces (fmap L.length contactPointsBs) f0c)           -- f0c grouped by bone
+
+
+    
+    ------------------------------------------
+    -- ID: Recursive Newton–Euler Algorithm --
+    ------------------------------------------
     
     -- spatial motion base changing matrix to change from one joint coordinate system to another
     -- input is the i bone index, but the basies are the starting joint of that bone (see bjs)
@@ -180,7 +265,9 @@ inverseDynamicsInternals gravityAcc md fI@(F fi) = ((\v -> V3 (v!0) (v!1) (v!2))
     fOe :: BoneIx -> ForceV  
     fOe bI = -- zeroP
         -- gravity. convert a pure force from the center of mass to a spatial force in base frame
-        oxc !* (mass bI *^ g)
+        (oxc !* (mass bI *^ g)) ^+^
+        -- GRF
+        (if useGRF then (maybe zeroP id (lookup bI boneForce0Lookup)) else zeroP)
         where
             -- Note that the gravity is specified in global coordinates (not the frame of the bone even though the point of application is the center of the bone)
             oxc = axbF ((-1) *^ (xb bI)) identity
@@ -238,12 +325,13 @@ inverseDynamicsInternals gravityAcc md fI@(F fi) = ((\v -> V3 (v!0) (v!1) (v!2))
                 (f' bI) ^+^
                 -- plus sum of child joint forces
                 (L.foldr (^+^) zeroP [(vectorT (ixpi cbI)) !* (f cbI) | cjI <- cjs (bje bI), let cbI = ejb cjI])
-                --(L.foldr (^+^) zeroP (L.map (\cjI -> (vectorT (ixpi cjI)) !* (f cjI)) (L.map pjb $ filter jHasChild (cjs bI))))
             )
     
     -- Finally! the torques
     t :: BoneIx -> ForceV
-    t (B bi) = t_ ! bi where t_ = generate bN (\i -> let (bI,jI) = (B bi, bjp bI) in (vectorT (oI jI)) !* (f bI))
+    -- use this version to only get actuated DoFs
+    --t (B bi) = t_ ! bi where t_ = generate bN (\i -> let (bI,jI) = (B bi, bjp bI) in (vectorT (oI jI)) !* (f bI))
+    t (B bi) = t_ ! bi where t_ = generate bN (\i -> let (bI,jI) = (B bi, bjp bI) in f bI)
         
     -- some joints have multiple children (the root joitn is connected to the spine and 2 hip joints) accumulate these torques
     jointTorques :: JointIx -> ForceV

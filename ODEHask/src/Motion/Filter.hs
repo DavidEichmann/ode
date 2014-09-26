@@ -78,10 +78,10 @@ shiftPerFrame v md@MotionDataVars{_fs=fs,_j=j} = modifyMotionDataVars md [let jo
 shift :: Vec3 -> MotionDataVars -> MotionDataVars
 shift v md@MotionDataVars{_fs=fs,_j=j} = modifyMotionDataVars md [let joint = j fi 0 in ((fi,0), joint{offset = (offset joint) + v}) | (F fi) <- fs]
 
-blendIntoMotionData :: Double -> (Int -> Joint) -> MotionDataVars -> MotionDataVars
-blendIntoMotionData time pose (mdv@MotionDataVars{_dt=dt,_j=j,_jN=jN,_fN=fN}) = modifyMotionDataVars mdv newJA where
+blendIntoMotionData :: Double -> Double -> (Int -> Joint) -> MotionDataVars -> MotionDataVars
+blendIntoMotionData time blendTime pose (mdv@MotionDataVars{_dt=dt,_j=j,_jN=jN,_fN=fN}) = modifyMotionDataVars mdv newJA where
     blendFrameI = ceiling $ time / dt
-    blendFrameF = floor $ (time + blendTime) / dt
+    blendFrameF = min (fN-1) (floor $ (time + blendTime) / dt)
     newJ :: Int -> Int -> Joint
     newJ f
         | blendFrameI <= f && f <= blendFrameF   = blendFrames pose (j f) ((((fromIntegral f) * dt) - time) / blendTime)

@@ -31,7 +31,7 @@ parseBVH filePath ppFilterWindow = do
         return $ (if ppFilterWindow > 0 then preProcess ppFilterWindow else id) bvh
 
 fromChanVals :: JointF -> [Double] -> JointF
-fromChanVals jf cv = (\(d,r) -> if d == [] then r else error $ "chan vals left over: " ++ (show d)) $ treeMapCon applyChans cv jf where
+fromChanVals jf cv = (\(d,r) -> if d == [] then r else error $ (show $ length d) ++ " chan vals left over: " ++ (show d)) $ treeMapCon applyChans cv jf where
          applyChans cv jf = (cv', set (sk{ offset = offset', rotationL = rotationL'}) jf) where
                 sk = view jf
                 baseOffset = offset sk

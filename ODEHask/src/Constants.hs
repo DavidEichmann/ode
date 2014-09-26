@@ -17,7 +17,7 @@ capturedDataScale = 0.01    -- captured data is in   cm = 0.01 m
 --
 
 defaultTimeStep :: Double
-defaultTimeStep = 1/100
+defaultTimeStep = 1/1000
 
 -- physics
 
@@ -28,7 +28,7 @@ boneRadius :: Double
 boneRadius = 0.1
 
 gravityAcc :: Double
-gravityAcc = 0.0000000001    -- !!!!!!!!!!! changed! in C++ and HASKELL
+gravityAcc = 9.8
 
 footWidth :: Double
 footWidth = 0.2
@@ -42,7 +42,7 @@ boneRadiusDisplay = boneRadius * 0.25
 
 -- distance from the floor counting as contact for the support pollygon
 floorContactThreshold :: Double
-floorContactThreshold = 0.001 * 5 -- 0.001 = 1 mm
+floorContactThreshold = 0.001 * 10 -- 0.001 = 1 mm
 
 -- maximum velocity of the foot during floor contact
 floorContactVelocityThreshold :: Double
@@ -70,7 +70,7 @@ floorClearanceExponent = 0.4
 --
 
 playbackSpeed :: Double
-playbackSpeed = 1
+playbackSpeed = 1/10
 
 frameRate :: Double
 frameRate = 60

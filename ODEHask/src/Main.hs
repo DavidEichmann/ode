@@ -22,11 +22,13 @@ import Math.Tau
 import Test.MyTest
 
 
-getArguments :: IO (Bool, String, Integer)
+getArguments :: IO (Bool, Bool, Bool, String, Integer)
 getArguments = do
     ws <- getArgs
-    return (isTest ws, getPath ws, getPP ws) where
-        isTest = elem "-unitTest" 
+    return (dontDisplay ws, isTest ws, raw ws, getPath ws, getPP ws) where
+        isTest = elem "-unitTest"
+        raw = elem "-raw"
+        dontDisplay = elem "-dontDisplay"
         getPath ws = case find (not . (isPrefixOf "-")) ws of
                 Just path   -> if elem '/' path then path else defaultDataDirectory ++ path
                 Nothing     -> "/home/david/Documents/File Dump/git/ode/ODE_01/Data/Animation/david-1-martialarts-004_David.bvh"
@@ -42,14 +44,14 @@ main = main'
 main' :: IO ()
 main' = do
 
-    (isTest, file, pp) <- getArguments
+    (dontDisplay, isTest, isRaw, file, pp) <- getArguments
     
     if isTest
         then
             runTests
         else do
-            md <- fmap scaleAndTranslate $ parseBVH file pp
-            mainLoopOut md
+            md <-  (if isRaw then id else fmap scaleAndTranslate) $ parseBVH file pp
+            mainLoopOut dontDisplay md
 
 mainLoop :: MainLoop
 mainLoop =
@@ -63,8 +65,8 @@ mainLoop =
     -- will be retreived.
 --    coMFeedBackLoopExperiment [73] [0]
 
-mainLoopOut :: MotionData -> IO ()
-mainLoopOut md = do
+mainLoopOut :: Bool -> MotionData -> IO ()
+mainLoopOut dontDisplay md = do
 
     displayTIOs <- mainLoop (getMotionDataVariablesFromMotionData md)
 
@@ -86,8 +88,9 @@ mainLoopOut md = do
             loopDisplay allIOs ios' tc
 
     ti <- getCurrentTime
-    initOgre
-    loopDisplay displayTIOs displayTIOs ti
+    if dontDisplay then return () else do
+        initOgre
+        loopDisplay displayTIOs displayTIOs ti
 
     return ()
 

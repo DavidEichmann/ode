@@ -4,6 +4,9 @@ module FFI (
     inverseMatrix,
     sparseMatrixSolve,
     leastSquareSparseMatrixSolve,
+    psudoInverseMult,
+    linearProgramOpt,
+    OptDirection,
 
     initOgre,
     drawPolygonC,
@@ -33,6 +36,7 @@ module FFI (
     createAMotor,
     setAMotorVelocity,
     addAMotorTorque,
+    addBodyTorque,
     createFixedJoint,
     stepODE
 ) where
@@ -43,6 +47,8 @@ import Foreign.C
 import Foreign.Marshal.Unsafe
 import Linear
 import Util
+import qualified Data.Vector as V
+import Data.Vector (Vector, fromList)
 import Data.Color
 import Data.Maybe
 import Data.Bone
@@ -223,6 +229,11 @@ foreign import ccall unsafe "Interface.h addAMotorTorque"
 addAMotorTorque :: DJointID -> Vec3 -> IO ()
 addAMotorTorque joint torque = ((apply joint) >>> (applyVec3 torque)) addAMotorTorque_c
 
+foreign import ccall unsafe "ode.h dBodyAddTorque"
+    dBodyAddTorque_c :: DBodyID -> CDouble -> CDouble -> CDouble -> IO ()
+addBodyTorque :: DBodyID -> Vec3 -> IO ()
+addBodyTorque body torque = ((apply body) >>> (applyVec3 torque)) dBodyAddTorque_c
+
 foreign import ccall unsafe "Interface.h createFixedJoint"
     createFixedJoint :: DBodyID -> DBodyID -> IO ()
 
@@ -321,6 +332,16 @@ sparseMatrixSolve :: Int -> Int -> [((Int,Int),Double)] -> [Array Int Double] ->
 sparseMatrixSolve = error "only least squares is supported now"
 leastSquareSparseMatrixSolve :: Int -> Int -> [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
 leastSquareSparseMatrixSolve = sparseMatrixSolveRaw
+
+psudoInverseMult :: Matrix -> Vector Double -> Vector Double 
+psudoInverseMult m v = mT !* (fromList $ elems $ head $ leastSquareSparseMatrixSolve rs cs sparseMMT rhs) where
+    mT = vectorT m
+    mmT = m !*! mT
+    (rs, cs,  sparseMMT) = toSparse mmT
+    rhs = [buildArray (0,cs-1) (\i -> v V.! i)]
+
+data OptDirection = Minimize | Maxamize
+linearProgramOpt = undefined
 
 
 foreign import ccall unsafe "Interface.h inverseMatrix"

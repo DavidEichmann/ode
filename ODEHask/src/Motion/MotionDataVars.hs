@@ -44,7 +44,8 @@ data MotionDataVars = MotionDataVars {
     _jRaw   :: Array Int (Array Int Joint),
     _j      :: FJIndexedFrames,
     _jBase  :: JointIx -> Joint,
-    _baseSkeleton :: Frame,
+    __baseSkeleton :: Frame,
+    _baseSkeletonMDV :: MotionDataVars,
 
     -- derived data
     _g      :: Double,
@@ -86,6 +87,7 @@ data MotionDataVars = MotionDataVars {
     _mT     :: Double,
     _com    :: FrameIx -> Vec3,
     _lT     :: FrameIx -> Vec3,
+    _l'T    :: FrameIx -> Vec3,
     _pT     :: FrameIx -> Vec3,
     _hT     :: FrameIx -> Vec3,
     _pT'    :: FrameIx -> Vec3,
@@ -95,12 +97,16 @@ data MotionDataVars = MotionDataVars {
     _zmpIsInSp :: FrameIx -> Bool,
 
     _soleCorners :: FrameIx -> ([Vec3],[Vec3]),
+    _footBCorners :: FrameIx -> (([Vec3],[Vec3]),([Vec3],[Vec3])),
+    _bName  :: BoneIx -> String,
     _bByName :: String -> BoneIx,
+    _jName  :: JointIx -> String,
     _jByName :: String -> JointIx,
     _footBs :: ((BoneIx,BoneIx),(BoneIx,BoneIx)),
     _footJs :: ((JointIx,JointIx,JointIx),(JointIx,JointIx,JointIx)),
     _isFootBone  :: BoneIx -> Bool
 }
+
 
 seqMDV :: MotionDataVars -> a -> a
 seqMDV mdv@MotionDataVars{
@@ -167,8 +173,9 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     _jRaw   = jRaw,
     _j      = j,
     _jBase  = jBase,
-    _baseSkeleton = bskel,
-
+    __baseSkeleton = bskel,
+    _baseSkeletonMDV = bSkelMDV
+    
     _g      = g,
     _fN     = fN,
     _jN     = jN,
@@ -208,6 +215,7 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     _mT     = mT,
     _com    = com,
     _lT     = lT,
+    _l'T    = l'T,
     _pT     = pT,
     _hT     = hT,
     _pT'    = pT',
@@ -217,7 +225,10 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     _zmpIsInSp = zmpIsInSp,
 
     _soleCorners = soleCorners,
+    _footBCorners = footBCorners,
+    _bName = bName,
     _bByName = bByName,
+    _jName = jName,
     _jByName = jByName,
     _footBs = footBs,
     _footJs = footJs,
@@ -437,6 +448,10 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     l' :: FrameIx -> BoneIx -> Vec3
     l' = derive2FB xb
 
+    -- CoM linear Velocity
+    l'T :: FrameIx -> Vec3
+    l'T fI = (sum [(m bI) *^ (l' fI bI) | bI <- bs]) ^/ mT
+
     -- bone angular acc
     w' :: FrameIx -> BoneIx -> Vec3
     w' = memoizeFB w'_ where
@@ -572,7 +587,10 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
             ((lfI,ltI),(rfI,rtI)) = footBs
 
     bName :: BoneIx -> String
-    bName = name . jBase . pj . bj
+    bName = jName . pj . bj
+    
+    jName :: JointIx -> String
+    jName = name . jBase 
 
     bByName :: String -> BoneIx
     bByName bn = fromMaybe (error $ "Bone with name\"" ++ bn ++ "\" could not be found") (lookup bn (zip (map bName bs) bs))
@@ -580,14 +598,15 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     jByName :: String -> JointIx
     jByName jn = fromMaybe (error $ "Bone with name\"" ++ jn ++ "\" could not be found") (lookup jn (zip (map (name . jBase) js) js))
 
-    soleCorners :: FrameIx -> ([Vec3],[Vec3])
-    soleCorners fI = corners where
-        -- hack to convert base skeleton to motiondatavars (use only one frame consisting of the base skeleton)
-        MotionDataVars{_xb=base_xb',_xsb=base_xsb',_xeb=base_xeb'} = getMotionDataVariablesFromMotionData (MotionData {
+    -- hack to convert base skeleton to motiondatavars (use only one frame consisting of the base skeleton)
+    bSkelMDV@MotionDataVars{_xb=base_xb',_xsb=base_xsb',_xeb=base_xeb'} = getMotionDataVariablesFromMotionData (MotionData {
                     frames = listArray (0,0) [bskel],
                     frameTime = dt,
                     baseSkeleton = bskel
             })
+
+    footBCorners :: FrameIx -> (([Vec3],[Vec3]),([Vec3],[Vec3]))
+    footBCorners fI = corners where
         f0 = F 0
         base_xb  = base_xb'  f0
         base_xsb = base_xsb' f0
@@ -620,11 +639,15 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
         -- get all corners
         ((lfI,ltI),(rfI,rtI)) = footBs
         corners =
-            ((map (l2g lfI) footCorners) ++ (map (l2g ltI) toeCorners),
-             (map (l2g rfI) footCorners) ++ (map (l2g rtI) toeCorners))
+            (((map (l2g lfI) footCorners), (map (l2g ltI) toeCorners)),
+             ((map (l2g rfI) footCorners), (map (l2g rtI) toeCorners)))
 
         l2g :: BoneIx -> Vec3 -> Vec3
         l2g bI offset = (xb fI bI) + (rb fI bI `rotate` offset)
+
+    soleCorners :: FrameIx -> ([Vec3],[Vec3])
+    soleCorners fI = (lf ++ lt, rf ++ rt) where
+        ((lf,lt),(rf,rt)) = footBCorners fI
 
     -- support Polygon (must be touching the ground else Nothing)
     sp :: FrameIx -> [Vec2]

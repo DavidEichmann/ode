@@ -44,9 +44,14 @@ runTests = do
     -- Run all the tests!!!
     Counts{errors=errors,failures=failures} <- runTestTT $ TestList [
         
+            "Utilities" ~: test [
+                "zToDirQuat" ~: test [((q `rotate` (unitZ ^* (norm dr))) @?~=: dr) ("quaternion: " ++ show q ++ "\nvector: " ++ show dr) | dr <- testDataVec3, let q = zToDirQuat dr]
+                ,"dirToDirQuat" ~: sequence_ [((dirToDirQuat b a) `rotate` ((norm a) *^ (normalize b)) @?~=: a) ("a: " ++ show a ++ "\nb: " ++ show b) | a <- testDataVec3, a /= 0, b <- testDataVec3, b /= 0]
+            ]
+        
             -- Test the MotionDataVars
             
-            "MotionDataVars" ~: test [
+            ,"MotionDataVars" ~: test [
                 "Static Body" ~: let smdv@MotionDataVars{_fs=fs,_bs=bs,_js=js,_l=l,_w=w,_q'=q',_q''=q''} = staticBodyMDV in test [
                 
                              "For all Frames fI and Bones bI, l fI bI == V3 0 0 0" ~:
@@ -101,7 +106,7 @@ runTests = do
                             ,"Zero Gravity, Static Body (Frame 5)" ~: let 
                               MotionDataVars{_js=js,_bs=bs,_xj=xj,_xsb=xsb} = staticBodyMDV
                               fI = F 5
-                              (jointTorques,(axb,(xfOj,(ixpi,(inert,(ixpiF,(v,(a,_)))))))) = inverseDynamicsInternals 0 staticBodyMDV fI
+                              ((jointTorques,_),(axb,(xfOj,(ixpi,(inert,(ixpiF,(v,(a,_)))))))) = inverseDynamicsInternals False 0 staticBodyMDV fI
                                in test [
                             
                                 "Basis conversion" ~: test [
@@ -150,7 +155,7 @@ runTests = do
                               g=10
                               MotionDataVars{_js=js,_fs=fs,_bs=bs,_m=m,_l'=l',_rb=rb,_bj=bj,_pj=pj,_q''=q'',_xsb=xsb,_xeb=xeb} = mdv
                               fI = F 50
-                              (jointTorques,(axb,(xfOj,(ixpi,(inert,(ixpiF,(v,(a,(f',(fNet,_)))))))))) = inverseDynamicsInternals g mdv fI
+                              ((jointTorques,_),(axb,(xfOj,(ixpi,(inert,(ixpiF,(v,(a,(f',(fNet,_)))))))))) = inverseDynamicsInternals False g mdv fI
                                in test [
                                
                                 "DATA CHECK! is body really falling with the acceleration of gravity (V3 0 (-10) 0) ?" ~:
@@ -181,7 +186,7 @@ runTests = do
                               fI = F 4
                               bI = B 0
                               g = 10
-                              (jointTorques,(axb,(xfOj,(ixpi,(inert,(ixpiF,(v,(a,(f',(fNet,_)))))))))) = inverseDynamicsInternals g mdv fI
+                              ((jointTorques,_),(axb,(xfOj,(ixpi,(inert,(ixpiF,(v,(a,(f',(fNet,_)))))))))) = inverseDynamicsInternals False g mdv fI
                                in test [
                                
                                 "DATA CHECK! accelerations are 0 ?" ~:
@@ -211,7 +216,7 @@ runTests = do
                               bI = B 0
                               jI = J 0
                               g = 10
-                              (jointTorques,(axb,(xfOj,(ixpi,(inert,(ixpiF,(v,(a,(f',(fNet,_)))))))))) = inverseDynamicsInternals g mdv fI
+                              ((jointTorques,_),(axb,(xfOj,(ixpi,(inert,(ixpiF,(v,(a,(f',(fNet,_)))))))))) = inverseDynamicsInternals False g mdv fI
                                in test [
                                
                                 ("DATA CHECK! accelerations are " ++ show g ++ " ?") ~:
@@ -251,7 +256,7 @@ runTests = do
                               MotionDataVars{_js=js,_fs=fs,_bs=bs,_m=m,_xj=xj,_xb=xb,_xsb=xsb,_xeb=xeb,_l'=l',_q'=q',_q''=q''} = mdv
                               fI = F 4
                               g = 10
-                              (jointTorques,(axb,(xfOj,(ixpi,(inert,(ixpiF,(v,(a,(f',(fNet,(fOe,()))))))))))) = inverseDynamicsInternals g mdv fI
+                              ((jointTorques,_),(axb,(xfOj,(ixpi,(inert,(ixpiF,(v,(a,(f',(fNet,(fOe,()))))))))))) = inverseDynamicsInternals False g mdv fI
                                in test [
                                
                                 "DATA CHECK! accelerations are 0 ?" ~:

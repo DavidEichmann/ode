@@ -25,7 +25,7 @@
  */
 double* matrixSolveResults = new double[1];
 double* sparseMatrixSolve(const int mrn, const int mcn, const int nnz, int* const mixs, const int r, double* const vals) {
-	cout << "Sparse Matrix solve started..." << endl;
+	//cout << "Sparse Matrix solve started..." << endl;
 	double* valsC = vals;
 	// prepare return buffer
 	delete[] matrixSolveResults;
@@ -79,7 +79,7 @@ double* sparseMatrixSolve(const int mrn, const int mcn, const int nnz, int* cons
 			matrixSolveResults[(mcn*bc)+br] = x[bc](br);
 		}
 	}
-	cout << "Sparse Matrix solve finished!" << endl;
+	//cout << "Sparse Matrix solve finished!" << endl;
 	return matrixSolveResults;
 }
 
@@ -116,6 +116,15 @@ double* inverseMatrix(const int r, const int c, double* vals) {
 	}
 	return matrixInverseResults;
 }
+
+
+double* linearProgramming() {
+
+}
+
+
+
+
 
 OgreCanvas oc;
 
@@ -269,7 +278,7 @@ dWorldID initODE(double dt) {
 	wid = dWorldCreate();
 	// set CFM
 	dWorldSetCFM(wid,0.00007);
-	dWorldSetERP(wid,0.1);
+	dWorldSetERP(wid,0.2);
 	//	Create a joint group to hold the contact joints.
 	jointGroupid = dJointGroupCreate(100);
 	contactGroupid = dJointGroupCreate(1000);
@@ -278,7 +287,7 @@ dWorldID initODE(double dt) {
 	/// space
 	sid = dHashSpaceCreate(0);
 	/// floor
-	//dCreatePlane(sid, 0, 1, 0, 0);
+	dCreatePlane(sid, 0, 1, 0, 0);
 
 	return wid;
 }
@@ -307,6 +316,11 @@ dBodyID appendCapsuleBody(
 
 ) {
 
+	cout << i11 << "\t" << i12 << "\t" << i13 << "\t\n" << i12 << "\t" << i22 << "\t" << i23 << "\t\n" << i13 << "\t" << i23 << "\t" << i33 << "\t\n\n";
+	cout << qw << "\t" << qx << "\t" << qy << "\t" << qz << "\n\n";
+	cout << x << "\t" << y << "\t" << z << "\n\n";
+	cout << "\n\n";
+
 	// create a body for this bone
 	dBodyID bid = dBodyCreate(wid);
 
@@ -317,15 +331,22 @@ dBodyID appendCapsuleBody(
 	// set the local rotation and offset
 	dQuaternion q{qw,qx,qy,qz};
 	dGeomSetOffsetQuaternion(bGeom, q);
+	cout << "mass: " << mass << endl;
 
 	// add mass to the body
 	dMass pMass;
 	dBodyGetMass(bid, &pMass);
-	dMassSetParameters (&pMass, mass,
+	/*dMassSetParameters (&pMass, mass,
 							 0,0,0,
 							 i11, i22, i33,
-							 i12, i13, i23);
+							 i12, i13, i23); */
+	dMassSetCapsuleTotal (&pMass, mass, 3, radius, length);
 	dBodySetMass(bid, &pMass);
+
+	cout << "com: " << pMass.c[0] << "  " << pMass.c[1] << "  " << pMass.c[2] << endl;
+	cout << "pos: " << x << "  " << y << "  " << z << endl;
+	cout << "mass: " << mass << endl;
+	cout << endl;
 
 	// set the position and orientation of the body
 	Vec3 gPos(x,y,z);
@@ -360,7 +381,6 @@ dBodyID appendFootBody(
 	// create a body for this bone
 	dBodyID bid = dBodyCreate(wid);
 
-	// NOTE that capsules are aligned along the Z axis
 	dGeomID bGeom = dCreateBox(sid, sx,sy,sz);
 	dGeomSetBody(bGeom, bid);
 
@@ -401,6 +421,9 @@ void enableAMotorVeclocityControl(dJointID jid, bool enable=true) {
 // we use 3 axies: one to enforce the magnatude of angular velocity about the given axis,
 // and the other 2 to constrain angular velocity to the angular velocity axis
 dJointID createAMotor(dBodyID a, dBodyID b) {
+
+	return 0;
+
 	dJointID jid = dJointCreateAMotor(wid, jointGroupid);
 	dJointAttach(jid, a, b);
 	dJointSetAMotorMode(jid, dAMotorUser);
@@ -410,8 +433,8 @@ dJointID createAMotor(dBodyID a, dBodyID b) {
 }
 
 void addAMotorTorque(dJointID jid, double x, double y, double z) {
-	// disable the velocity control (assume that we are only using torque to control the motor
 	enableAMotorVeclocityControl(jid, false);
+	// disable the velocity control (assume that we are only using torque to control the motor)
 
 	// set the AMotor axies to be the global axies
 	dJointSetAMotorAxis(jid,0,0, 1,0,0);
@@ -496,11 +519,11 @@ void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 		if(contact[i].depth != 0) {
 			dContact dc;
 
-			dc.surface.mode = dContactSoftERP | dContactSoftCFM | dContactRolling | dContactBounce;
+			dc.surface.mode = dContactSoftERP | dContactSoftCFM; // | dContactRolling | dContactBounce;
 //			dc.surface.mode = dContactRolling;
 			dc.surface.soft_erp = contactERP;
 			dc.surface.soft_cfm = contactCFM;
-			dc.surface.mu = 1000000;
+			dc.surface.mu = dInfinity;
 			dc.surface.rhoN = 100000000000;
 			dc.surface.bounce = 0;	// (0..1) 0 means the surfaces are not bouncy at all, 1 is maximum bouncyness
 			dc.geom = contact[i];
@@ -622,6 +645,7 @@ void step(dWorldID, double zmpX, double zmpZ, double fy) {
 	stepArgs[2] = fy;
 
 	doCollisions();
+
 	dWorldStep(wid,timeStep);
 	// measure the CoP
 	cop.setZero();

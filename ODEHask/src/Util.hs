@@ -47,13 +47,14 @@ xToDirQuat dir = axisAngle axis angle where
     angle = acos (dirU `dot` unitX) -}
 
 dirToDirQuat :: Vec3 -> Vec3 -> Quat
-dirToDirQuat a b
-            | cross a b == 0    =  axisAngle unitY pi --if dot a b > 0 then identity else axisAngle unitY pi
+dirToDirQuat a (b@(V3 xb _ zb))
+            -- if a and b are coliniar, then do a pi rotation about any axis orthogonal to a or b
+            | cross a b == 0    = if a `dot` b  > 0 then identity else axisAngle (normalize $ b `cross` (if (xb,zb) == (0,0) then unitX else unitY)) pi
             | otherwise         = axisAngle axis angle where
                                     aU = normalize a
                                     bU = normalize b
-                                    axis = normalize $ aU `cross` bU
-                                    angle = acos (bU `dot` aU)
+                                    axis = normalize $ aU `cross` bU 
+                                    angle = acos $ aU `dot` bU
 
 -- average a number of rotations, this is done by repeated application of Slerp
 avgRot :: [Quat] -> Quat
@@ -249,6 +250,15 @@ type Matrix = Vector (Vector Double)
 
 quat2Matrix :: Quat -> Matrix
 quat2Matrix q = m332Matrix $ (fromQuaternion q)
+    
+toSparse :: Matrix -> (Int,Int,[((Int,Int),Double)])
+toSparse m = (rs, cs, nzs) where
+    rs = V.length m
+    cs = V.length (m V.! 0)
+    nzs = [ ((r,c),v) | r <- [0..rs-1], c <- [0..cs-1], let v = m V.! r V.! c, v /= 0 ]
+    
+toSparseElems :: Matrix -> [((Int,Int),Double)]
+toSparseElems = (\(_,_,elems) -> elems) . toSparse
 
 m332Matrix :: M33 Double -> Matrix
 m332Matrix = v32Vector . (fmap v32Vector) 
@@ -285,5 +295,3 @@ iterateMN fn x n
         x' <- fn x
         xs <- iterateMN fn x' (n-1)
         return $ x : xs
-
-

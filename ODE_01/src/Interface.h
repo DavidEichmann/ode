@@ -9,6 +9,7 @@ extern "C" {
 	//
 	double* sparseMatrixSolve(int mrn, int mcn, int nz, int* mixs, int r, double* vals);
 	double* inverseMatrix(int r, int c, double* vals);
+	double* linearProgramming();
 
 
 	//
@@ -83,6 +84,7 @@ extern "C" {
 	void step(dWorldID wid, double zmpX, double zmpZ, double fy);
 	void createBallJoint(dBodyID a, dBodyID b, double x, double y, double z);
 	dJointID createAMotor(dBodyID a, dBodyID b);
+	void addBodyTorque(dBodyID jid, double x, double y, double z);
 	void setAMotorVelocity(dJointID jid, double x, double y, double z);
 	void addAMotorTorque(dJointID jid, double x, double y, double z);
 	void createFixedJoint(dBodyID a, dBodyID b);

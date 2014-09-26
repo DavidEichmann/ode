@@ -30,7 +30,7 @@ data Sim = Sim {
     --  root has a (almost) weightless sphere as a body with special BoneIx = B -1 
     odeBodies           :: [(BoneIx, DBodyID)],
     -- List of parent bone, joint, child bone, and their corresponding AMotor
-    odeMotors           :: [(BoneIx, JointIx, BoneIx, DJointID)],
+    odeMotors           :: [(BoneIx, JointIx, BoneIx, DBodyID, DBodyID, DJointID)],
     targetMotion        :: MotionDataVars,
     feedBackController  :: FeedBackController,
     simTime             :: Double,
@@ -40,7 +40,7 @@ data Sim = Sim {
 type FeedBackController = Sim -> Double -> IO (Sim)
 
 startSim :: MotionDataVars -> IO Sim
-startSim md@MotionDataVars{_baseSkeleton=skel,_jN=jN,_bN=bN,_js=js,_bs=bs,_jb=jb,_xj=xj,_xb=xb,_rb=rb,_pj=pj,_cjs=cjs,_pb=pb,_jHasParent=jHasParent,_jHasChild=jHasChild} = do
+startSim md@MotionDataVars{_baseSkeletonMDV=skel,_jN=jN,_bN=bN,_js=js,_bs=bs,_jb=jb,_xj=xj,_xb=xb,_rb=rb,_pj=pj,_cjs=cjs,_pb=pb,_jHasParent=jHasParent,_jHasChild=jHasChild} = do
     newWid <- initODE defaultTimeStep
     bodies <- realizeBodies
     aMotors <- realizeAMotors bodies
@@ -59,9 +59,9 @@ startSim md@MotionDataVars{_baseSkeleton=skel,_jN=jN,_bN=bN,_js=js,_bs=bs,_jb=jb
         }
 
     where
-        realizeAMotors :: [(BoneIx, DBodyID)] -> IO [(BoneIx, JointIx, BoneIx, DJointID)]
-        realizeAMotors boneBody = sequence $ concat $ map createAMotorForJoint js where
-            createAMotorForJoint :: JointIx -> [IO (BoneIx, JointIx, BoneIx, DJointID)]
+        realizeAMotors :: [(BoneIx, DBodyID)] -> IO [(BoneIx, JointIx, BoneIx, DBodyID, DBodyID, DJointID)]
+        realizeAMotors boneBodys = sequence $ concat $ map createAMotorForJoint js where
+            createAMotorForJoint :: JointIx -> [IO (BoneIx, JointIx, BoneIx, DBodyID, DBodyID, DJointID)]
             createAMotorForJoint jI
                 | not (jHasParent jI && jHasChild jI) = []
                 | otherwise = map createAMotorForChild cbIs where
@@ -71,20 +71,22 @@ startSim md@MotionDataVars{_baseSkeleton=skel,_jN=jN,_bN=bN,_js=js,_bs=bs,_jb=jb
                     cbIs = map jb (cjs jI)
                     
                     createAMotorForChild cbI = do
-                        motorID <- createAMotor
-                                    (fromJust $ lookup cbI boneBody)
-                                    (fromJust $ lookup pbI boneBody)
-                        return (pbI, jI, cbI, motorID)
+                        let
+                            dParentBody = (fromJust $ lookup pbI boneBodys)
+                            dChildBody = (fromJust $ lookup cbI boneBodys)
+                        motorID <- createAMotor dChildBody dParentBody
+                        return (pbI, jI, cbI, dParentBody, dChildBody, motorID)
                                 
 
         
-        realizeBodies = do
+        realizeBodies :: IO [(BodyIx,DBodyID)]
+        realizeBodies = s
             bodyTree <- treeMapM createBody skel
             treeMapM_ view (treeZipWith createJoint skel bodyTree)
             -- Note that MotionDataVars does not include a root bone, so its index is added here as (B -1) 
             return $ zip ((B (-1)) : bs) (flatten bodyTree)
 
-        createBody :: JointF -> IO DBodyID
+        createBody :: JointIx -> IO (BoneIx, DBodyID)
         createBody jf
             -- If not the root
             | hasParent jf = do
@@ -94,31 +96,35 @@ startSim md@MotionDataVars{_baseSkeleton=skel,_jN=jN,_bN=bN,_js=js,_bs=bs,_jb=jb
                     footEnd@  (V3 _ fy2 fz2)  = getPosEnd (if isToeJoint jf then jf else fromJust (child0 jf))
                     (V3 _ _ boxZSize) = fmap abs ((getPosEnd jf) - (getPosStart jf))
                     boxYSize = let (V3 _ comY _) = getPosCom jf in 2 * (abs $ comY - fy2)
-                if isFootJoint jf
-                    then
-                        -- Feet get box body
-                        appendFootBody
-                             -- position CoM
-                            (getPosCom jf)
-                            -- global quaternion rotation
-                            (getRot $ justParent jf)
-                            -- dimensions
-                            (V3 footWidth boxYSize boxZSize)
-                            -- mass and Inertia matrix (about CoM)
-                            m mIM
-                    else
-                        -- other bones get capsule body
-                        appendCapsuleBody
-                             -- position CoM
-                            (getPosCom jf)
-                            -- local rotation for the bone from Z aligned to offset orientation
-                            (zToDirQuat (offset $- jf))
-                            -- global quaternion rotation
-                            (getRot $ justParent jf)
-                            -- dimensions, mass
-                            boneRadius (norm (offset $- jf)) m
-                            -- Inertia matrix (about CoM)
-                            mIM
+                    
+                (
+                    
+                    if isFootJoint jf
+                        then
+                            -- Feet get box body
+                            appendFootBody
+                                 -- position CoM
+                                (getPosCom jf)
+                                -- global quaternion rotation
+                                (getRot $ justParent jf)
+                                -- dimensions
+                                (V3 footWidth boxYSize boxZSize)
+                                -- mass and Inertia matrix (about CoM)
+                                m mIM
+                        else
+                            -- other bones get capsule body
+                            appendCapsuleBody
+                                 -- position CoM
+                                (getPosCom jf)
+                                -- local rotation for the bone from Z aligned to offset orientation
+                                (zToDirQuat (offset $- jf))
+                                -- global quaternion rotation
+                                (getRot $ justParent jf)
+                                -- dimensions, mass
+                                boneRadius (norm (offset $- jf)) m
+                                -- Inertia matrix (about CoM)
+                                mIM
+                    )
             | otherwise     =
                 -- root bone gets a massless capsule body
                 appendCapsuleBody
@@ -127,9 +133,9 @@ startSim md@MotionDataVars{_baseSkeleton=skel,_jN=jN,_bN=bN,_js=js,_bs=bs,_jb=jb
                     -- local and global rotation
                     identity identity
                     -- dimensions, mass
-                    boneRadius 0 0.01
+                    boneRadius 0 0.000000001
                     -- Inertia matrix (about CoM)
-                    (eye3 !!* 0.01)
+                    (eye3 !!* 0.000000001)
 
         f0I = F 0
         moveToFrame0 :: [(BoneIx, DBodyID)] -> IO ()
@@ -140,8 +146,8 @@ startSim md@MotionDataVars{_baseSkeleton=skel,_jN=jN,_bN=bN,_js=js,_bs=bs,_jb=jb
         moveBody (bI, body)     = setBodyPosRot body (xb f0I bI)    (rb f0I bI)
 
         createJoint jf bf
-            | hasParent jf  = createBallJoint (view $ fromJust $ parent bf) (view bf) (getPosStart jf)
-            | otherwise     = mapM_ (createFixedJoint (view bf)) (map view (getChildFs bf))
+            | hasParent jf && hasParent (fromJust (parent jf))  = createBallJoint (view $ fromJust $ parent bf) (view bf) (getPosStart jf)
+            | otherwise     = return () -- mapM_ (createFixedJoint (view bf)) (map view (getChildFs bf))
 
 
 getSimJoints :: Sim -> IO (Int -> Joint)
@@ -212,7 +218,7 @@ highGainsFlatFeetController sim@Sim{targetMotion=tm,odeMotors=motors} dt = do
         MotionDataVars{
             _footJs=((lajI,_,_),(rajI,_,_))
         } = tm
-        flattenFeet m@(pbI, jI, cbI, am)
+        flattenFeet m@(pbI, jI, cbI, _, _, am)
             | jI `elem` [lajI, rajI]  = setAMotorToAchieveTargetGlobalRot sim m identity dt
             | otherwise = return ()
 
@@ -229,23 +235,23 @@ matchMotionDataVars sim@Sim{odeBodies=bodies,odeMotors=motors} target dt = do
             } = target
         (faI,fbI,u) = getFrameInterpVals target ((simTime sim)+dt)
         
-        setAMotor :: (BoneIx, JointIx, BoneIx, DJointID) -> IO ()
-        setAMotor m@(_,jI,_,_) = setAMotorToAchieveTargetLocalRot sim m (slerp (rjL faI jI) (rjL fbI jI) u) dt
+        setAMotor :: (BoneIx, JointIx, BoneIx, DBodyID, DBodyID, DJointID) -> IO ()
+        setAMotor m@(_,jI,_,_,_,_) = setAMotorToAchieveTargetLocalRot sim m (slerp (rjL faI jI) (rjL fbI jI) u) dt
         
     mapM_ setAMotor motors
     return sim
 
 
-setAMotorToAchieveTargetLocalRot :: Sim -> (BoneIx, JointIx, BoneIx, DJointID) -> Quat -> Double -> IO ()
-setAMotorToAchieveTargetLocalRot sim@Sim{odeBodies=bodies,odeMotors=motors} m@(pbI, jI, cbI, am) targetRotL dt = do
+setAMotorToAchieveTargetLocalRot :: Sim -> (BoneIx, JointIx, BoneIx, DBodyID, DBodyID, DJointID) -> Quat -> Double -> IO ()
+setAMotorToAchieveTargetLocalRot sim@Sim{odeBodies=bodies,odeMotors=motors} m@(pbI, jI, cbI, _, _, am) targetRotL dt = do
                 (_,pRotGSim) <- getBodyPosRot (fromJust $ lookup pbI bodies)
                 let
                     targetRotG  = pRotGSim * targetRotL
                     
                 setAMotorToAchieveTargetGlobalRot sim m targetRotG dt
 
-setAMotorToAchieveTargetGlobalRot :: Sim -> (BoneIx, JointIx, BoneIx, DJointID) -> Quat -> Double -> IO ()
-setAMotorToAchieveTargetGlobalRot Sim{odeBodies=bodies} (pbI, jI, cbI, am) targetRotG dt = do
+setAMotorToAchieveTargetGlobalRot :: Sim -> (BoneIx, JointIx, BoneIx, DBodyID, DBodyID, DJointID) -> Quat -> Double -> IO ()
+setAMotorToAchieveTargetGlobalRot Sim{odeBodies=bodies} (pbI, jI, cbI, _, _, am) targetRotG dt = do
                 (_,cRotGSim) <- getBodyPosRot (fromJust $ lookup cbI bodies)
                 let
                     simRotG     = cRotGSim
