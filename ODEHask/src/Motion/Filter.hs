@@ -79,14 +79,14 @@ shift :: Vec3 -> MotionDataVars -> MotionDataVars
 shift v md@MotionDataVars{_fs=fs,_j=j} = modifyMotionDataVars md [let joint = j fi 0 in ((fi,0), joint{offset = (offset joint) + v}) | (F fi) <- fs]
 
 blendIntoMotionData :: Double -> Double -> (Int -> Joint) -> MotionDataVars -> MotionDataVars
-blendIntoMotionData time blendTime pose (mdv@MotionDataVars{_dt=dt,_j=j,_jN=jN,_fN=fN}) = modifyMotionDataVars mdv newJA where
+blendIntoMotionData time blendTime pose (mdv@MotionDataVars{_dt=dt,_j=j,_jN=jN,_fN=fN}) = trace ("frame range: " ++ show blendFrameI ++ " , " ++ show blendFrameF) $ modifyMotionDataVars mdv newJA where
     blendFrameI = ceiling $ time / dt
     blendFrameF = min (fN-1) (floor $ (time + blendTime) / dt)
     newJ :: Int -> Int -> Joint
     newJ f
         | blendFrameI <= f && f <= blendFrameF   = blendFrames pose (j f) ((((fromIntegral f) * dt) - time) / blendTime)
         | otherwise                              = error "Attempting to blend frames outside of the blend window"
-    newJA = [((f,j), newJf j) | f <- range (blendFrameI,blendFrameF), f < fN, let newJf = newJ f, j <- range (0,jN-1)]
+    newJA = [((f,j), newJ f j) | f <- range (blendFrameI,blendFrameF), f < fN, j <- range (0,jN-1)]
 
 dip :: Double -> MotionDataVars -> MotionDataVars
 dip amount = shift (V3 0 (-amount) 0)
@@ -97,16 +97,18 @@ dip amount = shift (V3 0 (-amount) 0)
 -- dip (lower the body to extend leg reach)
 -- number of itterations
 fitMottionDataToZmp :: MotionDataVars -> Array Int Vec3 -> Double -> Int -> MotionDataVars
-fitMottionDataToZmp = fitMottionDataToZmp' True
+fitMottionDataToZmp = fitMottionDataToZmp' True True
 
 fitMottionDataToZmpLooseInitVel :: MotionDataVars -> Array Int Vec3 -> Double -> Int -> MotionDataVars
-fitMottionDataToZmpLooseInitVel = fitMottionDataToZmp' False
+fitMottionDataToZmpLooseInitVel = fitMottionDataToZmp' False False
 
-fitMottionDataToZmp' :: Bool -> MotionDataVars -> Array Int Vec3 -> Double -> Int -> MotionDataVars
-fitMottionDataToZmp' constrainInitVel mdvOrig zmpX dipHeight its = fitMottionDataToZmp' mdvOrig (listArray (bounds zmpX) [1,1..]) its where
-    fitMottionDataToZmp' :: MotionDataVars -> Array Int Double -> Int -> MotionDataVars
-    fitMottionDataToZmp' mdv _ 0 = mdv
-    fitMottionDataToZmp' mdv weights itsI = finalModifiedMdv where
+-- This will only change the single continuous range of frames equal to the range of the a given target ZMP array
+fitMottionDataToZmp' :: Bool -> Bool -> MotionDataVars -> Array Int Vec3 -> Double -> Int -> MotionDataVars
+fitMottionDataToZmp' constrainInitVel constrainFinalVel mdvOrig' zmpX dipHeight its = fitMottionDataToZmp' mdvOrig its where
+    mdvOrig = feetIK mdvOrig' (dip dipHeight mdvOrig')
+    fitMottionDataToZmp' :: MotionDataVars -> Int -> MotionDataVars
+    fitMottionDataToZmp' mdv 0 = mdv
+    fitMottionDataToZmp' mdv itsI = finalModifiedMdv where
         MotionDataVars {
             _j       = j,
             _g       = g,
@@ -123,6 +125,9 @@ fitMottionDataToZmp' constrainInitVel mdvOrig zmpX dipHeight its = fitMottionDat
         x f i = vx (posb (F f) i)
         y f i = vy (posb (F f) i)
         z f i = vz (posb (F f) i)
+        
+        (frameInit,frameFinal) = bounds zmpX
+        n = arraySize zmpX
 
         -- here we setup:    M xe = xep
         --           and:    M ze = zep
@@ -131,28 +136,37 @@ fitMottionDataToZmp' constrainInitVel mdvOrig zmpX dipHeight its = fitMottionDat
         -- xep is the shift is ZMP poisitons through time (note that first and last elements are 0)
 
         -- generate the matrix M (list of position and values... sparse matrix)
-        constraintFramesRix = (zip [0,fN-1] [0,fN-1]) ++ (if constrainInitVel then [(1,fN)] else [])
-        mrn = fN - 2 + (length constraintFramesRix)
+        
+        constraintFramesRix =   -- list of (frame index, matrix row index) pairs 
+                                [(frameInit,0),(frameFinal,n-1)] ++ 
+                                ((flip zip) [n..] (
+                                    (if constrainInitVel then [frameInit+1] else []) ++ 
+                                    (if constrainFinalVel then [frameFinal-1] else [])
+                                ))
+        mrn = n - 2 + (length constraintFramesRix)
         _M :: [((Int,Int),Double)]
-        _M =    -- fN-2 rows are the zmp = target zmp constraint for all frames other than the first and last
-                (concat  [zip [(r,r-1), (r,r), (r,r+1)] (fmap (*(weights!r)) [f r, diag r, f r]) | r <- [1..fN-2]]) ++
+        _M =    -- n-2 rows are the zmp = target zmp constraint for all frames other than the first and last
+                (concat  [zip [(r,r-1), (r,r), (r,r+1)] [f r, diag r, f r] | r <- [1..n-2]]) ++
                 -- remaining rows ensure that there is no shift for the constraintFrames
-                (map (\(f,rix) -> ((rix,f), 10000000000)) constraintFramesRix)
+                (map (\(f,rix) -> ((rix,f-frameInit), 10000000000)) constraintFramesRix)
             where
                 dt2         = dt ** 2
                 f :: Int -> Double
                 f           = memoize (0,fN-1) f' where
                                 f' :: Int -> Double
-                                f' r =  (negate (sum (map (\bI -> (m bI) * (y r bI)) bs))) /
+                                f' r' =  (negate (sum (map (\bI -> (m bI) * (y r bI)) bs))) /
                                             (dt2 * (sum (fmap (\bI -> (m bI) * ((vy $ l' fI bI) + g)) bs))) where
+                                           r = r' + frameInit
                                            fI = F r
                 diag r = 1 - (2 * (f r))
 
         -- ep
         ep :: Array Int Vec3
         ep = array (0,mrn-1) (
-                            -- first fN-2 rows is the zmp = target zmp constraint for all frames other than the first and last
-                            [(fi, (weights!fi) *^ ((zmpX!fi) - (zmp (F fi)))) | fi <- range (1,fN-2)] ++
+                            -- first fN-2 rows is the zmp = target zmp constraint for all frames other than the first 2 and last 2
+                            [(row, ((zmpX!fi) - (zmp (F fi)))) |
+                                    row <- range (1, n-2),
+                                    let fi = frameInit + row] ++
                             -- remaining rows ensure that ther is no shift for the constraintFrames
                             [(rix,V3 0 0 0) | (_,rix) <- constraintFramesRix])
         -- xep
@@ -161,20 +175,13 @@ fitMottionDataToZmp' constrainInitVel mdvOrig zmpX dipHeight its = fitMottionDat
 
         -- use matrix solver to get xe
         --  sparseMatrixSolve :: [((Int,Int),Double)] -> [Array Int Double] -> [Array Int Double]
-        (ze:xe:_) = leastSquareSparseMatrixSolve mrn fN _M [zep,xep]
+        (ze:xe:_) = leastSquareSparseMatrixSolve mrn n _M [zep,xep]
 
-        shiftedFrames = [ let joint@Joint{offset=offset} = j fi 0 in ((fi, 0), joint{ offset = offset + (V3 (xe!fi) 0 (ze!fi)) })  | fi <- [0..fN-1] ]
+        shiftedFrames = [ let joint@Joint{offset=offset} = j fi 0 in ((fi, 0), joint{ offset = offset + (V3 (xe!row) 0 (ze!row)) })  | row <- [0..n-1], let fi = row + frameInit ]
         modifiedMdv@MotionDataVars{_zmp=zmpActualResult} = modifyMotionDataVars mdv shiftedFrames
 
-        weightsLearnRateA = 30
-        weightsLearnRateB = 2
-        newWeightsRaw = array (bounds weights) [ (fi, (weights!fi) + ((weightsLearnRateA * (norm $ (zmpX!fi) - (zmpActualResult (F fi)))) ** weightsLearnRateB)) | fi <- indices weights]
-        windowHalf = 2
-        newWeights = weights -- let x = listArray (bounds weights) [ (sum (map (\fi -> if inRange (bounds weights) fi then newWeightsRaw!fi else 0) [fi-windowHalf..fi+windowHalf])) / (1 + (2*(fromIntegral windowHalf))) | fi <- indices weights] in traceShow (elems x) x
-
         --modifyMotionDataVars :: MotionDataVars -> FJIndexedFrames -> MotionDataVars
-        doFeetIK = True
-        finalModifiedMdv = fitMottionDataToZmp' ((if doFeetIK then (feetIK mdvOrig) else id) $ (if itsI == its then dip dipHeight else id) $ modifiedMdv) newWeights (itsI-1)
+        finalModifiedMdv = fitMottionDataToZmp' (feetIK mdvOrig modifiedMdv) (itsI-1)
 
 
 
@@ -183,14 +190,14 @@ flattenFeet :: MotionDataVars -> MotionDataVars
 flattenFeet mdv@MotionDataVars{_dt=dt,_jBase=jBase,_fN=fN,_pj=pj,_bj=bj,_footBs=((lfbI,ltbI),(rfbI,rtbI))}  = mdv' where
     
     mdv' = 
-        -- lower to allow feet to reach the target location
-        ((\x -> feetIK mdv (shift (V3 0 (negate zeroAnkleClearance) 0) mdv))
-        -- Move ankles to the correct height
-        >>> fixAnkleClearance
-        -- make the feet flat
-        >>> fixFootOrientation
-        -- Remove foot sliding
-        >>> removeSliding
+            -- lower to allow feet to reach the target location
+            ((\x -> feetIK mdv (shift (V3 0 (negate zeroAnkleClearance) 0) mdv))
+            -- Move ankles to the correct height
+            >>> fixAnkleClearance
+            -- make the feet flat
+            >>> fixFootOrientation
+            -- Remove foot sliding
+            >>> removeSliding
         ) mdv
 
 

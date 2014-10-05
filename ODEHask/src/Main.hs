@@ -57,8 +57,8 @@ mainLoop :: MainLoop
 mainLoop =
 --    viewAnimationLoopDefault
 --    viewFlatFeet
---    viewFlatFeetSim
-    viewSim
+    viewFlatFeetSim
+--    viewSim
 --    viewZmpCorrection
 
     -- setting kc to the data's framerate (usually 60Hz) and keeping kp=0 the origional target motion
@@ -67,8 +67,9 @@ mainLoop =
 
 mainLoopOut :: Bool -> MotionData -> IO ()
 mainLoopOut dontDisplay md = do
-
-    displayTIOs <- mainLoop (getMotionDataVariablesFromMotionData md)
+    let mdv = (setImpulseType (AutoPunch (V3 0 0 0)) $ getMotionDataVariablesFromMotionData md)
+    putStrLn $ "total mass: " ++ (show (_mT mdv))
+    displayTIOs <- mainLoop mdv
 
     let
         loopDisplay :: [(Double, IO ())] -> [(Double, IO ())] -> UTCTime -> IO ()

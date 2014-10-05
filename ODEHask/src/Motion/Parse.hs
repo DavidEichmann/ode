@@ -10,11 +10,14 @@ import Constants
 
 
 import Data.Array
+import Data.String.Utils
 import Linear
 import Data.Char
 import Text.Parsec
 import Text.Parsec.Token hiding (dot)
 import Text.Parsec.Language
+
+import Debug.Trace
 
 {-------------------------
 
@@ -62,7 +65,7 @@ hsToken = makeTokenParser haskellStyle
 
 wordP = do
         spaces
-        many1 (satisfy (not. isSpace))
+        many1 (satisfy (not . isSpace))
 
 floatP = do
         num <- wordP
@@ -159,7 +162,7 @@ motion skel = do
         return (frames, frameTime) where
                 getFrames = endBy line newline' <?> "Frames"
                 line = do
-                        vs <- sepBy floatP (many1 (char ' '))
+                        vs <- ((try (endBy floatP (many1 (char ' ')))) <|> (sepBy floatP (many1 (char ' '))))
                         return (fromChanVals skel vs)
                       <?> "Line"
 
@@ -176,7 +179,8 @@ bvh = do
 
 raw_parseBVH :: String -> IO(MotionData)
 raw_parseBVH filePath = do
-        content <- readFile filePath
+        content' <- readFile filePath
+        let content = replace " \n" "\n" content'
         out <- either (error $ "Failed to parse bvh file: " ++ filePath) (return) (parse bvh "" content)
         print "done Parsing"
         return out

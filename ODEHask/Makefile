@@ -6,7 +6,7 @@ HS_SRC = src
 
 INCLUDES = -I${CPP_SRC}/OgreProcedural/include -I/usr/include/eigen3 -I/usr/include/OGRE
 
-CC_FLAGS = -DdDOUBLE=1 -std=c++0x -O0 -g3 -Wall -fmessage-length=0 -fPIC 
+CC_FLAGS = -DdDOUBLE=1 -std=c++0x -O2 -g3 -Wall -fmessage-length=0 -fPIC 
 CPP_FILES = $(wildcard ${CPP_SRC}/*.cpp)
 OBJ_FILES = $(addprefix ${OBJ}/,$(notdir $(CPP_FILES:.cpp=.o))) $(wildcard ../Debug/ODE_01/src/OgreProcedural/src/*.o)
 

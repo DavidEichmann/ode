@@ -8,10 +8,11 @@ import Data.Color
 import Util
 import FFI
 import Control.Arrow
+import Debug.Trace
 
 import Data.Maybe
 import Data.Array
-import Linear hiding (_j)
+import Linear hiding (_j,trace)
 
 -- takes input motion data and returns some data
 type DataInit a = MotionDataVars -> IO a
@@ -31,9 +32,10 @@ viewAnimationLoop :: MotionDataVars -> (FrameIx -> IO ()) -> IO [(Double,IO ())]
 viewAnimationLoop mdv@MotionDataVars{_dt=dt,_fs=fs} display = return $ zip (repeat dt) (map display fs)
 
 viewAnimationLoopDefault :: MainLoop
-viewAnimationLoopDefault mdv@MotionDataVars{_sp=sp} = viewAnimationLoop mdv (\fI -> do
+viewAnimationLoopDefault mdv@MotionDataVars{_sp=sp,_zmp=zmp} = viewAnimationLoop mdv (\fI -> do
         drawFrameIx (BlackA 0.5) zero mdv fI
         drawPolygonEdgesC Black (map xz2x0z (sp fI))
+        drawPointC Green (zmp fI) 0.05
     )
 
 vewFlatFeet :: MainLoop
@@ -51,13 +53,12 @@ vewFlatFeet mdv@MotionDataVars{_sp=sp} = viewAnimationLoop mdv (\fI -> do
 viewSim :: MainLoop
 viewSim = simulateMainLoop
 
-     
 viewFlatFeetSim :: MainLoop
 viewFlatFeetSim =
     -- apply the flattenFeet motion preprocessor
     flattenFeet >>>
     -- apply ZMP correction
-    (correctZMP 10) >>>
+    (correctZMPFull 9) >>>
     -- pass to simulation MainLoop
     simulateMainLoop
 
@@ -65,10 +66,11 @@ viewZmpCorrection :: MainLoop
 viewZmpCorrection mdvOrig = viewAnimationLoop mdv display where
     mdv@MotionDataVars{
         _zmp = zmp
-    } = correctZMP 10 mdvOrig
+    } = correctZMPFull 10 mdvOrig
     display fI = do
         drawFrameIx (BlackA 0.5) zero mdv fI
         drawPointC Red (zmp fI) 0.03
+        putStrLn ("zmp at " ++ show fI ++ " :  " ++ show (zmp fI) ++ (if abs (vz (zmp fI)) > 0.1 then "  ******" else ""))
         
 
 
@@ -193,50 +195,73 @@ coMFeedBackLoopRaw kc kp target@MotionDataVars{_fs=fs,_fN=fN,_sp=spRaw,_dt=dt,_j
 
 -- simulate using the motion data directly as the target motion (high gains feed forward)
 simulateMainLoop :: MainLoop
-simulateMainLoop targetMotion@MotionDataVars{_jBase=jBase,_dt=dtMDV,_js=js,_fN=fN,_jName=jName,_zmp=targetZMP,_jb=jb,_jHasParent=jHasParent,_m=m} = do
+simulateMainLoop targetMotion@MotionDataVars{_fs=fs,_pj=pj,_jBase=jBase,_dt=dtMDV,_js=js,_rb=rb,_fN=fN,_jName=jName,_zmp=targetZMP,_bj=bj,_jb=jb,_jHasParent=jHasParent,_m=m,_footBs=((alBI,_),(arBI,_)),_footBCorners=footBCorners} = do
     -- init the simulator
     sim'@Sim{odeMotors=motors,timeDelta=dtSim,targetMotion=targetMotion} <- startSim targetMotion
     
-    let
-        (jointTorques,jointForces) = inverseDynamics targetMotion (F 5)
-    putStrLn "------------------------------------------ ID output:"
+    putStrLn $ "footBCorners (F 0): " ++ show (footBCorners (F 0)) ++ "\n"
+    
+    --let
+    --    (jointTorques,jointForces) = inverseDynamics targetMotion (F 5)
+    {-putStrLn "------------------------------------------ ID output:"
     putStrLn $ concat [ "Joint:          " ++ show (jName jI) ++ "\nJoint torque:   " ++ show (jointTorques jI) ++ "\nJoint force:    " ++ show (jointForces jI) ++ 
                                                         "\nBone  mass:     " ++ show (if jHasParent jI then m $ jb jI else 0) ++ 
                                                         "\nBone  length:   " ++ show ((norm . offset . jBase) jI) ++ "\n"| jI@(J ji) <- js ]
+    -}
     
     let
         -- modify the Sim to use a ID feedback controller
-        sim = sim'{
-            feedBackController = (\sim@Sim{simTime=simTime,odeBodies=bodies} dtSim -> do
-                    -- blend the actual state into the target motion then do ID
-                    jointsActual <- getSimJoints sim
-                    let
-                        --mdvActualBlend = blendIntoMotionData simTime jointsActual targetMotion
-                        --mdvActualBlend = blendIntoMotionData simTime 1000000000 jointsActual targetMotion
-                        mdvActualBlend = targetMotion
-
-                        (faI,fbI,u) = getFrameInterpVals mdvActualBlend (simTime+(dtSim/2))
+        feedBackControllerRaw simUpdatedMDV timeTillNextIt sim@Sim{simTime=simTime,odeBodies=bodies,targetMotion=currentTargetMotion} dtSim = do
+                let
+                    timeTillNextIt' = timeTillNextIt - dtSim
+                    doFeedback = timeTillNextIt' < 0
+                    timeTillNextItNew = if doFeedback then (negate timeTillNextIt') + defaultfeedBackControlUpdateInterval else timeTillNextIt'
                         
-                        -- TODO Blend 2 frames
-                        (jointTorques,jointForces) = inverseDynamics mdvActualBlend faI
-                        
-                        setAMotor :: (BoneIx, JointIx, BoneIx, DBodyID, DBodyID, DJointID) -> IO ()
-                        setAMotor m@(_,jI,_,pb,cb,jID) = do
-                            -- addAMotorTorque jID ((1) *^ (jointTorques jI))
-                            let x = 1
-                            addBodyTorque pb ((-x) *^ (jointTorques jI))
-                            addBodyTorque cb (( x) *^ (jointTorques jI))
-                            return ()
+                -- blend the actual state into the target motion then do ID
+                jointsActual <- getSimJoints sim
+                let
+                    mdvActualBlend = if False -- doFeedback
+                        then do
+                            -- On an actual feedback iteration, do the blend and ZMP correction
+                            (trace ("faI: " ++ show faI ++ "\nceiling (defaultfeedBackControlUpdateInterval / dtMDV):" ++ show (ceiling (defaultfeedBackControlUpdateInterval / dtMDV))) $  correctZMP
+                                                    -- start frame is the current frame
+                                                    (max 0 ((unF faI)-2))   -- use the previous frame to constrain the actual velocity andl allow the zmp correction to smooth out the sudden chance in velocity caused by the motion blend 
+                                                    (min (fN-1) ((unF faI) + (ceiling (defaultfeedBackControlUpdateInterval / dtMDV))))
+                                                    defaultfeedBackControlZMPCorrectionItterations
+                                                    (blendIntoMotionData simTime (defaultfeedBackControlUpdateInterval) jointsActual simUpdatedMDV))
+                        else
+                            currentTargetMotion
                     
-                    -- putStrLn "------------------------------------------ ID output:"
-                    -- putStrLn $ concat [ "Joint:          " ++ show (jName jI) ++ "\nJoint torque:   " ++ show (jointTorques jI) ++ "\nJoint force:    " ++ show (jointForces jI) ++ 
-                    --                                                 "\nBone  mass:     " ++ show (if jHasParent jI then m $ jb jI else 0) ++ 
-                    --                                                 "\nBone  length:   " ++ show ((norm . offset . jBase) jI) ++ "\n"| jI@(J ji) <- js ]
+                    (faI,fbI,u) = getFrameInterpVals currentTargetMotion (simTime+dtSim)
                     
-                    mapM_ setAMotor motors
-                    -- update the target motion to the blended motion NOTE in this case this is actually redundant
-                    return sim{targetMotion=mdvActualBlend}
-                )
+                    -- TODO Blend 2 frames
+                    (jointTorques,_) = inverseDynamics mdvActualBlend faI
+                    
+                    setAMotor :: (BoneIx, JointIx, BoneIx, DBodyID, DBodyID, DJointID) -> IO ()
+                    setAMotor m@(_,jI,_,pb,cb,jID) = do
+                        addAMotorTorque jID ((1) *^ (jointTorques jI))
+                        --addBodyTorque pb ((-1) *^ (jointTorques jI))
+                        --addBodyTorque cb (( 1) *^ (jointTorques jI))
+                        return ()
+                
+                -- putStrLn "------------------------------------------ ID output:"
+                -- putStrLn $ concat [ "Joint:          " ++ show (jName jI) ++ "\nJoint torque:   " ++ show (jointTorques jI) ++ "\nJoint force:    " ++ show (jointForces jI) ++ 
+                --                                                 "\nBone  mass:     " ++ show (if jHasParent jI then m $ jb jI else 0) ++ 
+                --                                                 "\nBone  length:   " ++ show ((norm . offset . jBase) jI) ++ "\n"| jI@(J ji) <- js ]
+                
+                -- use high gains joint control
+                setAMotorsToMDVJointVels sim mdvActualBlend dtSim
+                -- Use ID control for just the ankle joints
+                --mapM_ setAMotor (filter (\(_,_,bI,_,_,_) -> elem bI [alBI,arBI]) motors)
+                --putStrLn $ "(fI) left ankel torque: (" ++ show faI ++ ")  " ++ show (jointTorques (pj $ bj alBI))
+                
+                -- update the target motion to the blended motion NOTE in this case this is actually redundant
+                return sim{targetMotion=mdvActualBlend,feedBackController=
+                        feedBackControllerRaw (setFrame fbI jointsActual simUpdatedMDV) timeTillNextItNew
+                    }
+            
+        sim = sim' {
+            feedBackController = feedBackControllerRaw targetMotion 0
         }
 
         stepDisplaySim (sim'@Sim{simTime=simTime,targetMotion=targetMotion'@MotionDataVars{_zmp=targetZMP'}},io') = do
@@ -252,14 +277,16 @@ simulateMainLoop targetMotion@MotionDataVars{_jBase=jBase,_dt=dtMDV,_js=js,_fN=f
 
                     -- Annimation
                     let aniOffset =   zero :: Vec3 --V3 (-2) 0 0
-                    drawFrameIx (BlueA 0.5) aniOffset targetMotion' fI
+                    drawFrameIx (WhiteA 0.25) aniOffset targetMotion fI
+                    --drawFrameIx (BlueA 0.5) aniOffset targetMotion' fI
                     drawPointC (GreenA 0.5) (targetZMP' fI) 0.02
+                    mapM_ ((\p -> drawPointC (YellowA 1) p 0.01) . xz2x0z) floorCOntacts
             sim'' <- step sim' dtSim zero 0
             return (sim'', io'')
         nSteps = round $ (fromIntegral fN * dtMDV) / dtSim
         
     putStrLn "\n\tSkipping simulation!\n" -- see comented out section below
-    ios <- fmap (map snd) (iterateMN stepDisplaySim (sim,return ()) nSteps)
+    ios <- fmap (map snd) (iterateMN (stepDisplaySim) (sim,return ()) nSteps)
     --let ios = [return ()]
     
     return $ zip (repeat dtSim) ios
@@ -267,20 +294,23 @@ simulateMainLoop targetMotion@MotionDataVars{_jBase=jBase,_dt=dtMDV,_js=js,_fN=f
 
 
 -- fit the ZMP to the center of the SP
-correctZMP :: Int ->  MotionDataVars -> MotionDataVars
-correctZMP iterations mdv@MotionDataVars{_fN=fN,_fs=fs,_js=js,_j=j,_pT=pT,_l=l,_com=com,_zmp=zmp,_sp=sp,_zmpIsInSp=zmpIsInSp} = mdvMod where
-        centerOfSp = [let poly = (sp fI) in
-                if length poly == 0
+correctZMPFull i mdv@MotionDataVars{_fN=fN} = correctZMPChunked 0 (fN-1) mdv where
+    correctZMPChunked startF endF mdv'
+        | endF - startF + 1 <= frameWindowSize  = correctZMP startF endF i mdv'
+        | otherwise                             = correctZMPChunked startF (endF - frameWindowSize + 2) (correctZMPChunked (endF - frameWindowSize + 1) endF mdv')
+        
+correctZMP :: Int -> Int -> Int ->  MotionDataVars -> MotionDataVars
+correctZMP startFI endFI iterations mdv@MotionDataVars{_fN=fN,_fs=fs,_dt=dt,_js=js,_j=j,_pT=pT,_l=l,_com=com,_zmp=zmp,_sp=sp,_zmpIsInSp=zmpIsInSp} = mdvMod where
+        targetZmp = buildArray (startFI,endFI) (\fi -> let fI = F fi; poly = sp (F (min (fN-1) (fi+5))) in
+                -- target zmp as average center of SP over the next 0.5 seconds
+                xz2x0z $ if length poly == 0
                     then
                         toXZ $ com fI
                     else
                         sum poly ^/ (fromIntegral $ length poly)
-            | fI <- fs]
-        targetZmp = listArray (0,fN-1) $
-            -- target zmp as center of SP
-            map xz2x0z centerOfSp
+            ) where
             
-        mdvMod = fitMottionDataToZmp mdv targetZmp 0 iterations
+        mdvMod = fitMottionDataToZmp mdv targetZmp 0.1 iterations
 
 
 {-

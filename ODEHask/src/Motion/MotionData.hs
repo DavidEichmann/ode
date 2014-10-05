@@ -88,7 +88,7 @@ frameBoundingBox f = treeFoldNR minMax initMinMax f where
 
 scaleAndTranslate :: MotionData -> MotionData
 scaleAndTranslate md = mdTS where
-    bb = frameBoundingBox $ (frames md)!0
+    bb = frameBoundingBox $ (frames md)!1
     bbDiag = uncurry (+) bb
     bbC@(V3 _ cHeight _) = bbDiag / 2
     targetC = (V3 0 (cHeight + boneRadius) 0)

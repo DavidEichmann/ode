@@ -5,12 +5,13 @@ module Simulation (
     startSim,
     step,
     getSimSkel,
-    getSimJoints
+    getSimJoints,
+    setAMotorsToMDVJointVels
 ) where
 
 import FFI
 import Util
-import Linear hiding (slerp, _j,trace)
+import Linear hiding (slerp,_i,_j,trace)
 import Constants
 import Motion
 import Data.Maybe
@@ -40,10 +41,10 @@ data Sim = Sim {
 type FeedBackController = Sim -> Double -> IO (Sim)
 
 startSim :: MotionDataVars -> IO Sim
-startSim md@MotionDataVars{_baseSkeletonMDV=skel,_jN=jN,_bN=bN,_js=js,_bs=bs,_jb=jb,_xj=xj,_xb=xb,_rb=rb,_pj=pj,_cjs=cjs,_pb=pb,_jHasParent=jHasParent,_jHasChild=jHasChild} = do
+startSim md@MotionDataVars{_xj=xjMotion,_xb=xbMotion,_rb=rbMotion,_rj=rjMotion,_baseSkeletonMDV=skel@MotionDataVars{_footBs=((leftFoot,leftToe),(rightFoot,rightToe)),_j=j,_m=m,_i=i,_jN=jN,_bN=bN,_js=js,_bs=bs,_jb=jb,_xj=xj,_xb=xb,_xsb=xsb,_xeb=xeb,_rb=rb,_pj=pj,_cjs=cjs,_pb=pb,_jHasParent=jHasParent,_jHasChild=jHasChild}} = do
     newWid <- initODE defaultTimeStep
     bodies <- realizeBodies
-    aMotors <- realizeAMotors bodies
+    aMotors <- realizeJoints bodies
     moveToFrame0 bodies
 --    putStrLn $ "ode world id = " ++ (show $ newWid)
     return Sim {
@@ -59,95 +60,106 @@ startSim md@MotionDataVars{_baseSkeletonMDV=skel,_jN=jN,_bN=bN,_js=js,_bs=bs,_jb
         }
 
     where
-        realizeAMotors :: [(BoneIx, DBodyID)] -> IO [(BoneIx, JointIx, BoneIx, DBodyID, DBodyID, DJointID)]
-        realizeAMotors boneBodys = sequence $ concat $ map createAMotorForJoint js where
-            createAMotorForJoint :: JointIx -> [IO (BoneIx, JointIx, BoneIx, DBodyID, DBodyID, DJointID)]
-            createAMotorForJoint jI
-                | not (jHasParent jI && jHasChild jI) = []
-                | otherwise = map createAMotorForChild cbIs where
+        realizeJoints :: [(BoneIx, DBodyID)] -> IO [(BoneIx, JointIx, BoneIx, DBodyID, DBodyID, DJointID)]
+        realizeJoints boneBodys = sequence $ concat $ map realizeJoint js where
+            realizeJoint :: JointIx -> [IO (BoneIx, JointIx, BoneIx, DBodyID, DBodyID, DJointID)]
+            realizeJoint jI
+                | not (jHasChild jI) = []
+                | otherwise = map realizeJointForChild cbIs where
                     -- parent bone index
                     pbI = jb jI
                     -- child bone indexes
                     cbIs = map jb (cjs jI)
                     
-                    createAMotorForChild cbI = do
+                    realizeJointForChild cbI = do
                         let
                             dParentBody = (fromJust $ lookup pbI boneBodys)
                             dChildBody = (fromJust $ lookup cbI boneBodys)
+                        
+                        -- Ball joint (unless root then fixed)
+                        if jHasParent jI
+                            then
+                                createBallJoint dParentBody dChildBody (xj f0I jI)
+                            else
+                                createFixedJoint dParentBody dChildBody
+                        
+                        -- A Motor
                         motorID <- createAMotor dChildBody dParentBody
+                        
                         return (pbI, jI, cbI, dParentBody, dChildBody, motorID)
                                 
 
         
-        realizeBodies :: IO [(BodyIx,DBodyID)]
-        realizeBodies = s
-            bodyTree <- treeMapM createBody skel
-            treeMapM_ view (treeZipWith createJoint skel bodyTree)
-            -- Note that MotionDataVars does not include a root bone, so its index is added here as (B -1) 
-            return $ zip ((B (-1)) : bs) (flatten bodyTree)
+        realizeBodies :: IO [(BoneIx,DBodyID)]
+        realizeBodies = mapM createBody js
 
         createBody :: JointIx -> IO (BoneIx, DBodyID)
-        createBody jf
+        createBody jI@(J ji)
             -- If not the root
-            | hasParent jf = do
+            | jHasParent jI = do
                 let
-                    (m, mIM) = massInertiaM jf
-                    footStart@(V3 _ fy1 fz1) = getPosStart (if isToeJoint jf then justParent jf else jf)
-                    footEnd@  (V3 _ fy2 fz2)  = getPosEnd (if isToeJoint jf then jf else fromJust (child0 jf))
-                    (V3 _ _ boxZSize) = fmap abs ((getPosEnd jf) - (getPosStart jf))
-                    boxYSize = let (V3 _ comY _) = getPosCom jf in 2 * (abs $ comY - fy2)
+                    mass = m bI
+                    mIM = i bI
+                    leftFootBs = [leftFoot,leftToe]
+                    footBs = leftFootBs ++ [rightFoot,rightToe]
+                    footStart@(V3 _ fy1 fz1) = (xsb fI (if elem bI leftFootBs then leftFoot else rightFoot)) + (V3 0 0 (-0.05))
+                    footEnd@  (V3 _ fy2 fz2)  = xeb fI (if elem bI leftFootBs then leftToe else rightToe)
+                    (V3 _ _ boxZSize) = (fmap abs ((xeb fI bI) - (xsb fI bI))) + (V3 0 0 0.05)
+                    boxYSize = 2 * (abs $ (vy (xb fI bI)) - fy2)
                     
-                (
+                bid <- (
                     
-                    if isFootJoint jf
+                    if elem bI footBs
                         then
                             -- Feet get box body
                             appendFootBody
                                  -- position CoM
-                                (getPosCom jf)
+                                (xb fI bI)
                                 -- global quaternion rotation
-                                (getRot $ justParent jf)
+                                (rb fI bI)
                                 -- dimensions
                                 (V3 footWidth boxYSize boxZSize)
                                 -- mass and Inertia matrix (about CoM)
-                                m mIM
+                                mass mIM
                         else
                             -- other bones get capsule body
                             appendCapsuleBody
                                  -- position CoM
-                                (getPosCom jf)
+                                (xb fI bI)
                                 -- local rotation for the bone from Z aligned to offset orientation
-                                (zToDirQuat (offset $- jf))
+                                (zToDirQuat (offset $ j fi ji))
                                 -- global quaternion rotation
-                                (getRot $ justParent jf)
+                                (rb fI bI)
                                 -- dimensions, mass
-                                boneRadius (norm (offset $- jf)) m
+                                boneRadius (norm (offset $ j fi ji)) mass
                                 -- Inertia matrix (about CoM)
                                 mIM
                     )
-            | otherwise     =
-                -- root bone gets a massless capsule body
-                appendCapsuleBody
+                return (bI, bid)
+            | otherwise     = do 
+                -- root bone gets a massless capsule (actually a sphere) body
+                bid <- appendCapsuleBody
                      -- position CoM
-                    (getPosCom jf)
+                    (xj fI jI)
                     -- local and global rotation
                     identity identity
                     -- dimensions, mass
-                    boneRadius 0 0.000000001
+                    boneRadius 0.0000001 0.0000001
                     -- Inertia matrix (about CoM)
                     (eye3 !!* 0.000000001)
+                return (jb jI, bid)
+            where
+                fi = 0
+                fI = F fi
+                bI = jb jI
 
         f0I = F 0
         moveToFrame0 :: [(BoneIx, DBodyID)] -> IO ()
         moveToFrame0 boneBodies = mapM_ moveBody boneBodies
 
         moveBody :: (BoneIx, DBodyID) -> IO ()
-        moveBody (B (-1), body) = setBodyPosRot body (xj f0I (J 0)) identity
-        moveBody (bI, body)     = setBodyPosRot body (xb f0I bI)    (rb f0I bI)
-
-        createJoint jf bf
-            | hasParent jf && hasParent (fromJust (parent jf))  = createBallJoint (view $ fromJust $ parent bf) (view bf) (getPosStart jf)
-            | otherwise     = return () -- mapM_ (createFixedJoint (view bf)) (map view (getChildFs bf))
+        moveBody (B (-1), body) = setBodyPosRot body (xjMotion f0I (J 0)) (rjMotion f0I (J 0))
+        moveBody (bI, body)     = setBodyPosRot body (xbMotion f0I bI)    (rbMotion f0I bI)
 
 
 getSimJoints :: Sim -> IO (Int -> Joint)
@@ -167,7 +179,7 @@ getSimJoints sim = do
         rotGs = map snd posRotGs
         joints :: Int -> Joint
         joints 0 = (j 0 0) {
-                rotationL = rotGs !! 0,
+                rotationL = rotGs !! 1,
                 offset = posGs !! 0
             }
         joints ji = let origJoint = (j 0 ji) in
@@ -194,9 +206,9 @@ step isim idt targetCoP yGRF = step' isim{simTimeExtra = 0} (idt + (simTimeExtra
         | dt >= ddt     = do
                             stepODE w targetCoP yGRF
                             
-                            (feedBackController sim) sim ddt
+                            sim' <- (feedBackController sim) sim ddt
 
-                            simF <- step' sim{
+                            simF <- step' sim'{
                                 simTimeExtra  = 0,
                                 simTime       = (simTime sim) + ddt
                             } (dt - ddt)
@@ -205,12 +217,12 @@ step isim idt targetCoP yGRF = step' isim{simTimeExtra = 0} (idt + (simTimeExtra
 
 
 highGainsController :: FeedBackController
-highGainsController sim@Sim{targetMotion=tm} dt =  matchMotionDataVars sim tm dt
+highGainsController sim@Sim{targetMotion=tm} dt =  setAMotorsToMDVJointVels sim tm dt
 
 highGainsFlatFeetController :: FeedBackController
 highGainsFlatFeetController sim@Sim{targetMotion=tm,odeMotors=motors} dt = do
         -- match the motion data as usual
-        matchMotionDataVars sim tm dt
+        setAMotorsToMDVJointVels sim tm dt
         -- overwrite changes to the ankle (make the foot flat)
         mapM_ flattenFeet motors
         return sim
@@ -225,8 +237,8 @@ highGainsFlatFeetController sim@Sim{targetMotion=tm,odeMotors=motors} dt = do
 
 -- Sim:     the simulation to match against
 -- Double:  the time delta in which to match the data (as the siumlation is only changed via manipulating velocities)
-matchMotionDataVars :: Sim -> MotionDataVars -> Double -> IO (Sim)
-matchMotionDataVars sim@Sim{odeBodies=bodies,odeMotors=motors} target dt = do
+setAMotorsToMDVJointVels :: Sim -> MotionDataVars -> Double -> IO (Sim)
+setAMotorsToMDVJointVels sim@Sim{odeBodies=bodies,odeMotors=motors} target dt = do
     (_, rootSimQuat) <- getBodyPosRot (fromJust $ lookup (B (-1)) bodies)
     -- calculate joint angular velocities in global coordinates relative to the simulated root orientation and apply to AMotors
     let

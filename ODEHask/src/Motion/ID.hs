@@ -81,7 +81,7 @@ vm1 `mxm` vm2 = (m1 `cross` m2) ++ ((m1 `cross` m2o) ^+^ (m1o `cross` m2)) where
 inverseDynamics :: MotionDataVars -> FrameIx -> (JointIx -> Vec3, JointIx -> Vec3)
 inverseDynamics mdv fI = fst $ inverseDynamicsInternals True Constants.gravityAcc mdv fI
 
---inverseDynamicsInternals :: MotionDataVars -> FrameIx -> ((JointIx -> Vec3), a)
+--inverseDynamicsInternals :: Bool -> MotionDataVars -> FrameIx -> ((JointIx -> Vec3), a)
 inverseDynamicsInternals useGRF gravityAcc md fI@(F fi) = -- trace (L.intercalate "\n" $ fmap show [("comGRF",show comGRF),("fc'",show fc'),("contactPoints",show contactPoints)])
  (
     
@@ -161,7 +161,11 @@ inverseDynamicsInternals useGRF gravityAcc md fI@(F fi) = -- trace (L.intercalat
                 (mT *^ l'T)
     
     -- Net GRF = Net force - Gravity force
-    comGRF = comFnet ^-^ (fromList [0,0,0, 0,-(mT * gravityAcc),0])
+    comGRF =
+        -- ensure the GRF is in the positive y direction (else the feet would be "sticking to the floor" and the CoM would accelerate fater than gravity)
+        (\f -> if f!4 < 0 then trace "Negative GRF!!!" (f//[(4,0)]) else f)
+        -- Net GRF = Net force - Gravity force
+        (comFnet ^-^ (fromList [0,0,0, 0,-(mT * gravityAcc),0]))
     
     -- Distribute forces to contact points
     
@@ -190,9 +194,13 @@ inverseDynamicsInternals useGRF gravityAcc md fI@(F fi) = -- trace (L.intercalat
     --    using psudo-inverse instead of LP (simplex/constrained lp/GLPK) method
     fc' :: P
     fc' = psudoInverseMult lpMatrix comGRF
-    --    extract the forces, adding back in the x and y torques = 0
+    --    extract the forces
     fc :: [P]
-    fc = let zeroV1 = singleton 0 in fmap (\f -> zeroV1 ++ (fromList $ L.take 1 f) ++ zeroV1 ++ (fromList $ L.drop 1 f)) (chunksOf 4 $ toList fc')
+    fc = let zeroV1 = singleton 0 in
+            -- clip y forces to be >= 0
+            --fmap (\f -> if f!4 < 0 then f//[(4,0)] else f) $
+            -- add back in the x and y torques = 0
+            fmap (\f -> zeroV1 ++ (fromList $ L.take 1 f) ++ zeroV1 ++ (fromList $ L.drop 1 f)) (chunksOf 4 $ toList fc')
     -- convert to global frame
     f0c :: [P]
     f0c = fmap (\(c, f) -> let oxc = axbF ((-1) *^ c) identity in oxc !* f) (L.zip contactPoints fc)

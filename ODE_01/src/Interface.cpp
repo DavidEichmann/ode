@@ -160,7 +160,7 @@ dJointGroupID jointGroupid;
 dJointGroupID contactGroupid;
 vector<dContact> contacts;
 //vector<dJointID> contactJoints;
-dJointFeedback contactJointFeedbacks[200];
+dJointFeedback contactJointFeedbacks[400];
 //vector<dBodyID> contactBodies;
 Vec3 cop;
 double * buf = new double[200]; // pos + rot
@@ -422,8 +422,6 @@ void enableAMotorVeclocityControl(dJointID jid, bool enable=true) {
 // and the other 2 to constrain angular velocity to the angular velocity axis
 dJointID createAMotor(dBodyID a, dBodyID b) {
 
-	return 0;
-
 	dJointID jid = dJointCreateAMotor(wid, jointGroupid);
 	dJointAttach(jid, a, b);
 	dJointSetAMotorMode(jid, dAMotorUser);
@@ -523,9 +521,9 @@ void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 //			dc.surface.mode = dContactRolling;
 			dc.surface.soft_erp = contactERP;
 			dc.surface.soft_cfm = contactCFM;
-			dc.surface.mu = dInfinity;
-			dc.surface.rhoN = 100000000000;
-			dc.surface.bounce = 0;	// (0..1) 0 means the surfaces are not bouncy at all, 1 is maximum bouncyness
+			dc.surface.mu = 10000;
+			//dc.surface.rhoN = 100000000000;
+			//dc.surface.bounce = 0;	// (0..1) 0 means the surfaces are not bouncy at all, 1 is maximum bouncyness
 			dc.geom = contact[i];
 
 			dJointID cj = dJointCreateContact(wid, contactGroupid, &dc);
@@ -640,9 +638,16 @@ void doCollisions() {
 
 }
 void step(dWorldID, double zmpX, double zmpZ, double fy) {
+
 	stepArgs[0] = zmpX;
 	stepArgs[1] = zmpZ;
 	stepArgs[2] = fy;
+
+	// clear Feedback vector
+//	contactJoints.clear();
+	// clear vectors to store contact points
+	contacts.clear();
+//	contactBodies.clear();
 
 	doCollisions();
 
@@ -658,12 +663,6 @@ void step(dWorldID, double zmpX, double zmpZ, double fy) {
 	cop /= grfY;
 	// Remove all joints in the contact joint group.
 	dJointGroupEmpty(contactGroupid);
-
-	// clear Feedback vector
-//	contactJoints.clear();
-	// clear vectors to store contact points
-	contacts.clear();
-//	contactBodies.clear();
 }
 
 

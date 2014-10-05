@@ -1,5 +1,6 @@
 module Motion.MotionDataVars where
 
+import Data.Function
 import Data.Array
 import Data.List
 import Data.Functor
@@ -12,6 +13,8 @@ import Constants
 import Data.TreeF as T
 import Motion.Joint
 import Motion.MotionData
+
+import Debug.Trace
 
 
 {-
@@ -34,6 +37,7 @@ type FJIndexedFrames = Int -> Int -> Joint
 newtype FrameIx = F Int deriving (Show,Eq)
 newtype JointIx = J Int deriving (Show,Eq)
 newtype BoneIx = B Int deriving (Show,Eq)
+unF (F i) = i
 unB (B i) = i
 unJ (J i) = i
 
@@ -46,6 +50,8 @@ data MotionDataVars = MotionDataVars {
     _jBase  :: JointIx -> Joint,
     __baseSkeleton :: Frame,
     _baseSkeletonMDV :: MotionDataVars,
+    _impulseType :: ImpulseType,
+    _impulse :: FrameIx -> Maybe (Vec3, Vec3),      -- (point of impact, force) 
 
     -- derived data
     _g      :: Double,
@@ -135,7 +141,7 @@ seqJMDV mdv@MotionDataVars{
         seqFJ fn = seq $ foldl1' seq [fn fi ji | F fi <- fs, J ji <- js]
 
 getMotionDataVariablesFromMotionData :: MotionData -> MotionDataVars
-getMotionDataVariablesFromMotionData md = getMotionDataVariables (frameTime md) jRaw (baseSkeleton md) fN where
+getMotionDataVariablesFromMotionData md = getMotionDataVariables (frameTime md) jRaw (baseSkeleton md) fN None where
 
     fN = arraySize $ frames md
     jN = length $ flatten $ baseSkeleton md
@@ -146,35 +152,44 @@ getMotionDataVariablesFromMotionData md = getMotionDataVariables (frameTime md) 
         bndF = (0,fN-1)
         bndJ = (0,jN-1)
 
-
 modifyMotionDataVars :: MotionDataVars -> [((Int,Int), Joint)] -> MotionDataVars
 modifyMotionDataVars (mdv@MotionDataVars{_fN=fN}) = modifyMotionDataVarsFN mdv fN
 
 modifyMotionDataVarsFN :: MotionDataVars -> Int -> [((Int,Int), Joint)] -> MotionDataVars
-modifyMotionDataVarsFN (MotionDataVars{_dt=dt,_jN=jN,_baseSkeleton=bSkel,_jRaw=jRaw}) newfN jUpdates = getMotionDataVariables dt (jRaw // jUpdates') bSkel newfN where
+modifyMotionDataVarsFN (MotionDataVars{_dt=dt,_jN=jN,__baseSkeleton=bSkel,_jRaw=jRaw,_impulseType=it}) newfN jUpdates = getMotionDataVariables dt (jRaw // jUpdates') bSkel newfN it where
     (_,uBoundFRaw) = bounds jRaw
     bndF = (0,uBoundFRaw)
     bndJ = (0,jN-1)
     jUpdatesPerFrameAssocs = accumArray (flip (:)) [] bndF (map (\((f,j),v) -> (f,(j,v))) jUpdates)
     jUpdates' = [ (fi, (jRaw!fi) // (jUpdatesPerFrameAssocs!fi)) | fi <- range bndF, jUpdatesPerFrameAssocs!fi /= [] ]
+    
+setImpulseType :: ImpulseType -> MotionDataVars -> MotionDataVars
+setImpulseType newIT (MotionDataVars{_fN=fN,_dt=dt,_jN=jN,__baseSkeleton=bSkel,_jRaw=jRaw,_impulseType=it}) = getMotionDataVariables dt jRaw bSkel fN newIT
 
 -- copy specific frames from one motion to the other
 copyFrames :: [Int] -> MotionDataVars -> MotionDataVars -> MotionDataVars
 copyFrames frames from@MotionDataVars{_js=js,_j=jFrom} to = modifyMotionDataVars to [((fi,ji), jFrom fi ji) | fi <- frames, (J ji) <- js]
 
+setFrame :: FrameIx -> (Int -> Joint) -> MotionDataVars -> MotionDataVars
+setFrame (F fi) newJF mdv@MotionDataVars{_js=js} = modifyMotionDataVars mdv [((fi,ji), newJF ji) | (J ji) <- js]
 
 --type JDataAndChanges = (Array (Int,Int) Joint, )
 
+
+data ImpulseType = None | AutoPunch Vec3
+
 -- arguments: frameTimeDelta  (motion data by FrameIx and JointIx) (base skeletion)
 -- Note that Joint index is from 0 and coresponds to flettening the base skeletoin
-getMotionDataVariables :: Double -> Array Int (Array Int Joint) -> Frame -> Int -> MotionDataVars
-getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
+getMotionDataVariables :: Double -> Array Int (Array Int Joint) -> Frame -> Int -> ImpulseType -> MotionDataVars
+getMotionDataVariables dt jRaw bskel fN impulseType = MotionDataVars {
     _dt     = dt,
     _jRaw   = jRaw,
     _j      = j,
     _jBase  = jBase,
     __baseSkeleton = bskel,
-    _baseSkeletonMDV = bSkelMDV
+    _baseSkeletonMDV = bSkelMDV,
+    _impulseType = impulseType,
+    _impulse = impulse,
     
     _g      = g,
     _fN     = fN,
@@ -534,18 +549,29 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
         hT'_ fI = sum (map hComp bs) where
             hComp bI = ((l fI bI) `cross` (p fI bI)) + ((xb fI bI) `cross` (p' fI bI)) + (h' fI bI) + ((w fI bI) `cross` (h fI bI))
 
+    impulse = impulseByType impulseType
+    impulseByType None _                    = Nothing
+    impulseByType (AutoPunch impulse) fI    = lookup fI [(impulseFI, (impulsePoint, impulse))] where
+                -- Find the frame with one of the hands furthest forward in the +Z direction, and set an impulse of a given value at the end point of that hand bone 
+                (impulseFI, impulsePoint) = head $ sortBy ((flip compare) `on` (vz . snd)) [(fI, maxZ (xeb fI lHand) (xeb fI rHand)) | fI <- fs]
+                maxZ v1@(V3 _ _ z1) v2@(V3 _ _ z2)
+                    | z1 > z2   = v1
+                    | otherwise = v2
+                rHand = bByName "RightWrist"
+                lHand = bByName "LeftWrist"
+
     -- ZMP
     -- assume that ZMP is on the floor (y component is 0)
     -- to preserve right-handedness we must swap (ZMP paper axis -> my code axis): z -> y, y -> x, x -> y)
     zmp :: FrameIx -> Vec3
     zmp = memoizeF zmp_ where
-        zmp_ fI = V3
+        zmp_ fI = if impulseY /= 0 then error "non-horizontal impulses are not supported" else V3
             -- definition from "Online Generation of Humanoid Walking Motion based on a Fast Generation Method of Motion Pattern that Follows Desired ZMP"
-            ((sum $ map (\bI -> ((m bI) * (vy (xb fI bI)) * (vx (l' fI bI)) - ((m bI) * (vy (l' fI bI) + g) * (vx (xb fI bI))) + (vz (h fI bI))) ) bs) /
-                (negate $ sum $ map (\bI -> (m bI) * ((vy (l' fI bI)) + g)) bs))
+            (((impulsePointY * impulseX / dt) + (sum $ map (\bI -> ((m bI) * (vy (xb fI bI)) * (vx (l' fI bI)) - ((m bI) * (vy (l' fI bI) + g) * (vx (xb fI bI))) + (vz (h fI bI))) ) bs)) /
+                denom)
             0
-            ((sum $ map (\bI -> ((m bI) * (vy (xb fI bI)) * (vz (l' fI bI)) - ((m bI) * (vy (l' fI bI) + g) * (vz (xb fI bI))) + (vx (h fI bI))) ) bs) /
-                (negate $ sum $ map (\bI -> (m bI) * ((vy (l' fI bI)) + g)) bs))
+            (((impulsePointY * impulseZ / dt) + (sum $ map (\bI -> ((m bI) * (vy (xb fI bI)) * (vz (l' fI bI)) - ((m bI) * (vy (l' fI bI) + g) * (vz (xb fI bI))) + (vx (h fI bI))) ) bs)) /
+                denom)
 --            -- definition from http://www.mate.tue.nl/mate/pdfs/10796.pdf
 --            (((mT * g * comX) + h'Z) / ((mT * g) + p'Y))
 --            0
@@ -554,6 +580,9 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
 --                (V3 comX _ comZ) = com fI
 --                (V3 _ p'Y _) = pT' fI
 --                (V3 h'X _ h'Z) = hT' fI
+            where
+                (V3 _ impulsePointY _, V3 impulseX impulseY impulseZ) = fromMaybe (zero,zero) (impulse fI)
+                denom = negate $ sum $ map (\bI -> (m bI) * ((vy (l' fI bI)) + g)) bs
 
     isFootBone :: BoneIx -> Bool
     isFootBone bI = (bName bI) `elem` footJoints where
@@ -648,7 +677,7 @@ getMotionDataVariables dt jRaw bskel fN = MotionDataVars {
     soleCorners :: FrameIx -> ([Vec3],[Vec3])
     soleCorners fI = (lf ++ lt, rf ++ rt) where
         ((lf,lt),(rf,rt)) = footBCorners fI
-
+        
     -- support Polygon (must be touching the ground else Nothing)
     sp :: FrameIx -> [Vec2]
     sp fI

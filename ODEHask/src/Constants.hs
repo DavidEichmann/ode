@@ -17,24 +17,21 @@ capturedDataScale = 0.01    -- captured data is in   cm = 0.01 m
 --
 
 defaultTimeStep :: Double
-defaultTimeStep = 1/1000
+defaultTimeStep = 1/500
 
 -- physics
 
 boneDensity :: Double
-boneDensity = 1750
+boneDensity = 40500
 
 boneRadius :: Double
-boneRadius = 0.1
+boneRadius = 0.025
 
 gravityAcc :: Double
 gravityAcc = 9.8
 
 footWidth :: Double
-footWidth = 0.2
-
-boneRadiusDisplay :: Double
-boneRadiusDisplay = boneRadius * 0.25
+footWidth = 0.1
 
 --
 -- Model
@@ -42,7 +39,7 @@ boneRadiusDisplay = boneRadius * 0.25
 
 -- distance from the floor counting as contact for the support pollygon
 floorContactThreshold :: Double
-floorContactThreshold = 0.001 * 10 -- 0.001 = 1 mm
+floorContactThreshold = 0.001 * 20 -- 0.001 = 1 mm
 
 -- maximum velocity of the foot during floor contact
 floorContactVelocityThreshold :: Double
@@ -59,18 +56,22 @@ stepBlendTime = 0.5
 -- This is the clearance between floor and foot that is considered large enough to not be changed by the
 -- preprocessor.
 safeFloorClearance :: Double
-safeFloorClearance = 0.3
+safeFloorClearance = 0.05
 
 -- Floor clearance is exaggurated using this exponent. 1 is no exaduration, and 0 is descrete change from floor contact to safeFloorClearance
 floorClearanceExponent :: Double
 floorClearanceExponent = 0.4
+
+-- break down full ZMP correction into windows of so many frames
+frameWindowSize :: Int
+frameWindowSize = 300
 
 --
 -- Visualization
 --
 
 playbackSpeed :: Double
-playbackSpeed = 1/10
+playbackSpeed = 1
 
 frameRate :: Double
 frameRate = 60
@@ -86,11 +87,14 @@ defaultColorAlpha = 1
 --
 
 defaultfeedBackControlUpdateInterval :: Double
-defaultfeedBackControlUpdateInterval = 0
+defaultfeedBackControlUpdateInterval = 0.5
+
+defaultfeedBackControlZMPCorrectionItterations :: Int
+defaultfeedBackControlZMPCorrectionItterations = 3
 
 -- time it takes to blend into current motion
-blendTime :: Double
-blendTime = 0.1
+--blendTime :: Double
+--blendTime = 0.1
 
 
 
