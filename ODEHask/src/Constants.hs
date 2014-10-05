@@ -64,7 +64,7 @@ floorClearanceExponent = 0.4
 
 -- break down full ZMP correction into windows of so many frames
 frameWindowSize :: Int
-frameWindowSize = 300
+frameWindowSize = 3000000000000
 
 --
 -- Visualization
@@ -88,6 +88,9 @@ defaultColorAlpha = 1
 
 defaultfeedBackControlUpdateInterval :: Double
 defaultfeedBackControlUpdateInterval = 0.5
+
+defaultfeedBackControlCorrectionInterval :: Double
+defaultfeedBackControlCorrectionInterval = defaultfeedBackControlUpdateInterval / 2
 
 defaultfeedBackControlZMPCorrectionItterations :: Int
 defaultfeedBackControlZMPCorrectionItterations = 3

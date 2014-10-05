@@ -51,7 +51,7 @@ data MotionDataVars = MotionDataVars {
     __baseSkeleton :: Frame,
     _baseSkeletonMDV :: MotionDataVars,
     _impulseType :: ImpulseType,
-    _impulse :: FrameIx -> Maybe (Vec3, Vec3),      -- (point of impact, force) 
+    _impulse :: FrameIx -> Maybe (Vec3, Vec3, BoneIx),      -- (point of impact, impulse, Bone) 
 
     -- derived data
     _g      :: Double,
@@ -141,7 +141,7 @@ seqJMDV mdv@MotionDataVars{
         seqFJ fn = seq $ foldl1' seq [fn fi ji | F fi <- fs, J ji <- js]
 
 getMotionDataVariablesFromMotionData :: MotionData -> MotionDataVars
-getMotionDataVariablesFromMotionData md = getMotionDataVariables (frameTime md) jRaw (baseSkeleton md) fN None where
+getMotionDataVariablesFromMotionData md = getMotionDataVariables (frameTime md) jRaw (baseSkeleton md) fN None Nothing where
 
     fN = arraySize $ frames md
     jN = length $ flatten $ baseSkeleton md
@@ -156,7 +156,7 @@ modifyMotionDataVars :: MotionDataVars -> [((Int,Int), Joint)] -> MotionDataVars
 modifyMotionDataVars (mdv@MotionDataVars{_fN=fN}) = modifyMotionDataVarsFN mdv fN
 
 modifyMotionDataVarsFN :: MotionDataVars -> Int -> [((Int,Int), Joint)] -> MotionDataVars
-modifyMotionDataVarsFN (MotionDataVars{_dt=dt,_jN=jN,__baseSkeleton=bSkel,_jRaw=jRaw,_impulseType=it}) newfN jUpdates = getMotionDataVariables dt (jRaw // jUpdates') bSkel newfN it where
+modifyMotionDataVarsFN (mdv@MotionDataVars{_dt=dt,_jN=jN,__baseSkeleton=bSkel,_jRaw=jRaw,_impulseType=it}) newfN jUpdates = getMotionDataVariables dt (jRaw // jUpdates') bSkel newfN it (Just mdv) where
     (_,uBoundFRaw) = bounds jRaw
     bndF = (0,uBoundFRaw)
     bndJ = (0,jN-1)
@@ -164,7 +164,7 @@ modifyMotionDataVarsFN (MotionDataVars{_dt=dt,_jN=jN,__baseSkeleton=bSkel,_jRaw=
     jUpdates' = [ (fi, (jRaw!fi) // (jUpdatesPerFrameAssocs!fi)) | fi <- range bndF, jUpdatesPerFrameAssocs!fi /= [] ]
     
 setImpulseType :: ImpulseType -> MotionDataVars -> MotionDataVars
-setImpulseType newIT (MotionDataVars{_fN=fN,_dt=dt,_jN=jN,__baseSkeleton=bSkel,_jRaw=jRaw,_impulseType=it}) = getMotionDataVariables dt jRaw bSkel fN newIT
+setImpulseType newIT (mdv@MotionDataVars{_fN=fN,_dt=dt,_jN=jN,__baseSkeleton=bSkel,_jRaw=jRaw,_impulseType=it}) = getMotionDataVariables dt jRaw bSkel fN newIT (Just mdv)
 
 -- copy specific frames from one motion to the other
 copyFrames :: [Int] -> MotionDataVars -> MotionDataVars -> MotionDataVars
@@ -180,8 +180,8 @@ data ImpulseType = None | AutoPunch Vec3
 
 -- arguments: frameTimeDelta  (motion data by FrameIx and JointIx) (base skeletion)
 -- Note that Joint index is from 0 and coresponds to flettening the base skeletoin
-getMotionDataVariables :: Double -> Array Int (Array Int Joint) -> Frame -> Int -> ImpulseType -> MotionDataVars
-getMotionDataVariables dt jRaw bskel fN impulseType = MotionDataVars {
+getMotionDataVariables :: Double -> Array Int (Array Int Joint) -> Frame -> Int -> ImpulseType -> Maybe MotionDataVars -> MotionDataVars
+getMotionDataVariables dt jRaw bskel fN impulseType maybeQuickCopy = MotionDataVars {
     _dt     = dt,
     _jRaw   = jRaw,
     _j      = j,
@@ -200,15 +200,15 @@ getMotionDataVariables dt jRaw bskel fN impulseType = MotionDataVars {
     _fs     = fs,
     _bj     = bj,
     _jb     = jb,
-    _pj     = pj,
-    _jHasParent = jHasParent,
-    _pb     = pb,
-    _jHasChild = jHasChild,
-    _cjs    = cjs,
-    _cj     = cj,
+    _pj     = maybe pj _pj maybeQuickCopy,
+    _jHasParent = maybe jHasParent _jHasParent maybeQuickCopy,
+    _pb     = maybe pb _pb maybeQuickCopy,
+    _jHasChild = maybe jHasChild _jHasChild maybeQuickCopy,
+    _cjs    = maybe cjs _cjs maybeQuickCopy,
+    _cj     = maybe cj _cj maybeQuickCopy,
     _d      = d,
-    _m      = m,
-    _i      = i,
+    _m      = maybe m _m maybeQuickCopy,
+    _i      = maybe i _i maybeQuickCopy,
     _rjL    = rjL,
     _rj     = rj,
     _xj     = xj,
@@ -551,12 +551,12 @@ getMotionDataVariables dt jRaw bskel fN impulseType = MotionDataVars {
 
     impulse = impulseByType impulseType
     impulseByType None _                    = Nothing
-    impulseByType (AutoPunch impulse) fI    = lookup fI [(impulseFI, (impulsePoint, impulse))] where
+    impulseByType (AutoPunch impulse) fI    = lookup fI [(impulseFI, (impulsePoint, impulse, impactBoneI))] where
                 -- Find the frame with one of the hands furthest forward in the +Z direction, and set an impulse of a given value at the end point of that hand bone 
-                (impulseFI, impulsePoint) = head $ sortBy ((flip compare) `on` (vz . snd)) [(fI, maxZ (xeb fI lHand) (xeb fI rHand)) | fI <- fs]
-                maxZ v1@(V3 _ _ z1) v2@(V3 _ _ z2)
-                    | z1 > z2   = v1
-                    | otherwise = v2
+                (impulseFI, impulsePoint, impactBoneI) = head $ sortBy ((flip compare) `on` (vz . (\(_,p,_)->p))) [(fI, point, boneI) | fI <- fs, let (point, boneI) = maxZ fI]
+                maxZ fI
+                    | vz (xeb fI lHand) < vz (xeb fI rHand)     = (xeb fI rHand, rHand)
+                    | otherwise                                 = (xeb fI lHand, lHand)
                 rHand = bByName "RightWrist"
                 lHand = bByName "LeftWrist"
 
@@ -581,7 +581,7 @@ getMotionDataVariables dt jRaw bskel fN impulseType = MotionDataVars {
 --                (V3 _ p'Y _) = pT' fI
 --                (V3 h'X _ h'Z) = hT' fI
             where
-                (V3 _ impulsePointY _, V3 impulseX impulseY impulseZ) = fromMaybe (zero,zero) (impulse fI)
+                (V3 _ impulsePointY _, V3 impulseX impulseY impulseZ,_) = fromMaybe (zero,zero,B (-1)) (impulse fI)
                 denom = negate $ sum $ map (\bI -> (m bI) * ((vy (l' fI bI)) + g)) bs
 
     isFootBone :: BoneIx -> Bool

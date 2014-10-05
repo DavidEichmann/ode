@@ -37,6 +37,7 @@ module FFI (
     setAMotorVelocity,
     addAMotorTorque,
     addBodyTorque,
+    addImpulse,
     createFixedJoint,
     stepODE
 ) where
@@ -234,6 +235,12 @@ foreign import ccall unsafe "ode.h dBodyAddTorque"
     dBodyAddTorque_c :: DBodyID -> CDouble -> CDouble -> CDouble -> IO ()
 addBodyTorque :: DBodyID -> Vec3 -> IO ()
 addBodyTorque body torque = ((apply body) >>> (applyVec3 torque)) dBodyAddTorque_c
+
+-- void addImpulse(dBodyID bid, double x, double y, double z, double ix, double iy, double iz)
+foreign import ccall unsafe "Interface.h addImpulse"
+    addImpulse_c :: DBodyID -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()
+addImpulse :: DBodyID -> Vec3 -> Vec3 -> IO ()
+addImpulse body impulse point = ((apply body) >>> (applyVec3 impulse) >>> (applyVec3 point)) addImpulse_c
 
 foreign import ccall unsafe "Interface.h createFixedJoint"
     createFixedJoint :: DBodyID -> DBodyID -> IO ()

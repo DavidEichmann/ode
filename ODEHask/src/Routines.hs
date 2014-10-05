@@ -228,7 +228,7 @@ simulateMainLoop targetMotion@MotionDataVars{_fs=fs,_pj=pj,_jBase=jBase,_dt=dtMD
                                                     (max 0 ((unF faI)-2))   -- use the previous frame to constrain the actual velocity andl allow the zmp correction to smooth out the sudden chance in velocity caused by the motion blend 
                                                     (min (fN-1) ((unF faI) + (ceiling (defaultfeedBackControlUpdateInterval / dtMDV))))
                                                     defaultfeedBackControlZMPCorrectionItterations
-                                                    (blendIntoMotionData simTime (defaultfeedBackControlUpdateInterval) jointsActual simUpdatedMDV))
+                                                    (blendIntoMotionData simTime (defaultfeedBackControlCorrectionInterval) jointsActual simUpdatedMDV))
                         else
                             currentTargetMotion
                     
@@ -281,6 +281,10 @@ simulateMainLoop targetMotion@MotionDataVars{_fs=fs,_pj=pj,_jBase=jBase,_dt=dtMD
                     --drawFrameIx (BlueA 0.5) aniOffset targetMotion' fI
                     drawPointC (GreenA 0.5) (targetZMP' fI) 0.02
                     mapM_ ((\p -> drawPointC (YellowA 1) p 0.01) . xz2x0z) floorCOntacts
+                    -- impulse
+                    {-maybe (return ()) (\(point,impact,_) do
+                            
+                        ) impulse fI-}
             sim'' <- step sim' dtSim zero 0
             return (sim'', io'')
         nSteps = round $ (fromIntegral fN * dtMDV) / dtSim
@@ -310,7 +314,7 @@ correctZMP startFI endFI iterations mdv@MotionDataVars{_fN=fN,_fs=fs,_dt=dt,_js=
                         sum poly ^/ (fromIntegral $ length poly)
             ) where
             
-        mdvMod = fitMottionDataToZmp mdv targetZmp 0.1 iterations
+        mdvMod = fitMottionDataToZmp mdv targetZmp 0 iterations
 
 
 {-

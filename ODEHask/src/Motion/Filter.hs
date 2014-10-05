@@ -104,11 +104,12 @@ fitMottionDataToZmpLooseInitVel = fitMottionDataToZmp' False False
 
 -- This will only change the single continuous range of frames equal to the range of the a given target ZMP array
 fitMottionDataToZmp' :: Bool -> Bool -> MotionDataVars -> Array Int Vec3 -> Double -> Int -> MotionDataVars
-fitMottionDataToZmp' constrainInitVel constrainFinalVel mdvOrig' zmpX dipHeight its = fitMottionDataToZmp' mdvOrig its where
+fitMottionDataToZmp' constrainInitVel constrainFinalVel mdvOrig' zmpX dipHeight its = fitMottionDataToZmp'' mdvOrig its where
     mdvOrig = feetIK mdvOrig' (dip dipHeight mdvOrig')
-    fitMottionDataToZmp' :: MotionDataVars -> Int -> MotionDataVars
-    fitMottionDataToZmp' mdv 0 = mdv
-    fitMottionDataToZmp' mdv itsI = finalModifiedMdv where
+    feetIKForMdvOrig = feetIK mdvOrig
+    fitMottionDataToZmp'' :: MotionDataVars -> Int -> MotionDataVars
+    fitMottionDataToZmp'' mdv 0 = mdv
+    fitMottionDataToZmp'' mdv itsI = finalModifiedMdv where
         MotionDataVars {
             _j       = j,
             _g       = g,
@@ -181,7 +182,7 @@ fitMottionDataToZmp' constrainInitVel constrainFinalVel mdvOrig' zmpX dipHeight 
         modifiedMdv@MotionDataVars{_zmp=zmpActualResult} = modifyMotionDataVars mdv shiftedFrames
 
         --modifyMotionDataVars :: MotionDataVars -> FJIndexedFrames -> MotionDataVars
-        finalModifiedMdv = fitMottionDataToZmp' (feetIK mdvOrig modifiedMdv) (itsI-1)
+        finalModifiedMdv = fitMottionDataToZmp'' (feetIKForMdvOrig modifiedMdv) (itsI-1)
 
 
 

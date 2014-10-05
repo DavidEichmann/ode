@@ -88,6 +88,7 @@ extern "C" {
 	void setAMotorVelocity(dJointID jid, double x, double y, double z);
 	void addAMotorTorque(dJointID jid, double x, double y, double z);
 	void createFixedJoint(dBodyID a, dBodyID b);
+	void addImpulse(dBodyID bid, double ix, double iy, double iz, double x, double y, double z);
 }
 
 

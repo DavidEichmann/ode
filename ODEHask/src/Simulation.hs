@@ -202,12 +202,26 @@ step isim idt targetCoP yGRF = step' isim{simTimeExtra = 0} (idt + (simTimeExtra
     w = wid isim
     -- dt  => time left to simulate
     -- ddt => time delta for each simulation step
-    step' sim dt
+    step' sim@Sim{odeBodies=odeBodies,targetMotion=(mdv@MotionDataVars{_dt=frameDt,_impulse=impulse})} dt
         | dt >= ddt     = do
+                            -- calculate impulse for this step, should be distributed over one MDV frame
+                            let (fI,_,_) = getFrameInterpVals mdv (simTime sim)
+                            maybe (return ()) (\(impPoint,frameImp,impBI) -> do
+                                    let
+                                        frameToStepImpulseRatio = ddt / frameDt
+                                        stepImpulse = frameToStepImpulseRatio *^ frameImp
+                                        
+                                    -- apply the impulse
+                                    addImpulse (fromJust $ lookup impBI odeBodies) impPoint stepImpulse
+                                ) (impulse fI)
+        
+                            -- step the world
                             stepODE w targetCoP yGRF
                             
+                            -- feed back control
                             sim' <- (feedBackController sim) sim ddt
 
+                            -- update the sim record and loop
                             simF <- step' sim'{
                                 simTimeExtra  = 0,
                                 simTime       = (simTime sim) + ddt

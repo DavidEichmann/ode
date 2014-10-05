@@ -521,7 +521,7 @@ void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 //			dc.surface.mode = dContactRolling;
 			dc.surface.soft_erp = contactERP;
 			dc.surface.soft_cfm = contactCFM;
-			dc.surface.mu = 10000;
+			dc.surface.mu = 100000000000;
 			//dc.surface.rhoN = 100000000000;
 			//dc.surface.bounce = 0;	// (0..1) 0 means the surfaces are not bouncy at all, 1 is maximum bouncyness
 			dc.geom = contact[i];
@@ -637,6 +637,13 @@ void doCollisions() {
 
 
 }
+
+void addImpulse(dBodyID bid, double ix, double iy, double iz, double x, double y, double z) {
+	dVector3 force;
+	dWorldImpulseToForce(wid, timeStep, ix,iy,iz, force);
+	dBodyAddForceAtPos(bid, force[0],force[1],force[2], x,y,z);
+}
+
 void step(dWorldID, double zmpX, double zmpZ, double fy) {
 
 	stepArgs[0] = zmpX;

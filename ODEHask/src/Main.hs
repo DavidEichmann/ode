@@ -22,6 +22,33 @@ import Math.Tau
 import Test.MyTest
 
 
+
+
+impulseType :: ImpulseType
+impulseType = AutoPunch (V3 0 0 500)
+
+
+mainLoop :: MainLoop
+mainLoop =
+--    viewAnimationLoopDefault
+--    viewFlatFeet
+    viewFlatFeetSim
+--    viewSim
+--    viewZmpCorrection
+
+    -- setting kc to the data's framerate (usually 60Hz) and keeping kp=0 the origional target motion
+    -- will be retreived.
+--    coMFeedBackLoopExperiment [73] [0]
+
+
+
+
+
+
+
+
+
+
 getArguments :: IO (Bool, Bool, Bool, String, Integer)
 getArguments = do
     ws <- getArgs
@@ -53,21 +80,9 @@ main' = do
             md <-  (if isRaw then id else fmap scaleAndTranslate) $ parseBVH file pp
             mainLoopOut dontDisplay md
 
-mainLoop :: MainLoop
-mainLoop =
---    viewAnimationLoopDefault
---    viewFlatFeet
-    viewFlatFeetSim
---    viewSim
---    viewZmpCorrection
-
-    -- setting kc to the data's framerate (usually 60Hz) and keeping kp=0 the origional target motion
-    -- will be retreived.
---    coMFeedBackLoopExperiment [73] [0]
-
 mainLoopOut :: Bool -> MotionData -> IO ()
 mainLoopOut dontDisplay md = do
-    let mdv = (setImpulseType (AutoPunch (V3 0 0 0)) $ getMotionDataVariablesFromMotionData md)
+    let mdv = (setImpulseType impulseType $ getMotionDataVariablesFromMotionData md)
     putStrLn $ "total mass: " ++ (show (_mT mdv))
     displayTIOs <- mainLoop mdv
 
