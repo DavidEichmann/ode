@@ -3,10 +3,14 @@
 
 #include <functional>
 #include <vector>
-#include <Ogre.h>
 #include <ode/ode.h>
 #include <Eigen/Core>
 #include <Eigen/Geometry>
+#include <iostream>
+
+#ifndef NOOGRE
+#include <Ogre.h>
+#endif
 
 using namespace std;
 using namespace Eigen;
@@ -25,6 +29,9 @@ inline double D2R(const double & x) {
 	return 0.0174532925 * x;
 }
 
+
+
+#ifndef NOOGRE
 inline Ogre::Vector3 ogreConv(Vector3d v) {
 	return Ogre::Vector3((float) v[0],(float) v[1],(float) v[2]);
 }
@@ -39,15 +46,16 @@ inline void dConv(Vector3d v, dVector3 out) {
 	}
 }
 
+inline Vec3 eigConv(Ogre::Vector3 v) {
+	return Vec3(v.x, v.y, v.z);
+}
+#endif
+
 inline void dConv(Quaterniond q, dQuaternion out) {
 	out[0] = (dReal) q.w();
 	out[1] = (dReal) q.x();
 	out[2] = (dReal) q.y();
 	out[3] = (dReal) q.z();
-}
-
-inline Vec3 eigConv(Ogre::Vector3 v) {
-	return Vec3(v.x, v.y, v.z);
 }
 
 inline Vec3 eigVec3(const dVector3 v) {

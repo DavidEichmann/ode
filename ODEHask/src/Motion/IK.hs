@@ -91,7 +91,7 @@ ankleIK md@MotionDataVars{_jBase=jBase,_xj=xj,_pj=pj,_bj=bj,_fN=fN,_fs=fs,_j=j,_
                     rotationLK2 = rotationL jointK
                     (rj2,xj2) = jMod rotationLH2 rotationLK2
 
-                    -- step 2   adjust knee/hip (rota aroun knee asxis) to be reach the correct distance (hipt to ankel)
+                    -- step 2   Extend
 
                     -- some vectors
                     haT  = aT  - (xj2 hjI)
@@ -101,26 +101,29 @@ ankleIK md@MotionDataVars{_jBase=jBase,_xj=xj,_pj=pj,_bj=bj,_fN=fN,_fs=fs,_j=j,_
                     hk  = (xj2 kjI)  - (xj2 hjI)
                     ka  = (xj2 ajI)  - (xj2 kjI)
 
-                    -- original angles
+                    -- angles
                     angleK = acosc $ (kh `dot` ka) / ((norm kh) * (norm ka))
                     angleH = acosc $ (ha `dot` hk) / ((norm ha) * (norm hk))
-                    -- new angles
-                    angleKT = acosc $ ((hatNorm ** 2) - (norm2 hk) - (norm2 ka)) / (-2 * (norm hk) * (norm ka))
-                    angleHT = asinc $ ((norm ka) * (sin angleKT)) / (hatNorm)
 
-                    -- 2.1  extend
+                    -- extend
                     axisKExtend = normalize $ kh `cross` ka
                     rotationLH22 = (rotationLH2 * (axisAngle ((conjugate $ rj2 hjI) `rotate` axisKExtend) (negate angleH)))
                     rotationLK22 = (rotationLK2 * (axisAngle ((conjugate $ rj2 kjI) `rotate` axisKExtend) (pi - angleK)))
                     (rj22,xj22) = jMod rotationLH22 rotationLK22
 
-                    -- 2.2 retract and correct foot
+                    -- step 3 retract
+                    
                     axisKRetract = (rj22 hjI) `rotate` (negate unitX)
-
+                    -- new angles
+                    angleKT = acosc $ ((hatNorm ** 2) - (norm2 hk) - (norm2 ka)) / (-2 * (norm hk) * (norm ka))
+                    angleHT = asinc $ ((norm ka) * (sin angleKT)) / (hatNorm)
                     
                     rotationLHF = rotationLH22 * (axisAngle ((conjugate $ rj22 hjI) `rotate` axisKRetract) angleHT)
                     rotationLKF = rotationLK22 * (axisAngle ((conjugate $ rj22 kjI) `rotate` axisKRetract) (angleKT - pi))
                     (rj3,_) = jMod rotationLHF rotationLKF
+                    
+                    -- step 4 correct ankle
+                    
                     rotationLAF = (conjugate $ rj3 kjI) * (rj fI ajI)
 
 

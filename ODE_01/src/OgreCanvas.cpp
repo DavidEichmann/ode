@@ -109,7 +109,7 @@ void OgreCanvas::initOgre() {
 
 	/// create window/viewport
 	Ogre::Viewport* vp = mWindow->addViewport(mCamera);
-	vp->setBackgroundColour(Ogre::ColourValue(0.7, 0.7, 1));
+	vp->setBackgroundColour(Ogre::ColourValue(1, 1, 1));
 	// Alter the camera aspect ratio to match the viewport
 	mCamera->setAspectRatio(
 			Ogre::Real(vp->getActualWidth())

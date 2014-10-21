@@ -9,6 +9,8 @@ import Util
 import FFI
 import Control.Arrow
 import Debug.Trace
+import Data.Time.Clock
+import Control.Concurrent
 
 import Data.Maybe
 import Data.Array
@@ -53,12 +55,33 @@ vewFlatFeet mdv@MotionDataVars{_sp=sp} = viewAnimationLoop mdv (\fI -> do
 viewSim :: MainLoop
 viewSim = simulateMainLoop
 
-viewFlatFeetSim :: MainLoop
-viewFlatFeetSim =
+
+
+
+officialFeedForwardController :: Double -> MotionDataVars -> MotionDataVars
+officialFeedForwardController dipAmount = 
+    (officialFeedForwardControllerPreprocess dipAmount) >>>
+    -- apply ZMP correction
+    officialFeedForwardControllerCorrections
+    
+    
+officialFeedForwardControllerPreprocess :: Double -> MotionDataVars -> MotionDataVars
+officialFeedForwardControllerPreprocess dipAmount = 
+    -- dip
+    (dip dipAmount) >>>
     -- apply the flattenFeet motion preprocessor
     flattenFeet >>>
-    -- apply ZMP correction
-    (correctZMPFull 9) >>>
+    -- start and end in static balance
+    startEndStatic
+    
+    
+officialFeedForwardControllerCorrections :: MotionDataVars -> MotionDataVars
+officialFeedForwardControllerCorrections = (correctZMPFull 20)
+
+
+viewFlatFeetSim :: Double -> MainLoop
+viewFlatFeetSim dipAmount =
+    (officialFeedForwardController dipAmount) >>>
     -- pass to simulation MainLoop
     simulateMainLoop
 
@@ -193,13 +216,143 @@ coMFeedBackLoopRaw kc kp target@MotionDataVars{_fs=fs,_fN=fN,_sp=spRaw,_dt=dt,_j
                         return $ (dt, displayIO) : rest
 
 
+
+
+
+
+
+
+doExperiment :: Bool -> MotionDataVars -> IO (Bool, Double)
+doExperiment dontDisplay mdv@MotionDataVars{_dt=dt,_fN=fN,_fs=fs,_js=js,_com=com} = do
+    -- init the simulator
+    sim' <- startSim mdv
+    
+    let
+        -- modify the Sim to use a ID feedback controller
+        feedBackControllerRaw sim@Sim{targetMotion=currentTargetMotion} dtSim = do
+                -- use high gains joint control
+                setAMotorsToMDVJointVels sim currentTargetMotion dtSim
+                -- update the target motion to the blended motion NOTE in this case this is actually redundant
+                return sim
+            
+        sim = sim' {
+            feedBackController = feedBackControllerRaw
+        }
+        
+        
+        getSimMDV :: Int -> (Sim, [Int -> Joint]) -> IO (Sim, MotionDataVars)
+        getSimMDV steps (sim, newJs)
+            | steps == 0    = return (sim, modifyMotionDataVars mdv [ ((fi,ji), jFn ji) | (F fi, jFn) <- zip fs (reverse newJs), J ji <- js])
+            | otherwise     = do
+                -- record joints
+                jointsActual <- getSimJoints sim
+                sim' <- step sim dt zero 0
+                getSimMDV (steps-1) (sim', jointsActual : newJs)
+        
+    (_, simMDV@MotionDataVars{_com=comSim}) <- getSimMDV fN (sim, [])
+    
+    
+    
+    
+    
+    
+    
+    
+    if dontDisplay then return () else do
+        forkIO (do
+        
+                let
+                    loopDisplay :: [(Double, IO ())] -> [(Double, IO ())] -> UTCTime -> IO ()
+                    loopDisplay allIOs ios tLastRender = do
+                        tc <- getCurrentTime
+                        let
+                            frameDT = playbackSpeed * (realToFrac $ tc `diffUTCTime` tLastRender)
+            
+                        (snd . head) ios
+                        doRender
+                        loopDisplay allIOs (tail ios) tc
+                displayTIOs <- viewAnimationLoopDefault simMDV
+                ti <- getCurrentTime
+                loopDisplay displayTIOs displayTIOs ti
+            )
+        return ()
+        
+    let
+        fIFinal = F (fN-1)
+        fallYThreshold = 0.2
+    
+    
+        isStanding = vy (com fIFinal) < (vy (comSim fIFinal)) + fallYThreshold
+        squareCoMerror = sum $ map (**2) $ [norm ((com fI) - (comSim fI)) | fI <- fs]
+    
+    return (isStanding, squareCoMerror)
+
+
+
+
+-- simulate using the motion data directly as the target motion (high gains feed forward)
+simulateMainLoop' :: MainLoop
+simulateMainLoop' mdv@MotionDataVars{_dt=dt,_fN=fN,_fs=fs,_js=js,_com=com,_zmp=zmp,_impulse=impulse} = do
+    -- init the simulator
+    sim' <- startSim mdv
+    
+    let
+        -- modify the Sim to use a ID feedback controller
+        feedBackControllerRaw sim@Sim{targetMotion=currentTargetMotion} dtSim = do
+                -- use high gains joint control
+                setAMotorsToMDVJointVels sim currentTargetMotion dtSim
+                -- update the target motion to the blended motion NOTE in this case this is actually redundant
+                return sim
+            
+        sim = sim' {
+            feedBackController = feedBackControllerRaw
+        }
+        
+        
+        getSimMDV :: [IO ()] -> Int -> Sim -> [Int -> Joint] -> IO (Sim, [IO ()], MotionDataVars)
+        getSimMDV ios steps sim@Sim{simTime=simTime} newJs
+            | steps == 0    = return (sim, reverse ios, modifyMotionDataVars mdv [ ((fi,ji), jFn ji) | (F fi, jFn) <- zip fs (reverse newJs), J ji <- js])
+            | otherwise     = do
+                -- record joints
+                jointsActual <- getSimJoints sim
+                cSimFrame <- getSimSkel sim
+                --floorCOntacts <- getFloorContacts
+                --cop <- getCoP
+                let
+                    fI@(F fi) = F (min (fN-1) (round $ simTime / dt))
+                    io = do
+                        -- sim visualization
+                        drawSkeleton (RedA 0.5) cSimFrame
+                        --drawPointC (YellowA 1) cop 0.02
+    
+                        -- Annimation
+                        let aniOffset =   zero :: Vec3
+                        --drawFrameIx (WhiteA 0.25) aniOffset mdv fI
+                        --drawPointC (GreenA 0.5) (zmp fI) 0.02
+                        --mapM_ ((\p -> drawPointC (YellowA 1) p 0.01) . xz2x0z) floorCOntacts
+                        -- impulse
+                        maybe (return ()) (\(point,impact,_) -> do
+                                drawVec3C Blue point ((0.005) *^ impact) 0.05
+                            ) (listToMaybe $ catMaybes $ [impulse fI' | fI' <- map F [fi - (ceiling $ 0.5/dt)..fi]])
+                        
+                sim' <- step sim dt zero 0
+                getSimMDV (io:ios) (steps-1) sim' (jointsActual : newJs)
+        
+    (_, ios, simMDV@MotionDataVars{_com=comSim}) <- getSimMDV [] fN sim []
+    
+    
+    return $ zip (repeat dt) ios
+    
+    
+
+
+
+
 -- simulate using the motion data directly as the target motion (high gains feed forward)
 simulateMainLoop :: MainLoop
 simulateMainLoop targetMotion@MotionDataVars{_fs=fs,_pj=pj,_jBase=jBase,_dt=dtMDV,_js=js,_rb=rb,_fN=fN,_jName=jName,_zmp=targetZMP,_bj=bj,_jb=jb,_jHasParent=jHasParent,_m=m,_footBs=((alBI,_),(arBI,_)),_footBCorners=footBCorners} = do
     -- init the simulator
     sim'@Sim{odeMotors=motors,timeDelta=dtSim,targetMotion=targetMotion} <- startSim targetMotion
-    
-    putStrLn $ "footBCorners (F 0): " ++ show (footBCorners (F 0)) ++ "\n"
     
     --let
     --    (jointTorques,jointForces) = inverseDynamics targetMotion (F 5)
@@ -264,13 +417,14 @@ simulateMainLoop targetMotion@MotionDataVars{_fs=fs,_pj=pj,_jBase=jBase,_dt=dtMD
             feedBackController = feedBackControllerRaw targetMotion 0
         }
 
-        stepDisplaySim (sim'@Sim{simTime=simTime,targetMotion=targetMotion'@MotionDataVars{_zmp=targetZMP'}},io') = do
+        stepDisplaySim (sim'@Sim{simTime=simTime,targetMotion=targetMotion'@MotionDataVars{_dt=dt,_impulse=impulse,_zmp=targetZMP'}},io') = do
             floorCOntacts <- getFloorContacts
             cSimFrame <- getSimSkel sim'
             cop <- getCoP
             let
-                fI = F (min (fN-1) (round $ simTime / dtMDV))
-                io'' = do
+                fI@(F fi) = F (min (fN-1) (round $ simTime / dtMDV))
+                io'' = --if True then return () else 
+                  do
                     -- sim visualization
                     drawSkeleton (RedA 0.5) cSimFrame
                     drawPointC (YellowA 1) cop 0.02
@@ -282,14 +436,13 @@ simulateMainLoop targetMotion@MotionDataVars{_fs=fs,_pj=pj,_jBase=jBase,_dt=dtMD
                     drawPointC (GreenA 0.5) (targetZMP' fI) 0.02
                     mapM_ ((\p -> drawPointC (YellowA 1) p 0.01) . xz2x0z) floorCOntacts
                     -- impulse
-                    {-maybe (return ()) (\(point,impact,_) do
-                            
-                        ) impulse fI-}
+                    maybe (return ()) (\(point,impact,_) -> do
+                            drawVec3C Blue point ((0.005) *^ impact) 0.05
+                        ) (listToMaybe $ catMaybes $ [impulse fI' | fI' <- map F [fi - (ceiling $ 0.5/dt)..fi]])
             sim'' <- step sim' dtSim zero 0
             return (sim'', io'')
         nSteps = round $ (fromIntegral fN * dtMDV) / dtSim
         
-    putStrLn "\n\tSkipping simulation!\n" -- see comented out section below
     ios <- fmap (map snd) (iterateMN (stepDisplaySim) (sim,return ()) nSteps)
     --let ios = [return ()]
     

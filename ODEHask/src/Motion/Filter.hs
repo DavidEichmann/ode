@@ -120,7 +120,9 @@ fitMottionDataToZmp' constrainInitVel constrainFinalVel mdvOrig' zmpX dipHeight 
             _bs      = bs,
             _xb      = posb,
             _l'      = l',
-            _zmp     = zmp
+            _zmp     = zmp,
+            _impulseType = impulseType,
+            _impulseFrame = impulseFrame
         } = mdv
 
         x f i = vx (posb (F f) i)
@@ -138,25 +140,32 @@ fitMottionDataToZmp' constrainInitVel constrainFinalVel mdvOrig' zmpX dipHeight 
 
         -- generate the matrix M (list of position and values... sparse matrix)
         
-        constraintFramesRix =   -- list of (frame index, matrix row index) pairs 
-                                [(frameInit,0),(frameFinal,n-1)] ++ 
-                                ((flip zip) [n..] (
-                                    (if constrainInitVel then [frameInit+1] else []) ++ 
-                                    (if constrainFinalVel then [frameFinal-1] else [])
+        constraintFramesRix =   -- list of (frame index, matrix row index, desired shift) pairs 
+                                [(frameInit,0,zero),(frameFinal,n-1,zero)] ++ 
+                                ( zipWith (\i (f,o) -> (f,i,o)) [n..] (
+                                    (if constrainInitVel then [(frameInit+1,zero)] else []) ++ 
+                                    (if constrainFinalVel then [(frameFinal-1,zero)] else []) ++
+                                    (case impulseType of
+                                        None -> []
+                                        AutoPunch offset _ -> if frameInit + 2 <= unF impulseFrame && unF impulseFrame <= frameFinal - 2 then [(unF impulseFrame, if itsI == its then xz2x0z offset else zero)] else []
+                                    )
                                 ))
+        w = 10**10
         mrn = n - 2 + (length constraintFramesRix)
         _M :: [((Int,Int),Double)]
         _M =    -- n-2 rows are the zmp = target zmp constraint for all frames other than the first and last
                 (concat  [zip [(r,r-1), (r,r), (r,r+1)] [f r, diag r, f r] | r <- [1..n-2]]) ++
                 -- remaining rows ensure that there is no shift for the constraintFrames
-                (map (\(f,rix) -> ((rix,f-frameInit), 10000000000)) constraintFramesRix)
+                (map (\(f,rix,_) -> ((rix,f-frameInit), w)) constraintFramesRix)
             where
                 dt2         = dt ** 2
                 f :: Int -> Double
                 f           = memoize (0,fN-1) f' where
                                 f' :: Int -> Double
                                 f' r' =  (negate (sum (map (\bI -> (m bI) * (y r bI)) bs))) /
-                                            (dt2 * (sum (fmap (\bI -> (m bI) * ((vy $ l' fI bI) + g)) bs))) where
+                                            (dt2 * ((sum (fmap (\bI -> (m bI) * ((vy $ l' fI bI) + g)) bs)) + (case impulseType of
+                                                                None -> 0
+                                                                AutoPunch _ (V3 _ impulseY _) -> if r == unF impulseFrame then (impulseY / dt) else 0))) where
                                            r = r' + frameInit
                                            fI = F r
                 diag r = 1 - (2 * (f r))
@@ -168,8 +177,8 @@ fitMottionDataToZmp' constrainInitVel constrainFinalVel mdvOrig' zmpX dipHeight 
                             [(row, ((zmpX!fi) - (zmp (F fi)))) |
                                     row <- range (1, n-2),
                                     let fi = frameInit + row] ++
-                            -- remaining rows ensure that ther is no shift for the constraintFrames
-                            [(rix,V3 0 0 0) | (_,rix) <- constraintFramesRix])
+                            -- remaining rows ensure that there is the desired shift for the constraintFrames
+                            [(rix,w *^ shift) | (_,rix,shift) <- constraintFramesRix])
         -- xep
         xep = fmap vx ep
         zep = fmap vz ep
@@ -185,6 +194,17 @@ fitMottionDataToZmp' constrainInitVel constrainFinalVel mdvOrig' zmpX dipHeight 
         finalModifiedMdv = fitMottionDataToZmp'' (feetIKForMdvOrig modifiedMdv) (itsI-1)
 
 
+-- Move the CoM about above the the support pollygon for the first and last frame, and interpolate the shift for all other frames
+startEndStatic :: MotionDataVars -> MotionDataVars
+startEndStatic mdv@MotionDataVars{_sp=sp,_fN=fN,_com=com} = feetIK mdv (shiftPerFrame shifts mdv) where
+    fS = F 0
+    fE = F (fN-1)
+    spCenter fI = (foldl1 (^+^) (sp fI)) / (fromIntegral $ length (sp fI))
+    shift fI = xz2x0z $ (spCenter fI) - (toXZ $ com fI) 
+    shiftS = shift fS
+    shiftE = shift fE
+    shifts = buildArray (0,fN-1) (\fi -> let t = (fromIntegral fi) / (fromIntegral fN) in (shiftS * (1-t)) + (shiftE * t))
+    
 
 -- makes the soles of the feet parralle to the floor in all frames, and emphasises floor contact / ground clearance
 flattenFeet :: MotionDataVars -> MotionDataVars

@@ -17,7 +17,7 @@ capturedDataScale = 0.01    -- captured data is in   cm = 0.01 m
 --
 
 defaultTimeStep :: Double
-defaultTimeStep = 1/500
+defaultTimeStep = 1/1000
 
 -- physics
 
@@ -39,7 +39,7 @@ footWidth = 0.1
 
 -- distance from the floor counting as contact for the support pollygon
 floorContactThreshold :: Double
-floorContactThreshold = 0.001 * 20 -- 0.001 = 1 mm
+floorContactThreshold = 0.001 * 300 -- 0.001 = 1 mm
 
 -- maximum velocity of the foot during floor contact
 floorContactVelocityThreshold :: Double
@@ -51,7 +51,7 @@ floorContactVelocityThreshold = 1 -- m/s
 
 -- When stopping foot sliding, this is how long it takes to blend the position of the ankle during floor contact back into the original motion
 stepBlendTime :: Double
-stepBlendTime = 0.5
+stepBlendTime = 0
 
 -- This is the clearance between floor and foot that is considered large enough to not be changed by the
 -- preprocessor.
@@ -60,7 +60,7 @@ safeFloorClearance = 0.05
 
 -- Floor clearance is exaggurated using this exponent. 1 is no exaduration, and 0 is descrete change from floor contact to safeFloorClearance
 floorClearanceExponent :: Double
-floorClearanceExponent = 0.4
+floorClearanceExponent = 0.9
 
 -- break down full ZMP correction into windows of so many frames
 frameWindowSize :: Int
@@ -71,7 +71,7 @@ frameWindowSize = 3000000000000
 --
 
 playbackSpeed :: Double
-playbackSpeed = 1
+playbackSpeed = 1.5
 
 frameRate :: Double
 frameRate = 60
@@ -87,7 +87,7 @@ defaultColorAlpha = 1
 --
 
 defaultfeedBackControlUpdateInterval :: Double
-defaultfeedBackControlUpdateInterval = 0.5
+defaultfeedBackControlUpdateInterval = 0.25
 
 defaultfeedBackControlCorrectionInterval :: Double
 defaultfeedBackControlCorrectionInterval = defaultfeedBackControlUpdateInterval / 2

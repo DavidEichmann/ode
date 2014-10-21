@@ -1,9 +1,9 @@
-#include "OgreCanvas.h"
 #include <Eigen/Core>
 #include <Eigen/SparseLU>
 #include <Eigen/SparseQR>
 #include <Eigen/OrderingMethods>
 #include <Eigen/QR>
+#include "Constants.h"
 #include "Util.h"
 
 #include "Interface.h"
@@ -122,14 +122,27 @@ double* linearProgramming() {
 
 }
 
+#ifdef NOOGRE
+void initOgre() {
 
-
-
-
+}
+void drawPolygon(double r,double g,double b,double a, int n, double* const vals) {
+}
+void drawBox(double r,double g,double b,double a,   double sx,double sy,double sz, double cx,double cy,double cz,  double w,double x,double y, double z) {
+}
+void drawBone(double r,double g,double b,double a,   double startX,double startY,double startZ,double endX,double endY,double endZ, double radius) {
+}
+void drawVec3(double r,double g,double b,double a,   double originX,double originY,double originZ,double X,double Y,double Z, double radius) {
+}
+void drawPoint(double r,double g,double b,double a,   double X,double Y,double Z, double radius) {
+}
+bool doRender() {
+	return true;
+}
+#else
+#include "OgreCanvas.h"
 OgreCanvas oc;
-
 void initOgre() { oc.initOgre(); }
-
 void drawPolygon(double r,double g,double b,double a, int n, double* const vals) {
 	oc.drawPolygon(Ogre::ColourValue(r,g,b,a), n, vals);
 }
@@ -148,6 +161,7 @@ void drawPoint(double r,double g,double b,double a,   double X,double Y,double Z
 bool doRender() {
 	return oc.doRender();
 }
+#endif
 
 
 
@@ -261,19 +275,28 @@ double* getBodyGeomBox(dBodyID bid) {
 	buf[9] = rot.z();
 	return buf;
 }
-
+bool startedODE = false;
 dWorldID initODE(double dt) {
+	if(!startedODE) {
+		dInitODE();
+	}
+	else {
+		dJointGroupDestroy(jointGroupid);
+		dJointGroupDestroy(contactGroupid);
+		dSpaceDestroy(sid);
+		dWorldDestroy(wid);
+	}
+
 	timeStep = dt;
 
 	// spring damper constants
-	const double kp = 75000;
-	const double kd = 2000;
+	const double kp = 750000; // orig: 75000
+	const double kd = 20000;  // orig: 2000
 //	const double kp = 0;
 //	const double kd = 10000;
 
 	contactERP = (timeStep*kp) / ((timeStep*kp) + kd);
 	contactCFM = 1 / ((timeStep*kp) + kd);
-	dInitODE();
 	//	Create a dynamics world.
 	wid = dWorldCreate();
 	// set CFM
@@ -288,6 +311,8 @@ dWorldID initODE(double dt) {
 	sid = dHashSpaceCreate(0);
 	/// floor
 	dCreatePlane(sid, 0, 1, 0, 0);
+
+	startedODE = true;
 
 	return wid;
 }
@@ -316,10 +341,12 @@ dBodyID appendCapsuleBody(
 
 ) {
 
+	/*
 	cout << i11 << "\t" << i12 << "\t" << i13 << "\t\n" << i12 << "\t" << i22 << "\t" << i23 << "\t\n" << i13 << "\t" << i23 << "\t" << i33 << "\t\n\n";
 	cout << qw << "\t" << qx << "\t" << qy << "\t" << qz << "\n\n";
 	cout << x << "\t" << y << "\t" << z << "\n\n";
 	cout << "\n\n";
+*/
 
 	// create a body for this bone
 	dBodyID bid = dBodyCreate(wid);
@@ -331,7 +358,7 @@ dBodyID appendCapsuleBody(
 	// set the local rotation and offset
 	dQuaternion q{qw,qx,qy,qz};
 	dGeomSetOffsetQuaternion(bGeom, q);
-	cout << "mass: " << mass << endl;
+//	cout << "mass: " << mass << endl;
 
 	// add mass to the body
 	dMass pMass;
@@ -343,10 +370,12 @@ dBodyID appendCapsuleBody(
 	dMassSetCapsuleTotal (&pMass, mass, 3, radius, length);
 	dBodySetMass(bid, &pMass);
 
+	/*
 	cout << "com: " << pMass.c[0] << "  " << pMass.c[1] << "  " << pMass.c[2] << endl;
 	cout << "pos: " << x << "  " << y << "  " << z << endl;
 	cout << "mass: " << mass << endl;
 	cout << endl;
+*/
 
 	// set the position and orientation of the body
 	Vec3 gPos(x,y,z);

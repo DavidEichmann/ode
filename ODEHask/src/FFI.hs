@@ -1,6 +1,4 @@
 module FFI (
-    c_main,
-
     inverseMatrix,
     sparseMatrixSolve,
     leastSquareSparseMatrixSolve,
@@ -58,9 +56,6 @@ import Data.List.Split
 import Control.Arrow
 import Control.Monad
 import Debug.Trace
-
-foreign import ccall unsafe "ODE_01.h"
-        c_main :: IO()
 
 foreign import ccall unsafe "Interface.h"
         initOgre :: IO ()
@@ -138,7 +133,7 @@ getBodyPosRot bid = do
 foreign import ccall unsafe "Interface.h setBodyPosRot"
         setBodyPosRot_c :: DBodyID -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO ()
 setBodyPosRot :: DBodyID -> Vec3 -> Quat -> IO ()
-setBodyPosRot bid pos rot = trace ("setBodyPosRot " ++ show pos ++ "\t\t" ++ show rot) $ ((apply bid) >>> (applyVec3 pos) >>> (applyQuat rot)) setBodyPosRot_c
+setBodyPosRot bid pos rot = ((apply bid) >>> (applyVec3 pos) >>> (applyQuat rot)) setBodyPosRot_c
 
 foreign import ccall unsafe "Interface.h getCoP"
     getCoP_c :: IO (Ptr CDouble)

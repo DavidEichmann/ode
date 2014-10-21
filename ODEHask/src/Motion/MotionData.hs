@@ -3,13 +3,14 @@ module Motion.MotionData where
 import Control.Applicative (liftA2)
 import Data.Array
 import Data.TreeF
-import Linear
+import Linear hiding (trace)
 
 import Util
 import Motion.Util
 import Motion.Joint
 import Constants
 
+import Debug.Trace 
 
 type JointF = (TreeF Joint)
 type Frame = JointF
@@ -88,13 +89,10 @@ frameBoundingBox f = treeFoldNR minMax initMinMax f where
 
 scaleAndTranslate :: MotionData -> MotionData
 scaleAndTranslate md = mdTS where
-    bb = frameBoundingBox $ (frames md)!1
-    bbDiag = uncurry (+) bb
-    bbC@(V3 _ cHeight _) = bbDiag / 2
-    targetC = (V3 0 (cHeight + boneRadius) 0)
-    translation = targetC - bbC
+    (bbMin, bbMax) = frameBoundingBox $ (frames md)!2
+    translation = ((V3 0 1 0) * ((bbMax-bbMin) ^/ 2)) - ((bbMin+bbMax) ^/ 2)
     scaleFactor = capturedDataScale
-
+    
     mdT  = translate translation md
     mdTS = scale scaleFactor mdT
 
