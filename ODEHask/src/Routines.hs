@@ -53,7 +53,7 @@ vewFlatFeet mdv@MotionDataVars{_sp=sp} = viewAnimationLoop mdv (\fI -> do
 
 
 viewSim :: MainLoop
-viewSim = simulateMainLoop
+viewSim = (simulateMainLoop Nothing)
 
 
 
@@ -83,7 +83,7 @@ viewFlatFeetSim :: Double -> MainLoop
 viewFlatFeetSim dipAmount =
     (officialFeedForwardController dipAmount) >>>
     -- pass to simulation MainLoop
-    simulateMainLoop
+    (simulateMainLoop Nothing)
 
 viewZmpCorrection :: MainLoop
 viewZmpCorrection mdvOrig = viewAnimationLoop mdv display where
@@ -123,7 +123,7 @@ coMFeedBackLoopRaw kc kp target@MotionDataVars{_fs=fs,_fN=fN,_sp=spRaw,_dt=dt,_j
     --   The simulator is steped one frameBoundingBox. in the step method
     --      The AMotors are set to reach the pose of the generated frame (fiNext)
     --   repeat
-    simI <- startSim (modifyMotionDataVarsFN target 1 [])
+    simI <- startSim Nothing (modifyMotionDataVarsFN target 1 [])
     coMFeedBackLoop' simI 0 where
 
         -- @params (simulation) (time)
@@ -222,10 +222,10 @@ coMFeedBackLoopRaw kc kp target@MotionDataVars{_fs=fs,_fN=fN,_sp=spRaw,_dt=dt,_j
 
 
 
-doExperiment :: Bool -> MotionDataVars -> IO (Bool, Double)
-doExperiment dontDisplay mdv@MotionDataVars{_dt=dt,_fN=fN,_fs=fs,_js=js,_com=com} = do
+doExperiment :: Bool -> Maybe Double -> MotionDataVars -> IO (Bool, Double)
+doExperiment dontDisplay box mdv@MotionDataVars{_dt=dt,_fN=fN,_fs=fs,_js=js,_com=com} = do
     -- init the simulator
-    sim' <- startSim mdv
+    sim' <- startSim box mdv
     
     let
         -- modify the Sim to use a ID feedback controller
@@ -294,7 +294,7 @@ doExperiment dontDisplay mdv@MotionDataVars{_dt=dt,_fN=fN,_fs=fs,_js=js,_com=com
 simulateMainLoop' :: MainLoop
 simulateMainLoop' mdv@MotionDataVars{_dt=dt,_fN=fN,_fs=fs,_js=js,_com=com,_zmp=zmp,_impulse=impulse} = do
     -- init the simulator
-    sim' <- startSim mdv
+    sim' <- startSim Nothing mdv
     
     let
         -- modify the Sim to use a ID feedback controller
@@ -310,7 +310,7 @@ simulateMainLoop' mdv@MotionDataVars{_dt=dt,_fN=fN,_fs=fs,_js=js,_com=com,_zmp=z
         
         
         getSimMDV :: [IO ()] -> Int -> Sim -> [Int -> Joint] -> IO (Sim, [IO ()], MotionDataVars)
-        getSimMDV ios steps sim@Sim{simTime=simTime} newJs
+        getSimMDV ios steps sim@Sim{simTime=simTime,useImpulseBox=useImpulseBox,impulseBoxBody=impulseBoxBody} newJs
             | steps == 0    = return (sim, reverse ios, modifyMotionDataVars mdv [ ((fi,ji), jFn ji) | (F fi, jFn) <- zip fs (reverse newJs), J ji <- js])
             | otherwise     = do
                 -- record joints
@@ -322,7 +322,12 @@ simulateMainLoop' mdv@MotionDataVars{_dt=dt,_fN=fN,_fs=fs,_js=js,_com=com,_zmp=z
                     fI@(F fi) = F (min (fN-1) (round $ simTime / dt))
                     io = do
                         -- sim visualization
-                        drawSkeleton (RedA 0.5) cSimFrame
+                        if useImpulseBox
+                            then do
+                                boxBone <- getBodyBone impulseBoxBody
+                                drawSkeleton (RedA 0.5) (boxBone : cSimFrame)
+                            else
+                                drawSkeleton (RedA 0.5) cSimFrame
                         --drawPointC (YellowA 1) cop 0.02
     
                         -- Annimation
@@ -349,10 +354,10 @@ simulateMainLoop' mdv@MotionDataVars{_dt=dt,_fN=fN,_fs=fs,_js=js,_com=com,_zmp=z
 
 
 -- simulate using the motion data directly as the target motion (high gains feed forward)
-simulateMainLoop :: MainLoop
-simulateMainLoop targetMotion@MotionDataVars{_fs=fs,_pj=pj,_jBase=jBase,_dt=dtMDV,_js=js,_rb=rb,_fN=fN,_jName=jName,_zmp=targetZMP,_bj=bj,_jb=jb,_jHasParent=jHasParent,_m=m,_footBs=((alBI,_),(arBI,_)),_footBCorners=footBCorners} = do
+simulateMainLoop :: Maybe Double -> MainLoop
+simulateMainLoop useImpBox targetMotion@MotionDataVars{_fs=fs,_pj=pj,_jBase=jBase,_dt=dtMDV,_js=js,_rb=rb,_fN=fN,_jName=jName,_zmp=targetZMP,_bj=bj,_jb=jb,_jHasParent=jHasParent,_m=m,_footBs=((alBI,_),(arBI,_)),_footBCorners=footBCorners} = do
     -- init the simulator
-    sim'@Sim{odeMotors=motors,timeDelta=dtSim,targetMotion=targetMotion} <- startSim targetMotion
+    sim'@Sim{odeMotors=motors,timeDelta=dtSim,targetMotion=targetMotion} <- startSim useImpBox targetMotion
     
     --let
     --    (jointTorques,jointForces) = inverseDynamics targetMotion (F 5)
@@ -417,15 +422,17 @@ simulateMainLoop targetMotion@MotionDataVars{_fs=fs,_pj=pj,_jBase=jBase,_dt=dtMD
             feedBackController = feedBackControllerRaw targetMotion 0
         }
 
-        stepDisplaySim (sim'@Sim{simTime=simTime,targetMotion=targetMotion'@MotionDataVars{_dt=dt,_impulse=impulse,_zmp=targetZMP'}},io') = do
+        stepDisplaySim (sim'@Sim{simTime=simTime,useImpulseBox=useImpulseBox,impulseBoxBody=impulseBoxBody,targetMotion=targetMotion'@MotionDataVars{_dt=dt,_impulse=impulse,_zmp=targetZMP'}},io') = do
             floorCOntacts <- getFloorContacts
             cSimFrame <- getSimSkel sim'
             cop <- getCoP
+            drawBoxIO <- drawImpBoxIO (GreenA 0.5) sim'
+            
             let
                 fI@(F fi) = F (min (fN-1) (round $ simTime / dtMDV))
                 io'' = --if True then return () else 
                   do
-                    -- sim visualization
+                    drawBoxIO
                     drawSkeleton (RedA 0.5) cSimFrame
                     drawPointC (YellowA 1) cop 0.02
 
@@ -436,7 +443,7 @@ simulateMainLoop targetMotion@MotionDataVars{_fs=fs,_pj=pj,_jBase=jBase,_dt=dtMD
                     drawPointC (GreenA 0.5) (targetZMP' fI) 0.02
                     mapM_ ((\p -> drawPointC (YellowA 1) p 0.01) . xz2x0z) floorCOntacts
                     -- impulse
-                    maybe (return ()) (\(point,impact,_) -> do
+                    if useImpulseBox then return () else maybe (return ()) (\(point,impact,_) -> do
                             drawVec3C Blue point ((0.005) *^ impact) 0.05
                         ) (listToMaybe $ catMaybes $ [impulse fI' | fI' <- map F [fi - (ceiling $ 0.5/dt)..fi]])
             sim'' <- step sim' dtSim zero 0

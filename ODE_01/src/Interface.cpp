@@ -317,6 +317,32 @@ dWorldID initODE(double dt) {
 	return wid;
 }
 
+dBodyID impBox;
+dBodyID makeImpulseBox(double height, double mass, double x, double y, double z) {
+
+	// create a body for this bone
+	dBodyID bid = dBodyCreate(wid);
+	dGeomID bGeom = dCreateBox(sid, height,height,height);
+	dGeomSetBody(bGeom, bid);
+
+	// add mass to the body
+	dMass pMass;
+	dBodyGetMass(bid, &pMass);
+	dMassSetBoxTotal(&pMass, mass,height,height,height);
+	dBodySetMass(bid, &pMass);
+
+	// make free floating
+	dBodySetGravityMode(bid,0);
+
+	// set the position and orientation of the body
+	Vec3 gPos(x,y,z);
+	dBodySetPosition(bid,(dReal)gPos[0],(dReal)gPos[1],(dReal)gPos[2]);
+
+	impBox = bid;
+
+	return bid;
+}
+
 dBodyID appendCapsuleBody(
 
 		// position CoM
@@ -513,6 +539,8 @@ void createFixedJoint(dBodyID a, dBodyID b) {
 	dJointSetFixed(jid);
 }
 
+
+bool boxIsHit = false;
 void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 
 	// ignore collisions with spaces
@@ -528,8 +556,8 @@ void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 //		return;
 //	}
 
-	// only plane collisions
-	if(dGeomGetClass(o1) != dPlaneClass && dGeomGetClass(o2) != dPlaneClass) {
+	// only plane collisions and imp box collisions
+	if(dGeomGetClass(o1) != dPlaneClass && dGeomGetClass(o2) != dPlaneClass && dGeomGetBody(o1) != impBox && dGeomGetBody(o2) != impBox) {
 		return;
 	}
 	// find the body that is not the floor
@@ -565,6 +593,11 @@ void collisionCallback(void * data, dGeomID o1, dGeomID o2) {
 			contacts.push_back(dc);
 //			contactBodies.push_back(bb);
 		}
+	}
+
+	// if human box contact
+	if((dGeomGetClass(o1) != dPlaneClass && dGeomGetClass(o2) != dPlaneClass) && (dGeomGetBody(o1) != impBox || dGeomGetBody(o2) != impBox)) {
+		boxIsHit = true;
 	}
 }
 
@@ -684,7 +717,8 @@ void step(dWorldID, double zmpX, double zmpZ, double fy) {
 	// clear vectors to store contact points
 	contacts.clear();
 //	contactBodies.clear();
-
+	bool boxWasHit = boxIsHit;
+	boxIsHit = false;
 	doCollisions();
 
 	dWorldStep(wid,timeStep);
@@ -699,6 +733,12 @@ void step(dWorldID, double zmpX, double zmpZ, double fy) {
 	cop /= grfY;
 	// Remove all joints in the contact joint group.
 	dJointGroupEmpty(contactGroupid);
+
+	if(boxWasHit && !boxIsHit) {
+		;
+		cout << "Box vel: " << eigVec3(dBodyGetLinearVel(impBox)).norm() << endl;
+	}
+
 }
 
 

@@ -147,7 +147,7 @@ fitMottionDataToZmp' constrainInitVel constrainFinalVel mdvOrig' zmpX dipHeight 
                                     (if constrainFinalVel then [(frameFinal-1,zero)] else []) ++
                                     (case impulseType of
                                         None -> []
-                                        AutoPunch offset _ -> if frameInit + 2 <= unF impulseFrame && unF impulseFrame <= frameFinal - 2 then [(unF impulseFrame, if itsI == its then xz2x0z offset else zero)] else []
+                                        AutoPunch offset _ _ -> if frameInit + 2 <= unF impulseFrame && unF impulseFrame <= frameFinal - 2 then [(unF impulseFrame, if itsI == its then xz2x0z offset else zero)] else []
                                     )
                                 ))
         w = 10**10
@@ -165,7 +165,7 @@ fitMottionDataToZmp' constrainInitVel constrainFinalVel mdvOrig' zmpX dipHeight 
                                 f' r' =  (negate (sum (map (\bI -> (m bI) * (y r bI)) bs))) /
                                             (dt2 * ((sum (fmap (\bI -> (m bI) * ((vy $ l' fI bI) + g)) bs)) + (case impulseType of
                                                                 None -> 0
-                                                                AutoPunch _ (V3 _ impulseY _) -> if r == unF impulseFrame then (impulseY / dt) else 0))) where
+                                                                AutoPunch _ (V3 _ impulseY _) _ -> if r == unF impulseFrame then (impulseY / dt) else 0))) where
                                            r = r' + frameInit
                                            fI = F r
                 diag r = 1 - (2 * (f r))

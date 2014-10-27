@@ -28,6 +28,7 @@ module FFI (
     getBodyPosRot,
     setBodyPosRot,
     getBodyBone,
+    makeImpulseBox,
     appendCapsuleBody,
     appendFootBody,
     createBallJoint,
@@ -163,6 +164,11 @@ getFloorContacts = do
 
 
 
+
+foreign import ccall unsafe "Interface.h makeImpulseBox"
+    makeImpulseBox_c :: CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> IO DBodyID
+makeImpulseBox :: Double -> Double -> Vec3 -> IO DBodyID
+makeImpulseBox height mass center = ((applyDouble height) >>> (applyDouble mass) >>> (applyVec3 center)) makeImpulseBox_c
 
 foreign import ccall unsafe "Interface.h appendCapsuleBody"
         appendCapsuleBody_c :: CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble -> CDouble

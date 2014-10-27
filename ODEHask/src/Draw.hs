@@ -5,6 +5,7 @@ import Util
 import Data.Color
 import Data.Bone
 import Data.TreeF
+import Simulation
 import FFI
 import Motion
 import Constants
@@ -49,3 +50,17 @@ drawSkeleton color = mapM_ drawBone' where
     drawBone' :: Bone -> IO ()
     drawBone' (Long start end) = drawBoneC color start end boneRadius
     drawBone' (Box lengths center rot) = drawBoxC color lengths center rot
+
+    
+drawImpBoxIO :: Color -> Sim -> IO (IO ())
+drawImpBoxIO color Sim{useImpulseBox=useBox,impulseBoxBody=impulseBoxBody}
+    | useBox == False   = return (return ())
+    | otherwise         = do 
+        boxBody <- getBodyBone impulseBoxBody
+        return $ do
+          drawSkeleton color [boxBody]
+    
+    
+    
+    
+    

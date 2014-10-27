@@ -52,6 +52,7 @@ data MotionDataVars = MotionDataVars {
     _baseSkeletonMDV :: MotionDataVars,
     _impulseType :: ImpulseType,
     _impulse :: FrameIx -> Maybe (Vec3, Vec3, BoneIx),      -- (point of impact, impulse, Bone) 
+    _impulseActual :: FrameIx -> Maybe (Vec3, Vec3, BoneIx),
     _impulseFrame :: FrameIx,
     
 
@@ -178,7 +179,7 @@ setFrame (F fi) newJF mdv@MotionDataVars{_js=js} = modifyMotionDataVars mdv [((f
 --type JDataAndChanges = (Array (Int,Int) Joint, )
 
 
-data ImpulseType = None | AutoPunch Vec2 Vec3 deriving (Eq, Show)
+data ImpulseType = None | AutoPunch Vec2 Vec3 Vec3 deriving (Eq, Show)
 
 -- arguments: frameTimeDelta  (motion data by FrameIx and JointIx) (base skeletion)
 -- Note that Joint index is from 0 and coresponds to flettening the base skeletoin
@@ -192,6 +193,7 @@ getMotionDataVariables dt jRaw bskel fN impulseType maybeQuickCopy = MotionDataV
     _baseSkeletonMDV = bSkelMDV,
     _impulseType = impulseType,
     _impulse = impulse,
+    _impulseActual = impulseActual,
     _impulseFrame = impulseFrame,
     
     _g      = g,
@@ -552,11 +554,12 @@ getMotionDataVariables dt jRaw bskel fN impulseType maybeQuickCopy = MotionDataV
         hT'_ fI = sum (map hComp bs) where
             hComp bI = ((l fI bI) `cross` (p fI bI)) + ((xb fI bI) `cross` (p' fI bI)) + (h' fI bI) + ((w fI bI) `cross` (h fI bI))
 
-    impulse fI = lookup fI impulses
+    impulse fI = fmap (\(a,b,_,c) -> (a,b,c)) (lookup fI impulses)
+    impulseActual fI = fmap (\(a,_,b,c) -> (a,b,c)) (lookup fI impulses)
     impulseFrame = fst $ head impulses
     impulses = case impulseType of
         None                -> []
-        AutoPunch offset impulse   -> [(impulseFI, (impulsePoint + (xz2x0z offset), impulse, impactBoneI))] where
+        AutoPunch _ impulse impulseActual   -> [(impulseFI, (impulsePoint, impulse, impulseActual, impactBoneI))] where
                 -- Find the frame with one of the hands furthest forward in the +Z direction, and set an impulse of a given value at the end point of that hand bone 
                 (impulseFI, impulsePoint, impactBoneI, _) = head $ sortBy ((compare) `on` (\(_,_,_,decel)->decel)) [(fI, point, boneI, decel) | fI <- fs, let (point, boneI, decel) = maxDecel fI]
                 -- maximum deceleration in (opposite) direction of impulse

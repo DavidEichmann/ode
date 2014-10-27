@@ -36,16 +36,31 @@ data Sim = Sim {
     feedBackController  :: FeedBackController,
     simTime             :: Double,
     simTimeExtra        :: Double,
-    timeDelta           :: Double
+    timeDelta           :: Double,
+    useImpulseBox       :: Bool,
+    impulseBoxBody      :: DBodyID
 }
 type FeedBackController = Sim -> Double -> IO (Sim)
 
-startSim :: MotionDataVars -> IO Sim
-startSim md@MotionDataVars{_xj=xjMotion,_xb=xbMotion,_rb=rbMotion,_rj=rjMotion,_baseSkeletonMDV=skel@MotionDataVars{_footBs=((leftFoot,leftToe),(rightFoot,rightToe)),_j=j,_m=m,_i=i,_jN=jN,_bN=bN,_js=js,_bs=bs,_jb=jb,_xj=xj,_xb=xb,_xsb=xsb,_xeb=xeb,_rb=rb,_pj=pj,_cjs=cjs,_pb=pb,_jHasParent=jHasParent,_jHasChild=jHasChild}} = do
+startSim :: Maybe Double -> MotionDataVars -> IO Sim
+startSim impulseBox md@MotionDataVars{_xj=xjMotion,_xb=xbMotion,_rb=rbMotion,_rj=rjMotion,_impulse=impulse,_impulseFrame=impulseFrame,_baseSkeletonMDV=skel@MotionDataVars{_footBs=((leftFoot,leftToe),(rightFoot,rightToe)),_j=j,_m=m,_i=i,_jN=jN,_bN=bN,_js=js,_bs=bs,_jb=jb,_xj=xj,_xb=xb,_xsb=xsb,_xeb=xeb,_rb=rb,_pj=pj,_cjs=cjs,_pb=pb,_jHasParent=jHasParent,_jHasChild=jHasChild}} = do
     newWid <- initODE defaultTimeStep
     bodies <- realizeBodies
     aMotors <- realizeJoints bodies
     moveToFrame0 bodies
+    
+    let
+        useImpBox = isJust impulseBox
+        impBoxBodErr = return $ error "Trying to access non-existant impulse box"
+    impBoxBod <-
+        if useImpBox then do
+                let
+                    boxHeight = 0.3
+                    margin = 0
+                makeImpulseBox boxHeight (fromJust impulseBox) ((\(p,_,_) -> p + (V3 0 0 ((boxHeight/2) - margin))) (fromJust $ impulse impulseFrame))
+        else
+            impBoxBodErr
+         
 --    putStrLn $ "ode world id = " ++ (show $ newWid)
     return Sim {
             wid             = newWid,
@@ -56,7 +71,9 @@ startSim md@MotionDataVars{_xj=xjMotion,_xb=xbMotion,_rb=rbMotion,_rj=rjMotion,_
             --feedBackController = highGainsFlatFeetController,
             simTime         = 0,
             simTimeExtra    = 0,
-            timeDelta       = defaultTimeStep
+            timeDelta       = defaultTimeStep,
+            useImpulseBox   = useImpBox,
+            impulseBoxBody  = impBoxBod
         }
 
     where
@@ -202,18 +219,19 @@ step isim idt targetCoP yGRF = step' isim{simTimeExtra = 0} (idt + (simTimeExtra
     w = wid isim
     -- dt  => time left to simulate
     -- ddt => time delta for each simulation step
-    step' sim@Sim{odeBodies=odeBodies,targetMotion=(mdv@MotionDataVars{_dt=frameDt,_impulse=impulse})} dt
+    step' sim@Sim{useImpulseBox=useImpulseBox,odeBodies=odeBodies,targetMotion=(mdv@MotionDataVars{_dt=frameDt,_impulseActual=impulseActual})} dt
         | dt >= ddt     = do
                             -- calculate impulse for this step, should be distributed over one MDV frame
                             let (fI,_,_) = getFrameInterpVals mdv (simTime sim)
-                            maybe (return ()) (\(impPoint,frameImp,impBI) -> do
-                                    let
-                                        frameToStepImpulseRatio = ddt / frameDt
-                                        stepImpulse = frameToStepImpulseRatio *^ frameImp
-                                        
-                                    -- apply the impulse
-                                    addImpulse (fromJust $ lookup impBI odeBodies) impPoint stepImpulse
-                                ) (impulse fI)
+                            if useImpulseBox then return () else 
+                                maybe (return ()) (\(impPoint,frameImp,impBI) -> do
+                                        let
+                                            frameToStepImpulseRatio = ddt / frameDt
+                                            stepImpulse = frameToStepImpulseRatio *^ frameImp
+                                            
+                                        -- apply the impulse
+                                        addImpulse (fromJust $ lookup impBI odeBodies) impPoint stepImpulse
+                                    ) (impulseActual fI)
         
                             -- step the world
                             stepODE w targetCoP yGRF

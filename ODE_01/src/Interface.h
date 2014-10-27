@@ -40,6 +40,7 @@ extern "C" {
 	double* getBodyPosRot(dBodyID bid);
 	void setBodyPosRot(dBodyID bid, double x, double y, double z, double qw, double qx, double qy, double qz);
 	double* getBodyStartEnd(dBodyID bid);
+	dBodyID makeImpulseBox(double height, double mass, double x, double y, double z);
 	dBodyID appendCapsuleBody(
 
 		// position CoM

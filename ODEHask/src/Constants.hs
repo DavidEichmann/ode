@@ -1,5 +1,7 @@
 module Constants where
 
+
+
 --
 -- Data
 --
@@ -51,16 +53,16 @@ floorContactVelocityThreshold = 1 -- m/s
 
 -- When stopping foot sliding, this is how long it takes to blend the position of the ankle during floor contact back into the original motion
 stepBlendTime :: Double
-stepBlendTime = 0
+stepBlendTime = 0.1
 
 -- This is the clearance between floor and foot that is considered large enough to not be changed by the
 -- preprocessor.
 safeFloorClearance :: Double
-safeFloorClearance = 0.05
+safeFloorClearance = 0.10
 
 -- Floor clearance is exaggurated using this exponent. 1 is no exaduration, and 0 is descrete change from floor contact to safeFloorClearance
 floorClearanceExponent :: Double
-floorClearanceExponent = 0.9
+floorClearanceExponent = 0.5
 
 -- break down full ZMP correction into windows of so many frames
 frameWindowSize :: Int
